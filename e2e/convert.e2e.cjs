@@ -5,8 +5,10 @@
 // page, the rebuilt design (480 V, reversing starter, every original I/O) and that nothing is lost.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/convert.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('fs');
-const OUT = __dirname + '/out-convert/';
+// its own folder: the roll-former test writes to out-convert/rollformer/ and may run at the same time
+const OUT = __dirname + '/out-convert/conveyor/';
 fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true });
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const FIX = __dirname + '/fixtures/convert/';
@@ -17,8 +19,20 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 const M = (tag, description, power, start, zone) => ({ tag, description, power, unit: 'hp', powerGiven: true, start, vertical: false, zone });
 let MACHINE = null;
 const requests = [];
-function reply(system) {
-  if (system.includes('taking over an existing machine from its electrical drawings')) return MACHINE;
+const PARTS = [
+  { marker: 'PART 1 of 3 — HARDWARE', fields: ['drawingStandard', 'language', 'plc', 'modules', 'supplyDrawn', 'components', 'motors', 'axes'] },
+  { marker: 'PART 2 of 3 — LOGIC', fields: ['io', 'circuits', 'interlocks', 'controller'] },
+  { marker: 'PART 3 of 3 — SAFETY AND DESCRIPTION', fields: ['safety', 'spec', 'questions', 'summary'] },
+];
+const derives = [];
+function reply(system, body) {
+  if (system.includes('taking over an existing machine from its electrical drawings')) {
+    // the reading runs as three parts at once (src/convert/derive.ts DERIVE_PARTS): each answers only its own fields
+    const ask = (body?.messages?.[0]?.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    const part = PARTS.find((p) => ask.includes(p.marker));
+    derives.push(part ? part.marker : 'one request');
+    return part ? Object.fromEntries([...part.fields, 'uncertainties'].map((k) => [k, MACHINE[k]])) : MACHINE;
+  }
   if (system.includes('checks a machine control design')) return { findings: [], summary: 'No further findings.' };
   if (system.includes('choosing the control equipment')) return {
     summary: 'CLICK PLC for the converted sorting conveyor.', estimatedIO: { digitalInputs: 9, digitalOutputs: 6, analogInputs: 0, analogOutputs: 0, motionAxes: 0 },
@@ -47,20 +61,24 @@ function sse(model, text) {
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // the app's own summary of each build run: "[update] … equipment done · hmi skipped · electrical done · program done"
+  const updates = [];
+  page.on('console', (m) => { if (m.text().startsWith('[update]')) updates.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://api.anthropic.com/**', async (route) => {
     const body = JSON.parse(route.request().postData());
     requests.push(body);
     let text;
-    try { text = JSON.stringify(reply(sysText(body.system))); } catch (e) { fails.push('AI mock: ' + e.message); text = '{}'; }
+    try { text = JSON.stringify(reply(sysText(body.system), body)); } catch (e) { fails.push('AI mock: ' + e.message); text = '{}'; }
     await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(body.model, text) });
   });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE);
   // The mocked AI answers with what a good AI reads from this set (src/convert/__fixtures__/chineseConveyor.ts).
-  MACHINE = await page.evaluate(async () => (await import('/src/convert/__fixtures__/chineseConveyor.ts')).CHINESE_CONVEYOR);
+  MACHINE = await page.evaluate(async () => (await appImport('/src/convert/__fixtures__/chineseConveyor.ts')).CHINESE_CONVEYOR);
   // one reading the AI is unsure of: it must become a question unless the user confirms it
   MACHINE.io = MACHINE.io.map((p) => (p.address === 'X7' ? { ...p, confidence: 'low' } : p));
   await page.evaluate(() => {
@@ -83,6 +101,8 @@ function sse(model, text) {
   await page.getByTestId('convert-files').setInputFiles([FIX + 'sorting_conveyor_drawings.pdf', FIX + 'E-03_PLC_IO.dxf']);
   await page.getByRole('button', { name: 'Read the drawings' }).click();
   await page.getByTestId('convert-recognised').waitFor({ timeout: 60000 });
+  // one request by default; the three-part reading (split) is tested in src/convert/convert.test.ts
+  check(derives.length === 1 && derives[0] === 'one request', `the drawings are read in one request (${derives.join(', ')})`);
   const derive = requests.find((r) => sysText(r.system).includes('taking over an existing machine'));
   const content = derive?.messages[0].content ?? [];
   check(content.some((b) => b.type === 'document' && b.source?.media_type === 'application/pdf'), 'the PDF goes to the AI as a document');
@@ -120,31 +140,43 @@ function sse(model, text) {
   check(/CB1/.test(qf1) && /UL 489/.test(qf1) && /Equivalent/.test(qf1), 'QF1 → CB1, a UL 489 breaker');
   check(/K1/.test(km1) && /Coil 220VAC → 24/.test(km1), 'KM1 → K1 with the coil change named');
   check(/OL1/.test(fr1) && /480 V/.test(fr1) && /Chosen by the design/.test(fr1), 'FR1 → OL1, set by the design for the new current');
-  check(/PB1/.test(sb2) && /Chosen by the design/.test(sb2), 'SB2 → PB1');
+  check(/PB2/.test(sb2) && /Chosen by the design/.test(sb2), 'SB2 → PB2 (JIC, the number kept)');
   const tableText = await table.innerText();
   check(/480 VAC 3-phase 60 Hz/.test(tableText) && /M1: 1\.1 kW → 1\.5 HP/.test(tableText), 'supply and motors converted');
   await table.screenshot({ path: OUT + '01_convert_table.png' });
 
   // Build the converted design with the engine
   await page.getByTestId('convert-build').click();
-  // (waitForFunction can't await an import: poll)
-  for (let t = 0; t < 360; t++) {
-    if (await page.evaluate(async () => Boolean((await import('/src/spec/updateRun.ts')).useUpdateRun.getState().finishedAt))) break;
-    await page.waitForTimeout(500);
-  }
-  const run = await page.evaluate(async () => (await import('/src/spec/updateRun.ts')).useUpdateRun.getState().results.map((r) => `${r.step}:${r.status}${r.status === 'done' ? '' : ` (${r.message})`}`));
-  log('Build:', run.join(' | '));
-  check(run.length === 4 && run.every((r) => /:done$/.test(r) || /^hmi:skipped \(No HMI chosen/.test(r)), 'equipment, electrical and program built (no HMI: the old machine has none)');
+  // wait for this build's summary line (a module imported from the test could be another instance than the app's)
+  const before = updates.length;
+  for (let t = 0; t < 360 && updates.length === before; t++) await page.waitForTimeout(500);
+  const line = updates[before] ?? '';
+  const run = [...line.matchAll(/(equipment|io|electrical|hmi|program) (done|skipped|failed|stopped)/g)].map((x) => `${x[1]}:${x[2]}`);
+  log('Build:', line);
+  check(run.length === 4 && run.every((r) => /:done$/.test(r) || r === 'hmi:skipped'), 'equipment, electrical and program built (no HMI: the old machine has none)');
   await page.getByRole('button', { name: 'Close', exact: true }).click().catch(() => {});
   const after = await page.evaluate(async () => {
-    const el = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState();
-    const io = (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
-    const info = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().info;
-    return { region: info.region, supply: el.design?.inputs.supply, motors: el.design?.inputs.motors.map((m) => `${m.tag} ${m.hp}HP ${m.starter}${m.reversing ? ' rev' : ''}`), io: io.length, parts: el.design?.components.length };
+    const el = (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState();
+    const io = (await appImport('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
+    const info = (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().info;
+    // what the conversion hands over (the original I/O, the E-stop on the safety relay, its Safety OK into the PLC)
+    const { convertMachine } = await appImport('/src/convert/convert.ts');
+    const { CHINESE_CONVEYOR } = await appImport('/src/convert/__fixtures__/chineseConveyor.ts');
+    const { similarity } = await appImport('/src/convert/functionKept.ts');
+    // matched by function, as the function-kept check does (the operator station may name a button "Start pushbutton")
+    const left = io.map((p) => ({ type: p.type, description: p.description }));
+    const missing = convertMachine(CHINESE_CONVEYOR).io.filter((o) => {
+      const i = left.findIndex((n) => n.type === o.type && (n.description === o.description || similarity(n.description, o.description) >= 0.5));
+      return i < 0 || !left.splice(i, 1);
+    }).map((o) => o.description);
+    return { region: info.region, supply: el.design?.inputs.supply, motors: el.design?.inputs.motors.map((m) => `${m.tag} ${m.hp}HP ${m.starter}${m.reversing ? ' rev' : ''}`), io: io.length, parts: el.design?.components.length,
+      missing, added: left.map((n) => n.description) };
   });
   log('New design:', JSON.stringify(after));
   check(after.region === 'US' && after.supply === '480VAC-3PH', 'new design on 480 V for the US');
-  check(after.io === 15, 'every original I/O point in the new I/O list');
+  check(after.missing.length === 0, `every converted I/O point in the new I/O list (the E-stop on the safety relay, its Safety OK into the PLC)${after.missing.length ? `: missing ${after.missing.join(', ')}` : ''}`);
+  // no touch panel: the design adds what the operator needs at the door (a Reset pushbutton), nothing else
+  check(after.added.every((d) => /^Reset pushbutton/i.test(d)), `only the operator station's Reset added (${after.added.join(', ') || 'none'})`);
 
   // Function kept
   const kept = page.getByTestId('convert-kept');
@@ -163,8 +195,8 @@ function sse(model, text) {
   fs.writeFileSync(OUT + 'spec_page.txt', spec);
   check(/pusher take to extend/i.test(spec) && /50 Hz/.test(spec) && /single-channel/.test(spec), 'questions on the Machine description page (drawings + conversion)');
   check(/Please check on the machine: X7 Conveyor overload/.test(spec), 'the unconfirmed low-confidence reading is a question');
-  check(/Start pushbutton \(启动\)/.test(await page.evaluate(async () => (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.map((p) => p.description).join('|'))), 'the correction is in the I/O list');
-  const review = await page.evaluate(async () => (await import('/src/review/actions.ts')).refreshChecks().filter((f) => f.id.startsWith('convert:kept:')).map((f) => f.title));
+  check(/Start pushbutton \(启动\)/.test(await page.evaluate(async () => (await appImport('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.map((p) => p.description).join('|'))), 'the correction is in the I/O list');
+  const review = await page.evaluate(async () => (await appImport('/src/review/actions.ts')).refreshChecks().filter((f) => f.id.startsWith('convert:kept:')).map((f) => f.title));
   check(review.length === 0, `no "function lost" review findings: ${review.join('; ')}`);
 
   check(errors.length === 0, `page errors: ${errors.join(' | ')}`);

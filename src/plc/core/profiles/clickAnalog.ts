@@ -31,6 +31,18 @@ function rangesOf(signal: unknown, range: unknown, kind: 'input' | 'output'): An
   return ['4-20mA'];
 }
 
+/**
+ * Slot number of each chosen module: a CLICK PLUS option-slot module is slot 0 (the CPU's own I/O, X001… /
+ * Y001…, where its high-speed inputs and pulse outputs are); the stackable modules are slots 1..8 in order.
+ */
+// CLICK PLUS CPUs have one option slot (catalog optionSlots: 1); a second option-slot module, should one ever be
+// listed, is numbered as a stackable here — check the CLICK help before giving it a slot of its own.
+export function clickSlots(modules: ModuleSlot[]): number[] {
+  let next = 1;
+  const option = modules.findIndex((m) => m.optionSlot);
+  return modules.map((_, i) => (i === option ? 0 : next++));
+}
+
 export function clickAnalogChannels(cpu: CpuModel, modules: ModuleSlot[]): AnalogChannel[] {
   const out: AnalogChannel[] = [];
   let df = 1;
@@ -43,12 +55,14 @@ export function clickAnalogChannels(cpu: CpuModel, modules: ModuleSlot[]): Analo
   for (let c = 1; c <= cpuOut; c++) {
     out.push({ kind: 'output', slot: 0, channel: c, partNumber: cpu.id, label: `CPU DA${c}`, ranges: ['4-20mA', '0-5V'], terminals: [`DA${c}I`, `DA${c}V`], address: `DF${df++}` });
   }
+  const slots = clickSlots(modules);
   modules.forEach((m, i) => {
     const pr = getPart(m.partNumber)?.ratings ?? {};
+    const slot = slots[i];
     for (const kind of ['input', 'output'] as const) {
       const n = kind === 'input' ? m.analogInputs ?? 0 : m.analogOutputs ?? 0;
       for (let c = 1; c <= n; c++) {
-        out.push({ kind, slot: i + 1, channel: c, partNumber: m.partNumber, label: `Slot ${i + 1} CH${c}`, ranges: rangesOf(pr.signal, pr.range, kind), terminals: /thermocouple/i.test(String(pr.signal)) ? [`CH${c}+`, `CH${c}-`] : [`CH${c}`, '0V'], address: `DF${df++}` });
+        out.push({ kind, slot, channel: c, partNumber: m.partNumber, label: slot === 0 ? `Option slot CH${c}` : `Slot ${slot} CH${c}`, ranges: rangesOf(pr.signal, pr.range, kind), terminals: /thermocouple/i.test(String(pr.signal)) ? [`CH${c}+`, `CH${c}-`] : [`CH${c}`, '0V'], address: `DF${df++}` });
       }
     }
   });

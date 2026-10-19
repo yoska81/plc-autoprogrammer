@@ -7,7 +7,7 @@
 import { convertLogixRung } from './logixText';
 import { convertSt } from './st';
 import { toRungs } from './cond';
-import { fillPresets, logixIoKind, logixType, opsOf, OPERAND_KEYS, slug, wholeRung } from './l5x';
+import { fillPresets, logixIoKind, logixType, opsOf, OPERAND_KEYS, slug, rawRepeated, wholeRung } from './l5x';
 import type { ForeignProgram, ForeignRoutine, ForeignTag } from './types';
 
 /** Split text into statements ending with ";" outside quotes / brackets / parentheses. */
@@ -55,7 +55,9 @@ function readTags(section: string, comments: Map<string, string>): ForeignTag[] 
   return out;
 }
 
-export function readL5k(src: string): ForeignProgram {
+export function readL5k(input: string): ForeignProgram {
+  // Windows exports are CRLF: read as LF lines.
+  const src = input.replace(/\r\n?/g, '\n');
   const text = src.replace(/\r\n?/g, '\n');
   const ctrl = /CONTROLLER\s+([A-Za-z_]\w*)\s*\(([\s\S]*?)\)\s*\n/.exec(text);
   if (!ctrl) throw new Error('This is not a Studio 5000 .L5K file (no CONTROLLER).');
@@ -116,10 +118,13 @@ export function readL5k(src: string): ForeignProgram {
           for (const d of driven) for (const op of opsOf(d)) if (logixIoKind(op)) ioRefs.add(op);
           const { rungs, failed } = toRungs(mapOps(driven), comment, `${slug(name)}_${idx}`);
           // A rung the ladder model can't hold is kept whole, as it was.
-          if (failed.length || untranslated.length) routine.rungs.push(wholeRung(rung, comment, `${slug(name)}_${idx}`));
-          else routine.rungs.push(...rungs);
+          const got = failed.length || untranslated.length || rawRepeated(rungs) ? [wholeRung(rung, comment, `${slug(name)}_${idx}`)] : rungs;
+          routine.rungs.push(...got);
+          for (const g of got) (routine.rungNumbers ??= {})[g.id] = String(idx);
         } catch {
-          routine.rungs.push(wholeRung(rung, comment, `${slug(name)}_${idx}`));
+          const g = wholeRung(rung, comment, `${slug(name)}_${idx}`);
+          routine.rungs.push(g);
+          (routine.rungNumbers ??= {})[g.id] = String(idx);
         }
         comment = '';
       }

@@ -57,7 +57,7 @@ export const PILZ_FAULTS: DeviceFaultProfile[] = [
           ]
         ],
         "expected": "approx. 24 VDC (input circuit voltage DC 24 V, 50 mA)",
-        "note": "IN1 = input circuit at S12 closed, IN2 = input circuit at S22 closed (p. 18). The 24 V figure is the published input-circuit voltage (p. 21), not a stated test point; with an ESPE/OSSD sensor S12/S22 are driven by the sensor outputs."
+        "note": "IN1 = S12 input circuit closed, IN2 = S22 closed (p. 18). 24 V is the rated input voltage (p. 21), not a test point; ESPE/OSSD outputs drive S12/S22."
       },
       {
         "terminals": "13-14, 23-24",
@@ -119,7 +119,7 @@ export const PILZ_FAULTS: DeviceFaultProfile[] = [
           ]
         ],
         "expected": "<= 30 Ohm total cable resistance (single-channel, or dual-channel with detection of shorts across contacts); <= 60 Ohm dual-channel without detection",
-        "note": "Max. overall cable resistance Rlmax, Technical details p. 21. Dual-channel without detection of shorts is wired S11-S12 and S11-S22 (Connection p. 13)."
+        "note": "Rlmax = max total cable resistance (Technical details p. 21). Dual-channel without short detection: wire S11-S12 and S11-S22 (p. 13)."
       }
     ],
     "pairs": [
@@ -296,7 +296,7 @@ export const PILZ_FAULTS: DeviceFaultProfile[] = [
         ],
         "confirm": [
           "Power off, disconnect the input terminals, measure S12 to S22: continuity confirms a cross-short.",
-          "Measure each input loop (S11-S12, S21-S22) with the safeguard closed: more than 30 Ohm (dual-channel with detection / single-channel) or 60 Ohm (dual-channel without detection) is too high."
+          "Safeguard closed, measure loops S11-S12 and S21-S22: too high if > 30 Ohm (dual with detection / single) or > 60 Ohm (dual without detection)."
         ],
         "fix": [
           "Rectify the connection error or short across contacts, then switch the supply voltage off and then on again."
@@ -307,11 +307,11 @@ export const PILZ_FAULTS: DeviceFaultProfile[] = [
         "title": "Simultaneity: power-up blocked after short interruption on one channel",
         "symptom": "IN1 (or IN2) flashes, FAULT on; outputs will not close after the safeguard is closed",
         "causes": [
-          "Short-term interruption at S12 (IN1) or S22 (IN2) only - the input channels were not opened simultaneously (loose wire, bouncing or misaligned E-STOP / gate contact)"
+          "Brief break on S12 (IN1) or S22 (IN2) alone; channels not opened together (loose wire, contact bounce, misaligned E-STOP/gate switch)"
         ],
         "confirm": [
           "Observe which IN LED flashes: IN1 = channel S11-S12, IN2 = channel S21-S22.",
-          "Check that channel's contact and terminals; measure S12 (or S22) to A2 while operating the safeguard: the reading must drop together with the other channel."
+          "Inspect that channel's contact and terminals; meter S12 (or S22) to A2 while operating the safeguard - it must drop with the other channel."
         ],
         "fix": [
           "Open S11-S12 and S21-S22 simultaneously (operate the E-STOP / open the gate) and then close again.",
@@ -369,7 +369,7 @@ export const PILZ_FAULTS: DeviceFaultProfile[] = [
           "Reset button S3 or its wiring S12-S34 open",
           "Feedback loop open: N/C contacts of external contactors K5/K6 (in series in S12-S34) not closed - contactor stuck in or welded",
           "Automatic start selected without the S12-S34 link / feedback loop",
-          "Monitored start: start button held too short (falling edge min. 100 ms, rising edge min. 30 ms) or pressed within the waiting period (rising edge 120 ms, falling edge 250 ms)"
+          "Monitored start: button too short (falling edge min 100 ms, rising min 30 ms) or pressed in wait period (rising 120 ms, falling 250 ms)"
         ],
         "confirm": [
           "Press reset and measure S34 to A2: about 24 VDC and START LED on means the start circuit closes; 0 V means S3 or the K5/K6 feedback contacts are open.",
@@ -392,7 +392,7 @@ export const PILZ_FAULTS: DeviceFaultProfile[] = [
           "Power off, measure 13-14 and 23-24: continuity with the unit de-energized confirms a welded contact."
         ],
         "fix": [
-          "Replace the unit. Fit the specified contact fuse ahead of the safety contacts (10 A quick, 6 A slow, 10 A gG or 6 A B/C breaker) and spark suppression on inductive loads."
+          "Replace unit. Fit specified fuse ahead of safety contacts (10 A quick, 6 A slow, 10 A gG or 6 A B/C breaker); spark-suppress inductive loads."
         ],
         "source": "https://www.pilz.com/download/open/PNOZ_s3_Operat_Man_21395-EN-19.pdf (Faults - malfunctions p. 20; Wiring p. 11; Technical details p. 23)"
       },
@@ -545,8 +545,8 @@ export const PILZ_FAULTS: DeviceFaultProfile[] = [
             "S22"
           ]
         ],
-        "expected": "total cable resistance <= Rlmax: 15 Ohm dual-channel with detection of shorts across contacts; dual-channel without detection 50 Ohm DC / 100 Ohm AC (24 V types), 80 Ohm (24-240 V types); single-channel 30 Ohm DC / 100 Ohm AC (24 V types), 45 Ohm (24-240 V types)",
-        "note": "Technical details pp. 17/22. Input circuit 24 VDC; 30 mA (24 V types) / 25 mA (24-240 V types). Without detection of shorts, dual-channel is wired S11-S12 and S11-S52 with S21-S22 linked (Preparing for operation p. 13)."
+        "expected": "Cable R <= Rlmax: dual w/ short detect 15 Ohm; dual w/o 50 Ohm DC/100 Ohm AC (24 V), 80 Ohm (24-240 V); single 30 DC/100 AC (24 V), 45 Ohm (24-240 V)",
+        "note": "pp. 17/22: input 24 VDC, 30 mA (24 V) / 25 mA (24-240 V types). No short detection, dual: wire S11-S12, S11-S52, link S21-S22 (p. 13)."
       }
     ],
     "pairs": [
@@ -701,7 +701,7 @@ export const PILZ_FAULTS: DeviceFaultProfile[] = [
           "Power off and measure 13-14, 23-24, 33-34: any continuity with the unit de-energized confirms."
         ],
         "fix": [
-          "Replace the unit. Fit the contact fuse from the technical details ahead of the contacts (24 V types: 10 A quick / 6 A slow / 6 A gG / 6 A B/C; 24-240 V types: 6 A quick / 4 A slow / 6 A gG / 4 A B/C) and spark suppression."
+          "Replace unit. Add contact fuse (24 V: 10 A quick/6 A slow/6 A gG/6 A B/C; 24-240 V: 6 A quick/4 A slow/6 A gG/4 A B/C) and spark suppression."
         ],
         "source": "https://www.pilz.com/download/open/PNOZ_X2_8P_Operat_Manual_1004082-EN-24.pdf (Faults - Interference p. 16; Wiring p. 12; Technical details pp. 19/24)"
       },

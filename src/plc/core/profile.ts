@@ -22,6 +22,8 @@ export interface ModuleSlot {
   /** Analog channels (0 for discrete modules). */
   analogInputs?: number;
   analogOutputs?: number;
+  /** A CLICK PLUS option-slot module (plugs into the CPU): its points are slot 0 (X001… / Y001…), not an expansion slot. */
+  optionSlot?: boolean;
 }
 
 /** One physical analog channel of the PLC (CPU built-in or an expansion module). */
@@ -108,6 +110,12 @@ export interface PlcProfile {
   language: ProgramLanguage;
   /** Shown in the PLC picker; profiles not yet built are listed but disabled. */
   available: boolean;
+  /**
+   * A program read from this PLC stays on it, read only, until the user chooses the PLC to move it to: the
+   * project keeps the machine's own controller (never silently another one), and nothing is written for it.
+   * Not available (never picked or offered), but getProfile() returns it for its id.
+   */
+  readOnly?: boolean;
   cpuModels: CpuModel[];
   defaultCpuId: string;
   /** Physical address a project I/O point gets on this PLC (by order). */
@@ -117,7 +125,7 @@ export interface PlcProfile {
   /** PLC-specific knowledge the AI must follow, added to the system prompt. */
   promptKnowledge(cpu: CpuModel): string;
   /** PLC-specific rules beyond address checks. */
-  checkRung?(rung: Rung): { severity: 'error' | 'warning'; message: string }[];
+  checkRung?(rung: Rung, ctx?: { ioAddresses?: Set<string> }): { severity: 'error' | 'warning'; message: string }[];
   /** IEC data type of an address (null = not valid / constant). Foundation for vendor-neutral tags. */
   dataTypeOf?(address: string): IecDataType | null;
   /** Scan semantics for the simulator. */
@@ -133,7 +141,7 @@ export interface PlcProfile {
   /** Vendor instruction names for the app's elements (keys: NO, NC, RISE, FALL, OUT, SET, RST, TMR_ON_DELAY, TMR_OFF_DELAY, TMR_RTO, CNT_UP, CNT_DOWN, compare ops, COPY, MATH). */
   mnemonics?: Record<string, string>;
   /** Vendor I/O tag of a physical neutral address (Logix: Local:1:I.Pt00.Data), for display and export. */
-  ioTag?(address: string, modules: ModuleSlot[]): string | null;
+  ioTag?(address: string, modules: ModuleSlot[], cpuId?: string): string | null;
   /** How the engineer gets the exported files into the PLC software (shown with the downloads). */
   importSteps?: string[];
 }

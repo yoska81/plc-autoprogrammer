@@ -4,7 +4,7 @@
  */
 import type { IOPoint } from '../../types/io';
 import type { CatalogCategory, CatalogPart, DesignComponent, FieldDeviceType, IOWiring, MachineWiring } from '../types';
-import { deviceTypeOf, HEATER_RE, TWO_HAND_RE, type MachineModel } from './machineModel';
+import { deviceTypeOf, DRIVE_INPUT_RE, HEATER_RE, TWO_HAND_RE, type MachineModel } from './machineModel';
 import type { ProcessResult } from './process';
 import { comp, type MotorBranch, type Tags } from './power';
 import { num, type Picker } from './select';
@@ -62,6 +62,18 @@ export interface DeviceResult {
 }
 
 const REV = /\b(rev|reverse|backward)\b/i;
+
+/** The drive an I/O description names by tag ("U2 DI7 CAM engage", "VFD1 MI3 jog"): converted machines keep U1/U2. */
+export function namedDrive(desc: string, branches: MotorBranch[]): string | undefined {
+  const m = /\b(U|VFD|SD|SV|INV)\s*-?(\d+)\b/i.exec(desc);
+  if (!m) return undefined;
+  const t = `${m[1].toUpperCase()}${m[2]}`;
+  const exact = branches.find((b) => b.vfd?.toUpperCase() === t)?.vfd;
+  if (exact) return exact;
+  // the design's only VFD is the drive a "U1 … VFD" point names (as electrical/vfd.ts assigns its terminals)
+  const vfds = branches.filter((b) => b.vfd);
+  return vfds.length === 1 && /\b(vfd|drive|inverter)\b/i.test(desc) ? vfds[0].vfd : t;
+}
 const ZONE_WORD = (z: string) => z.toLowerCase().split(/\s+/).filter((w) => w.length > 2 && !/^(zone|station)$/.test(w));
 
 /** Zone a device belongs to: the zone sharing a word with its description (or "Zone 2" for "zone 2"), else the first zone. */
@@ -74,9 +86,10 @@ export function zoneOf(desc: string, zones: string[]): string {
 
 /** Interposing / pilot / operator parts picked by words in the description. */
 function pickPushbutton(pk: Picker, desc: string, nc: boolean): CatalogPart | null {
-  const color = nc || /\bstop\b/i.test(desc) ? 'red' : /\bstart|run|on\b/i.test(desc) ? 'green' : /\bjog|manual\b/i.test(desc) ? 'black' : /\b(ack|silence)\b/i.test(desc) ? 'yellow' : 'black';
-  return pk.pick('pushbutton', (p) => String(p.ratings.color ?? '') === color && (nc ? /N\.C\./.test(String(p.ratings.contacts)) : /N\.O\./.test(String(p.ratings.contacts))))
-    ?? pk.pick('pushbutton', (p) => (nc ? /N\.C\./ : /N\.O\./).test(String(p.ratings.contacts ?? '')));
+  const color = nc || /\bstop\b/i.test(desc) ? 'red' : /\b(start|run|on)\b/i.test(desc) ? 'green' : /\bjog|manual\b/i.test(desc) ? 'black' : /\b(ack|silence)\b/i.test(desc) ? 'yellow' : 'black';
+  // contacts as any maker writes them: "(1) N.C.", "1 NC", "1NC"
+  const has = (p: CatalogPart) => (nc ? /\bN\.?\s?C\b/i : /\bN\.?\s?O\b/i).test(String(p.ratings.contacts ?? '').replace(/(\d)(N[OC])/gi, '$1 $2'));
+  return pk.pick('pushbutton', (p) => String(p.ratings.color ?? '') === color && has(p)) ?? pk.pick('pushbutton', has);
 }
 function pickPilot(pk: Picker, desc: string): CatalogPart | null {
   const color = /\b(fault|alarm|trip|error|stop)/i.test(desc) ? 'red' : /\b(run|on|ok|ready|power)/i.test(desc) ? 'green' : /\b(warn|caution|manual|service)/i.test(desc) ? 'yellow' : 'blue';
@@ -121,8 +134,15 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
   const srTag = sr ? add(comp('SR1', sr.partNumber, 1, 'E-stop safety relay — dual channel, monitored manual reset, removes power from the motion outputs (24+S)')) : undefined;
   if (!sr) notes.push('No safety relay in the catalog: the E-stop circuit is drawn as a hardwired chain; select a safety relay.');
   const estopPart = part('estop');
-  const secondNc = pk.byNumber('ECX1030-2');
-  const legend = pk.byNumber('ECX1651');
+  // Accessories from the E-stop's own maker (an AutomationDirect contact block does not mount on a Siemens 3SU1):
+  // an N.C. contact block and the EMERGENCY STOP legend plate; none in the catalog for that maker = a note, never
+  // another brand's part.
+  const maker = (p: CatalogPart) => p.vendor ?? 'automationdirect';
+  const sameMaker = (p: CatalogPart) => !!estopPart && maker(p) === maker(estopPart);
+  const secondNc = estopPart ? pk.pick('other', (p) => sameMaker(p) && /contact (block|module|element)/i.test(p.description) && /\bN\.?\s?C\b/i.test(String(p.ratings.contacts ?? '')) && !/\bN\.?\s?O\b/i.test(String(p.ratings.contacts ?? ''))) : null;
+  const legend = estopPart ? pk.pick('other', (p) => sameMaker(p) && String(p.ratings.kind ?? '') === 'legend plate' && /emergency stop/i.test(String(p.ratings.legend ?? ''))) : null;
+  if (estopPart && !secondNc) notes.push(`${estopPart.partNumber}: no N.C. contact block of the same maker in the catalog — add one per E-stop to the order for the second safety channel (and a third for the PLC status input).`);
+  if (estopPart && !legend) notes.push(`${estopPart.partNumber}: no EMERGENCY STOP legend plate of the same maker in the catalog — add one per E-stop to the order.`);
   const estopIo = points.filter(({ point }) => point.type === 'input' && deviceTypeOf(point) === 'estop-contact');
   const nEstops = Math.max(model.safety.estops, estopIo.length, 1);
   const estopTags: string[] = [];
@@ -132,6 +152,9 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
     const where = k === 0 ? 'cabinet door' : `${zones[Math.min(k - 1, zones.length - 1)]} (field station)`;
     if (estopPart) add(comp(t, estopPart.partNumber, 1, `Emergency stop, ${where} — dual channel into ${srTag ?? 'the safety circuit'}`));
     if (secondNc) add(comp(`${t}C`, secondNc.partNumber, 1, `Second NC contact for dual-channel E-stop ${t}`));
+    // the PLC reads the E-stop as N.C. (ON = released): with both N.C. blocks in the safety relay's channels its
+    // status input needs a third one (31-32); without a safety relay 21-22 is free for it
+    if (secondNc && srTag && k < estopIo.length) add(comp(`${t}D`, secondNc.partNumber, 1, `Third NC contact (31-32) of E-stop ${t} for its PLC status input`));
     if (legend) add(comp(`${t}L`, legend.partNumber, 1, `EMERGENCY STOP legend plate for ${t}`));
   }
   if (nEstops > 1) askUser.push(`${nEstops - 1} field E-stop station(s) assumed: the push-button enclosure for each is a field item; confirm the locations.`);
@@ -227,9 +250,10 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
         tag = tags.next('SS'); location = DOOR;
         if (sel) add(comp(tag, sel.partNumber, 1, desc.replace(/\s*\bselector\b/i, '').trim() || desc));
       } else if (type === 'vfd-input' || (/\b(vfd|drive)\b/i.test(desc) && /\b(fault|ready|running|at speed|alarm)\b/i.test(desc))) {
-        const b = motorFor(desc, branches, linkedMotors, 'vfd');
+        const named = namedDrive(desc, branches);
+        const b = named ? undefined : motorFor(desc, branches, linkedMotors, 'vfd');
         type = 'vfd-input';
-        tag = b?.vfd ?? tags.next('VFD');
+        tag = named ?? b?.vfd ?? tags.next('VFD');
       } else if (/\boverload\b|\bol\b.*\b(trip|tripped|fault|ok)\b|\bmotor protector\b.*\b(trip|tripped|fault|ok)\b/i.test(desc)) {
         const b = motorFor(desc, branches, linkedMotors, 'contactor');
         type = 'other';
@@ -263,6 +287,11 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
       if (heater && (heater.ssr || heater.contactor)) {
         // The PLC switches the heater's SSR (time-proportioned), or its contactor when there is no SSR.
         tag = heater.ssr ?? heater.contactor!; type = heater.ssr ? 'relay-coil' : 'contactor-coil';
+      } else if ((type === 'vfd-input' || DRIVE_INPUT_RE.test(desc)) && namedDrive(desc, branches)) {
+        // a drive input on a drive the description names (U1 MI3 jog, U2 DI7 CAM): wired to that drive's own
+        // terminal — never a contactor, never a new motor
+        type = 'vfd-input';
+        tag = namedDrive(desc, branches)!;
       } else if (type === 'contactor-coil' || type === 'vfd-input' || (type === 'relay-coil' && /\b(motor|pump|fan|conveyor|blower|mixer|agitator)\b/i.test(desc) && branches.length)) {
         const b = motorFor(desc, branches, linkedMotors, 'any');
         if (b) {
@@ -313,7 +342,9 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
   }
 
   if (stack.tag) {
-    const st = pk.pick('stackLight', (p) => (stack.buzzer ? /yes/i : /no/i).test(String(p.ratings.buzzer ?? 'no')) && /direct/i.test(String(p.ratings.mounting ?? 'direct')))
+    // the preferred panel brand's light with the buzzer asked for; direct (enclosure-top) mounting only chooses
+    // between that brand's parts (a Siemens 8WD44 kit mounts on a bracket and is still the Siemens panel's light)
+    const st = pk.pick('stackLight', (p) => (stack.buzzer ? /yes/i : /no/i).test(String(p.ratings.buzzer ?? 'no')), (p) => (/direct/i.test(String(p.ratings.mounting ?? 'direct')) ? 0 : 1))
       ?? pk.pick('stackLight');
     if (st) add(comp(stack.tag, st.partNumber, 1, 'Stack light (top of the enclosure)'));
   }

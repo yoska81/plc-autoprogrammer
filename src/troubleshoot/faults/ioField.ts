@@ -25,7 +25,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "X1 to C1 (X1-X4 share C1, X5-X8 share C2 on 8-input CPUs; software address X001...)",
         "state": "input ON (24 VDC CPU inputs, C0-16ND3, C0-16CDD1)",
         "meter": "VDC",
-        "expected": "> 19 VDC magnitude (input voltage range 21.6-26.4 VDC); typ. 4 mA (X3-X8) / 5 mA (X1-X2 of C0-0x CPUs) / 6.5 mA (high-speed X1-X4 of Ethernet C0-1x CPUs) at 24 VDC",
+        "expected": "Over 19 VDC (supply 21.6-26.4 VDC). Typ. at 24 VDC: 4 mA X3-X8, 5 mA X1-X2 (C0-0x), 6.5 mA high-speed X1-X4 (Ethernet C0-1x).",
         "pins": [
           [
             "X001",
@@ -114,7 +114,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
           "Failed input circuit"
         ],
         "confirm": [
-          "Measure the input terminal to its common (e.g. X1 to C1) with the device ON: a 24 VDC input needs > 19 VDC to turn on; ~0 V means the supply, the device output or the wiring is open.",
+          "With device ON, measure input to its common (e.g. X1 to C1): 24 VDC inputs need > 19 VDC to turn on; ~0 V = supply, device output or wiring open.",
           "Check that the removable terminal block is fully seated."
         ],
         "fix": [
@@ -170,7 +170,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         ],
         "confirm": [
           "Measure C1 to supply 0 V: about 0 V means C1 is on the negative (correct for PNP); about 24 V means C1 is on + (correct for NPN).",
-          "Measure X1 to C1 with the sensor detecting: about 0 V while the sensor output is switching shows the current has no path (wrong polarity of the common)."
+          "With the sensor detecting, measure X1 to C1: ~0 V while the sensor switches means no current path (common polarity wrong)."
         ],
         "fix": [
           "PNP sensor: connect the common (C1/C2) to supply - so the input sinks the current.",
@@ -201,7 +201,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "title": "Input on with the device off (leakage)",
         "symptom": "X LED glows or the input reads ON while the driving device is off.",
         "causes": [
-          "OFF-state leakage current of the driving device (2-wire sensor or solid-state output) above the input's maximum OFF current (0.5 mA for 24 VDC points; 0.1 mA for X1-X2 of C0-0x CPUs)"
+          "Driving device (2-wire sensor or solid-state output) leaks more OFF current than allowed (0.5 mA at 24 VDC; 0.1 mA for X1-X2 of C0-0x CPUs)."
         ],
         "confirm": [
           "Measure X to its common with the device off: a reading above the OFF level (< 7 VDC standard points) means the leakage keeps the input on."
@@ -241,7 +241,8 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
             "X001",
             "C1"
           ]
-        ]
+        ],
+        "liveWork": true
       },
       {
         "terminals": "X1 to C1",
@@ -279,7 +280,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
           "Failed input circuit"
         ],
         "confirm": [
-          "Measure the input terminal to its common (e.g. X1 to C1) with the device ON: a 24 VDC input needs > 19 VDC to turn on; ~0 V means the supply, the device output or the wiring is open.",
+          "With device ON, measure input to its common (e.g. X1 to C1): 24 VDC inputs need > 19 VDC to turn on; ~0 V = supply, device output or wiring open.",
           "Check that the removable terminal block is fully seated."
         ],
         "fix": [
@@ -390,37 +391,37 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "a": "Y001",
         "b": "C3",
         "when": "output ON",
-        "note": "Equivalent output circuit: Y1-Y4 switch to C3 COM, Y5-Y6 to C4 COM, \"C3 & C4 are not internally connected\" (C0-00DD1-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-37; same layout C0-01DD1-D, C0-10DD1E-D, C0-11DD1E-D, C2-14D1 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf p.2-33). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sinking); 4-point CPUs (C0-02/C0-12) and C0-08TD1/C0-16TD1 modules use other commons and are not covered."
+        "note": "Sinking: Y1-Y4 on C3, Y5-Y6 on C4 (not tied). 6-point C0-00/01/10/11 CPUs, C2-14D1 (p.2-37, p.2-33). Not C0-02/C0-12, C0-08TD1/C0-16TD1. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "Y002",
         "b": "C3",
         "when": "output ON",
-        "note": "Equivalent output circuit: Y1-Y4 switch to C3 COM, Y5-Y6 to C4 COM, \"C3 & C4 are not internally connected\" (C0-00DD1-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-37; same layout C0-01DD1-D, C0-10DD1E-D, C0-11DD1E-D, C2-14D1 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf p.2-33). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sinking); 4-point CPUs (C0-02/C0-12) and C0-08TD1/C0-16TD1 modules use other commons and are not covered."
+        "note": "Sinking: Y1-Y4 on C3, Y5-Y6 on C4 (not tied). 6-point C0-00/01/10/11 CPUs, C2-14D1 (p.2-37, p.2-33). Not C0-02/C0-12, C0-08TD1/C0-16TD1. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "Y003",
         "b": "C3",
         "when": "output ON",
-        "note": "Equivalent output circuit: Y1-Y4 switch to C3 COM, Y5-Y6 to C4 COM, \"C3 & C4 are not internally connected\" (C0-00DD1-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-37; same layout C0-01DD1-D, C0-10DD1E-D, C0-11DD1E-D, C2-14D1 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf p.2-33). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sinking); 4-point CPUs (C0-02/C0-12) and C0-08TD1/C0-16TD1 modules use other commons and are not covered."
+        "note": "Sinking: Y1-Y4 on C3, Y5-Y6 on C4 (not tied). 6-point C0-00/01/10/11 CPUs, C2-14D1 (p.2-37, p.2-33). Not C0-02/C0-12, C0-08TD1/C0-16TD1. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "Y004",
         "b": "C3",
         "when": "output ON",
-        "note": "Equivalent output circuit: Y1-Y4 switch to C3 COM, Y5-Y6 to C4 COM, \"C3 & C4 are not internally connected\" (C0-00DD1-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-37; same layout C0-01DD1-D, C0-10DD1E-D, C0-11DD1E-D, C2-14D1 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf p.2-33). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sinking); 4-point CPUs (C0-02/C0-12) and C0-08TD1/C0-16TD1 modules use other commons and are not covered."
+        "note": "Sinking: Y1-Y4 on C3, Y5-Y6 on C4 (not tied). 6-point C0-00/01/10/11 CPUs, C2-14D1 (p.2-37, p.2-33). Not C0-02/C0-12, C0-08TD1/C0-16TD1. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "Y005",
         "b": "C4",
         "when": "output ON",
-        "note": "Equivalent output circuit: Y1-Y4 switch to C3 COM, Y5-Y6 to C4 COM, \"C3 & C4 are not internally connected\" (C0-00DD1-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-37; same layout C0-01DD1-D, C0-10DD1E-D, C0-11DD1E-D, C2-14D1 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf p.2-33). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sinking); 4-point CPUs (C0-02/C0-12) and C0-08TD1/C0-16TD1 modules use other commons and are not covered."
+        "note": "Sinking: Y1-Y4 on C3, Y5-Y6 on C4 (not tied). 6-point C0-00/01/10/11 CPUs, C2-14D1 (p.2-37, p.2-33). Not C0-02/C0-12, C0-08TD1/C0-16TD1. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "Y006",
         "b": "C4",
         "when": "output ON",
-        "note": "Equivalent output circuit: Y1-Y4 switch to C3 COM, Y5-Y6 to C4 COM, \"C3 & C4 are not internally connected\" (C0-00DD1-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-37; same layout C0-01DD1-D, C0-10DD1E-D, C0-11DD1E-D, C2-14D1 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf p.2-33). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sinking); 4-point CPUs (C0-02/C0-12) and C0-08TD1/C0-16TD1 modules use other commons and are not covered."
+        "note": "Sinking: Y1-Y4 on C3, Y5-Y6 on C4 (not tied). 6-point C0-00/01/10/11 CPUs, C2-14D1 (p.2-37, p.2-33). Not C0-02/C0-12, C0-08TD1/C0-16TD1. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       }
     ],
     "indicators": [
@@ -473,7 +474,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "confirm": [
           "Check the RUN LED.",
           "Setup > System Configuration in CLICK software.",
-          "Monitor the Y bit in Data View; use the override feature to turn the Y bit ON."
+          "Monitor the Y bit in Data View; use the override feature to turn the Y bit ON. Keep everyone clear: the output will move machinery."
         ],
         "fix": [
           "Put the PLC in RUN mode.",
@@ -521,7 +522,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
           "Check the field device input type (sinking/NPN input)."
         ],
         "fix": [
-          "Add a pull-up resistor from the output to the DC output supply (+). Do not drive loads > 25 mA this way; the logic is inverted (device ON when the PLC output is OFF)."
+          "Fit a pull-up resistor from output to the DC output supply (+). Not for loads > 25 mA; logic inverts (device ON when PLC output OFF)."
         ],
         "source": "https://cdn.automationdirect.com/static/manuals/c0userm/ch3.pdf (CLICK PLC Hardware User Manual C0-USER-M 6th Ed. Rev. Q, PLC DC Sinking Output to Sinking Load Device, p.3-32)"
       },
@@ -619,37 +620,37 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "a": "V1",
         "b": "Y001",
         "when": "output ON",
-        "note": "Equivalent output circuit: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the common (C0-00DD2-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-39; same layout C0-01DD2-D, C0-10DD2E-D, C0-11DD2E-D, C2-14D2 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sourcing); C0-02/C0-12 CPUs and C0-08TD2/C0-16TD2 modules not covered."
+        "note": "Sourcing: V1: Y1-Y4, V2: Y5-Y6, CO common. 6-point C0-00/01/10/11 CPUs (C0-00DD2-D p.2-39), C2-14D2. Not C0-02/C0-12, C0-08TD2/C0-16TD2. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "V1",
         "b": "Y002",
         "when": "output ON",
-        "note": "Equivalent output circuit: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the common (C0-00DD2-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-39; same layout C0-01DD2-D, C0-10DD2E-D, C0-11DD2E-D, C2-14D2 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sourcing); C0-02/C0-12 CPUs and C0-08TD2/C0-16TD2 modules not covered."
+        "note": "Sourcing: V1: Y1-Y4, V2: Y5-Y6, CO common. 6-point C0-00/01/10/11 CPUs (C0-00DD2-D p.2-39), C2-14D2. Not C0-02/C0-12, C0-08TD2/C0-16TD2. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "V1",
         "b": "Y003",
         "when": "output ON",
-        "note": "Equivalent output circuit: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the common (C0-00DD2-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-39; same layout C0-01DD2-D, C0-10DD2E-D, C0-11DD2E-D, C2-14D2 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sourcing); C0-02/C0-12 CPUs and C0-08TD2/C0-16TD2 modules not covered."
+        "note": "Sourcing: V1: Y1-Y4, V2: Y5-Y6, CO common. 6-point C0-00/01/10/11 CPUs (C0-00DD2-D p.2-39), C2-14D2. Not C0-02/C0-12, C0-08TD2/C0-16TD2. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "V1",
         "b": "Y004",
         "when": "output ON",
-        "note": "Equivalent output circuit: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the common (C0-00DD2-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-39; same layout C0-01DD2-D, C0-10DD2E-D, C0-11DD2E-D, C2-14D2 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sourcing); C0-02/C0-12 CPUs and C0-08TD2/C0-16TD2 modules not covered."
+        "note": "Sourcing: V1: Y1-Y4, V2: Y5-Y6, CO common. 6-point C0-00/01/10/11 CPUs (C0-00DD2-D p.2-39), C2-14D2. Not C0-02/C0-12, C0-08TD2/C0-16TD2. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "V2",
         "b": "Y005",
         "when": "output ON",
-        "note": "Equivalent output circuit: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the common (C0-00DD2-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-39; same layout C0-01DD2-D, C0-10DD2E-D, C0-11DD2E-D, C2-14D2 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sourcing); C0-02/C0-12 CPUs and C0-08TD2/C0-16TD2 modules not covered."
+        "note": "Sourcing: V1: Y1-Y4, V2: Y5-Y6, CO common. 6-point C0-00/01/10/11 CPUs (C0-00DD2-D p.2-39), C2-14D2. Not C0-02/C0-12, C0-08TD2/C0-16TD2. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "V2",
         "b": "Y006",
         "when": "output ON",
-        "note": "Equivalent output circuit: V1 feeds Y1-Y4, V2 feeds Y5-Y6, CO is the common (C0-00DD2-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-39; same layout C0-01DD2-D, C0-10DD2E-D, C0-11DD2E-D, C2-14D2 https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). Applies to C0-00/01/10/11 6-point CPUs and the C2-14 option modules (sourcing); C0-02/C0-12 CPUs and C0-08TD2/C0-16TD2 modules not covered."
+        "note": "Sourcing: V1: Y1-Y4, V2: Y5-Y6, CO common. 6-point C0-00/01/10/11 CPUs (C0-00DD2-D p.2-39), C2-14D2. Not C0-02/C0-12, C0-08TD2/C0-16TD2. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       }
     ],
     "indicators": [
@@ -697,7 +698,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "confirm": [
           "Check the RUN LED.",
           "Setup > System Configuration in CLICK software.",
-          "Monitor the Y bit in Data View; use the override feature to turn the Y bit ON."
+          "Monitor the Y bit in Data View; use the override feature to turn the Y bit ON. Keep everyone clear: the output will move machinery."
         ],
         "fix": [
           "Put the PLC in RUN mode.",
@@ -791,7 +792,8 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
             "Y001",
             "C3"
           ]
-        ]
+        ],
+        "liveWork": true
       }
     ],
     "pairs": [
@@ -799,37 +801,37 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "a": "Y001",
         "b": "C3",
         "when": "output ON",
-        "note": "Relay, form A (SPST); equivalent output circuit Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-41; same layout C0-00AR-D, C0-01DR/AR-D, C0-10DRE/ARE-D, C0-11DRE/ARE-D, C2-14DR https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). 4-relay CPUs (C0-02DR-D, C0-12xRE) use C2 as the relay common and C0-04TRS/C0-08TR modules number their terminals differently; those are not covered."
+        "note": "Relay form A (SPST): Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D p.2-41, C2-14DR). Not C0-02DR-D/C0-12xRE (C2 common), C0-04TRS/C0-08TR. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "Y002",
         "b": "C3",
         "when": "output ON",
-        "note": "Relay, form A (SPST); equivalent output circuit Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-41; same layout C0-00AR-D, C0-01DR/AR-D, C0-10DRE/ARE-D, C0-11DRE/ARE-D, C2-14DR https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). 4-relay CPUs (C0-02DR-D, C0-12xRE) use C2 as the relay common and C0-04TRS/C0-08TR modules number their terminals differently; those are not covered."
+        "note": "Relay form A (SPST): Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D p.2-41, C2-14DR). Not C0-02DR-D/C0-12xRE (C2 common), C0-04TRS/C0-08TR. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "Y003",
         "b": "C3",
         "when": "output ON",
-        "note": "Relay, form A (SPST); equivalent output circuit Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-41; same layout C0-00AR-D, C0-01DR/AR-D, C0-10DRE/ARE-D, C0-11DRE/ARE-D, C2-14DR https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). 4-relay CPUs (C0-02DR-D, C0-12xRE) use C2 as the relay common and C0-04TRS/C0-08TR modules number their terminals differently; those are not covered."
+        "note": "Relay form A (SPST): Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D p.2-41, C2-14DR). Not C0-02DR-D/C0-12xRE (C2 common), C0-04TRS/C0-08TR. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "Y004",
         "b": "C3",
         "when": "output ON",
-        "note": "Relay, form A (SPST); equivalent output circuit Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-41; same layout C0-00AR-D, C0-01DR/AR-D, C0-10DRE/ARE-D, C0-11DRE/ARE-D, C2-14DR https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). 4-relay CPUs (C0-02DR-D, C0-12xRE) use C2 as the relay common and C0-04TRS/C0-08TR modules number their terminals differently; those are not covered."
+        "note": "Relay form A (SPST): Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D p.2-41, C2-14DR). Not C0-02DR-D/C0-12xRE (C2 common), C0-04TRS/C0-08TR. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "Y005",
         "b": "C4",
         "when": "output ON",
-        "note": "Relay, form A (SPST); equivalent output circuit Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-41; same layout C0-00AR-D, C0-01DR/AR-D, C0-10DRE/ARE-D, C0-11DRE/ARE-D, C2-14DR https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). 4-relay CPUs (C0-02DR-D, C0-12xRE) use C2 as the relay common and C0-04TRS/C0-08TR modules number their terminals differently; those are not covered."
+        "note": "Relay form A (SPST): Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D p.2-41, C2-14DR). Not C0-02DR-D/C0-12xRE (C2 common), C0-04TRS/C0-08TR. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       },
       {
         "a": "Y006",
         "b": "C4",
         "when": "output ON",
-        "note": "Relay, form A (SPST); equivalent output circuit Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf p.2-41; same layout C0-00AR-D, C0-01DR/AR-D, C0-10DRE/ARE-D, C0-11DRE/ARE-D, C2-14DR https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf). 4-relay CPUs (C0-02DR-D, C0-12xRE) use C2 as the relay common and C0-04TRS/C0-08TR modules number their terminals differently; those are not covered."
+        "note": "Relay form A (SPST): Y1-Y4 on C3 COM, Y5-Y6 on C4 COM (C0-00DR-D p.2-41, C2-14DR). Not C0-02DR-D/C0-12xRE (C2 common), C0-04TRS/C0-08TR. (see source) https://cdn.automationdirect.com/static/manuals/c0userm/ch2.pdf https://cdn.automationdirect.com/static/manuals/c2userm/ch2.pdf"
       }
     ],
     "indicators": [
@@ -877,7 +879,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "confirm": [
           "Check the RUN LED.",
           "Setup > System Configuration in CLICK software.",
-          "Monitor the Y bit in Data View; use the override feature to turn the Y bit ON."
+          "Monitor the Y bit in Data View; use the override feature to turn the Y bit ON. Keep everyone clear: the output will move machinery."
         ],
         "fix": [
           "Put the PLC in RUN mode.",
@@ -936,7 +938,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
           "Relay past its typical life, e.g. 50,000 operations at 30 VDC 1 A solenoid load, 200,000 at 250 VAC 1 A solenoid"
         ],
         "confirm": [
-          "With the Y LED off and load supply present, Y to its common reads close to 0 V (contact still closed) or with the LED on reads the full supply (contact not closing)."
+          "Y LED off with load supply on: Y to common near 0 V = contact stuck closed; LED on but full supply = contact not closing."
         ],
         "fix": [
           "Replace the output module (or PLC unit for built-in outputs); add suppression on inductive loads."
@@ -1139,7 +1141,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "terminals": "TC1+ to TC1- (C0-04THM)",
         "state": "thermocouple connected",
         "meter": "VDC",
-        "expected": "thermocouple millivolts (input ranges 0-39.0625 mV, +/-39.0625 mV, +/-78.125 mV, 0-156.25 mV, +/-156.25 mV, 0-1.25 V); common mode range -1.3 to +3.8 V to COM",
+        "expected": "Thermocouple mV (ranges 0-39.0625 mV, +/-39.0625 mV, +/-78.125 mV, 0-156.25 mV, +/-156.25 mV, 0-1.25 V); common mode -1.3 to +3.8 V vs COM.",
         "pins": [
           [
             "TC1+",
@@ -1568,7 +1570,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
           "Connect CLICK software and read the error in SD1 (= 101); status flag SC20 is ON."
         ],
         "fix": [
-          "Remove excessive modules (max 8). Power off and check the module connections, then power on. If the problem remains, check System Configuration in CLICK software and replace any module not shown."
+          "Max 8 modules. Power off, recheck module connections, power on. If still faulty, check CLICK System Configuration; replace any module not listed."
         ],
         "source": "https://cdn.automationdirect.com/static/manuals/c0userm/ch6.pdf (CLICK PLC Hardware User Manual C0-USER-M 6th Ed. Rev. Q, Ch. Troubleshooting, Error Codes table, p.6-11)"
       },
@@ -1583,7 +1585,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
           "Connect CLICK software and read the error in SD1 (= 102); status flag SC21 is ON."
         ],
         "fix": [
-          "In CLICK software open System Configuration; make the hardware match the project, or uncheck the 'Start-up I/O Config Check' option to use the current configuration."
+          "In CLICK System Configuration, match hardware to the project, or untick 'Start-up I/O Config Check' to accept the current setup."
         ],
         "source": "https://cdn.automationdirect.com/static/manuals/c0userm/ch6.pdf (CLICK PLC Hardware User Manual C0-USER-M 6th Ed. Rev. Q, Ch. Troubleshooting, Error Codes table, p.6-11)"
       },
@@ -2635,7 +2637,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
           "Read SD1 in CLICK software; a 104 Memory Check Error that persists after power cycle and re-download calls for a factory reset."
         ],
         "fix": [
-          "Power on with the RUN/STOP switch in STOP; within 30 s move it STOP>RUN>STOP>RUN>STOP>RUN>STOP (resets the processor only), or use the CLICK Factory Default Tool over USB, or hold the BT button 5-6 s on C2-02/C2-03 until the BT LED flashes very fast."
+          "Power up in STOP; within 30 s go STOP>RUN>STOP>RUN>STOP>RUN>STOP (CPU reset only). Or USB Factory Default Tool, or hold BT 5-6 s on C2-02/C2-03."
         ],
         "source": "https://cdn.automationdirect.com/static/manuals/c2userm/ch7.pdf (CLICK PLUS PLC Hardware User Manual C2-USER-M 1st Ed. Rev. V, Resetting to Factory Defaults, p.7-14)"
       },
@@ -2665,7 +2667,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
           "Connect CLICK software and read the error in SD1 (= 101); status flag SC20 is ON."
         ],
         "fix": [
-          "Remove excessive modules (max 8). Power off and check the module connections, then power on. If the problem remains, check System Configuration in CLICK software and replace any module not shown."
+          "Max 8 modules. Power off, recheck module connections, power on. If still faulty, check CLICK System Configuration; replace any module not listed."
         ],
         "source": "https://cdn.automationdirect.com/static/manuals/c2userm/ch7.pdf (CLICK PLUS PLC Hardware User Manual C2-USER-M 1st Ed. Rev. V, Ch. Troubleshooting, Error Codes table, p.7-16)"
       },
@@ -2680,7 +2682,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
           "Connect CLICK software and read the error in SD1 (= 102); status flag SC21 is ON."
         ],
         "fix": [
-          "In CLICK software open System Configuration; make the hardware match the project, or uncheck the 'Start-up I/O Config Check' option to use the current configuration."
+          "In CLICK System Configuration, match hardware to the project, or untick 'Start-up I/O Config Check' to accept the current setup."
         ],
         "source": "https://cdn.automationdirect.com/static/manuals/c2userm/ch7.pdf (CLICK PLUS PLC Hardware User Manual C2-USER-M 1st Ed. Rev. V, Ch. Troubleshooting, Error Codes table, p.7-16)"
       },
@@ -3673,7 +3675,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
           "Failed input circuit"
         ],
         "confirm": [
-          "Measure the input terminal to its common (e.g. X1 to C1) with the device ON: a 24 VDC input needs > 19 VDC to turn on; ~0 V means the supply, the device output or the wiring is open.",
+          "With the device ON, meter input to common (e.g. X1-C1): a 24 VDC input needs > 19 VDC. About 0 V = open supply, device output or wiring.",
           "Check that the removable terminal block is fully seated."
         ],
         "fix": [
@@ -3749,7 +3751,7 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "confirm": [
           "Check the RUN LED.",
           "Setup > System Configuration in CLICK software.",
-          "Monitor the Y bit in Data View; use the override feature to turn the Y bit ON."
+          "Monitor the Y bit in Data View; use the override feature to turn the Y bit ON. Keep everyone clear: the output will move machinery."
         ],
         "fix": [
           "Put the PLC in RUN mode.",
@@ -3800,7 +3802,8 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
             "BK",
             "BU"
           ]
-        ]
+        ],
+        "liveWork": true
       },
       {
         "terminals": "BK (out) to BU (-)",
@@ -4167,25 +4170,25 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "a": "BN",
         "b": "BK",
         "when": "target reflecting (diffuse, PNP models)",
-        "note": "https://cdn.automationdirect.com/static/specs/pe18mmc18.pdf p.tSEN-59 wiring diagrams 1-4 (pin 4 BK N.O., pin 2 WH N.C. on 4-wire models) and Switching Element Function table (diffuse models: light-on = N.O., dark-on = N.C.)"
+        "note": "p.tSEN-59 diagrams 1-4: on 4-wire models pin 4 BK = N.O., pin 2 WH = N.C. Diffuse models: light-on = N.O., dark-on = N.C. https://cdn.automationdirect.com/static/specs/pe18mmc18.pdf"
       },
       {
         "a": "BN",
         "b": "WH",
         "when": "no target (diffuse, PNP 4-wire models)",
-        "note": "https://cdn.automationdirect.com/static/specs/pe18mmc18.pdf p.tSEN-59 wiring diagrams 1-4 (pin 4 BK N.O., pin 2 WH N.C. on 4-wire models) and Switching Element Function table (diffuse models: light-on = N.O., dark-on = N.C.)"
+        "note": "p.tSEN-59 diagrams 1-4: on 4-wire models pin 4 BK = N.O., pin 2 WH = N.C. Diffuse models: light-on = N.O., dark-on = N.C. https://cdn.automationdirect.com/static/specs/pe18mmc18.pdf"
       },
       {
         "a": "BK",
         "b": "BU",
         "when": "target reflecting (diffuse, NPN models)",
-        "note": "https://cdn.automationdirect.com/static/specs/pe18mmc18.pdf p.tSEN-59 wiring diagrams 1-4 (pin 4 BK N.O., pin 2 WH N.C. on 4-wire models) and Switching Element Function table (diffuse models: light-on = N.O., dark-on = N.C.)"
+        "note": "p.tSEN-59 diagrams 1-4: on 4-wire models pin 4 BK = N.O., pin 2 WH = N.C. Diffuse models: light-on = N.O., dark-on = N.C. https://cdn.automationdirect.com/static/specs/pe18mmc18.pdf"
       },
       {
         "a": "WH",
         "b": "BU",
         "when": "no target (diffuse, NPN 4-wire models)",
-        "note": "https://cdn.automationdirect.com/static/specs/pe18mmc18.pdf p.tSEN-59 wiring diagrams 1-4 (pin 4 BK N.O., pin 2 WH N.C. on 4-wire models) and Switching Element Function table (diffuse models: light-on = N.O., dark-on = N.C.)"
+        "note": "p.tSEN-59 diagrams 1-4: on 4-wire models pin 4 BK = N.O., pin 2 WH = N.C. Diffuse models: light-on = N.O., dark-on = N.C. https://cdn.automationdirect.com/static/specs/pe18mmc18.pdf"
       }
     ],
     "indicators": [
@@ -5538,19 +5541,19 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
         "a": "BK",
         "b": "BU",
         "when": "OUT A low (ON)",
-        "note": "https://cdn.automationdirect.com/static/specs/encodertrd.pdf p.tECD-55 (TRD-SR/SHR \"A\" models: NPN open collector output, sinking; negative logic, active low; L <= 0.4 V) and p.tECD-56 wiring (Black OUT A, White OUT B, Orange OUT Z, Blue 0V)"
+        "note": "TRD-SR/SHR \"A\" (p.tECD-55): NPN open collector, sinking, active low, L <= 0.4 V. p.tECD-56: Black OUT A, White OUT B, Orange OUT Z, Blue 0V. https://cdn.automationdirect.com/static/specs/encodertrd.pdf"
       },
       {
         "a": "WH",
         "b": "BU",
         "when": "OUT B low (ON)",
-        "note": "https://cdn.automationdirect.com/static/specs/encodertrd.pdf p.tECD-55 (TRD-SR/SHR \"A\" models: NPN open collector output, sinking; negative logic, active low; L <= 0.4 V) and p.tECD-56 wiring (Black OUT A, White OUT B, Orange OUT Z, Blue 0V)"
+        "note": "TRD-SR/SHR \"A\" (p.tECD-55): NPN open collector, sinking, active low, L <= 0.4 V. p.tECD-56: Black OUT A, White OUT B, Orange OUT Z, Blue 0V. https://cdn.automationdirect.com/static/specs/encodertrd.pdf"
       },
       {
         "a": "OG",
         "b": "BU",
         "when": "OUT Z low (ON)",
-        "note": "https://cdn.automationdirect.com/static/specs/encodertrd.pdf p.tECD-55 (TRD-SR/SHR \"A\" models: NPN open collector output, sinking; negative logic, active low; L <= 0.4 V) and p.tECD-56 wiring (Black OUT A, White OUT B, Orange OUT Z, Blue 0V)"
+        "note": "TRD-SR/SHR \"A\" (p.tECD-55): NPN open collector, sinking, active low, L <= 0.4 V. p.tECD-56: Black OUT A, White OUT B, Orange OUT Z, Blue 0V. https://cdn.automationdirect.com/static/specs/encodertrd.pdf"
       }
     ],
     "indicators": [],
@@ -6172,10 +6175,10 @@ export const IO_FIELD_FAULTS: DeviceFaultProfile[] = [
           "Manual override pushed and twisted to lock"
         ],
         "confirm": [
-          "Inspect the push-button manual override."
+          "Inspect the push-button manual override. Keep everyone clear: the actuator will move."
         ],
         "fix": [
-          "Release (untwist) the manual override."
+          "Release (untwist) the manual override. Keep everyone clear: the actuator will move."
         ],
         "source": "https://cdn.automationdirect.com/static/specs/vendspecs/mindman/emvsc220.pdf (MVSC-220 series specification and technical data); https://cdn.automationdirect.com/static/manuals/mindman/mvscassembly.pdf (MVSC assembly / electrical connection sheet)"
       },

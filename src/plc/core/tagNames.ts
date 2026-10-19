@@ -9,7 +9,7 @@ import type { ExportContext, PlcProfile } from './profile';
 import { toLogix } from './profiles/logixExport';
 import { logixIoTag } from './profiles/logix';
 import { toMicro800St } from './profiles/micro800';
-import { buildScl } from './profiles/siemens';
+import { buildScl, unusedIoTags } from './profiles/siemens';
 import { buildUniLogicSt } from './profiles/unilogic';
 import { visiOperands } from './profiles/visilogic';
 
@@ -50,10 +50,15 @@ export function plcTagNames(profile: PlcProfile, program: LadderProgram, ctx: Ex
     }
     case 'siemens-s7': {
       const { st, tags } = buildScl(program, ctx);
-      const plc = new Map(tags.map((t) => [t.name, t]));
+      // By the operand behind each PLC tag: an analog channel's tag is <name>_raw, its static the scaled value.
+      const plc = new Map(tags.filter((t) => t.base).map((t) => [t.base!, t]));
       for (const v of st.variables) {
-        const io = plc.get(v.name);
+        const io = plc.get(v.base);
         addIec(out, v.base, `"Machine_DB".${v.name}`, v.type, 'Machine_DB', io?.address, { bool: 'Bool', time: 'Time', dint: 'DInt' });
+      }
+      // The wired points the program does not use yet are PLC tags of the tag table too.
+      for (const t of unusedIoTags(program, ctx, tags)) {
+        if (t.base && !out.has(t.base)) out.set(t.base, { name: `"${t.name}"`, scope: 'PLC tags', dataType: t.type, io: t.address });
       }
       break;
     }
@@ -64,7 +69,7 @@ export function plcTagNames(profile: PlcProfile, program: LadderProgram, ctx: Ex
         const t = /^T(\d+)(_ET)?$/.exec(v.base);
         if (t && v.type !== 'TON' && v.type !== 'TOF') { out.set(t[2] ? `TD${t[1]}` : v.base, { name: v.name, scope: 'Global', dataType: v.type }); continue; }
         if (/_(TON|ACC|LAST|WAS)$/.test(v.base)) continue;
-        addIec(out, v.base, v.name, v.type, 'Global', profile.ioTag?.(v.base, ctx.modules ?? []) ?? undefined, { bool: 'BOOL', time: 'TIME', dint: 'INT' });
+        addIec(out, v.base, v.name, v.type, 'Global', profile.ioTag?.(v.base, ctx.modules ?? [], ctx.cpuId) ?? undefined, { bool: 'BOOL', time: 'TIME', dint: 'INT' });
       }
       break;
     }

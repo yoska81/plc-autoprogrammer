@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { LadderProgram } from '../ladder';
+import type { LadderProgram, Rung } from '../ladder';
 import type { ExportContext, ModuleSlot } from '../profile';
 import { logixProfile, logixIoTag, logixAnalogChannels, LOGIX_CPUS } from './logix';
 import { toLogix, logixName } from './logixExport';
@@ -82,6 +82,22 @@ assert.deepEqual(validateProgram(program, logixProfile, new Set(addr.values())).
 const labels = new Map<string, string>(io.map((p) => [addr.get(p.id)!, p.description]));
 const ctx: ExportContext = { io, addresses: addr, labels, header: 'Test cell — CompactLogix 5380 5069-L310ER', extraTags: [], cpuId: cpu.id, modules, projectName: 'Test cell', now: new Date(Date.UTC(2026, 9, 16, 12, 0, 0)) };
 const lx = toLogix(program, ctx, logixIoTag);
+// Every wired I/O point is a controller tag (an alias of its terminal), used by the program or not.
+{
+  const unused = { id: 'I099', description: 'Spare door switch', type: 'input', category: 'Station 1' } as IOPoint;
+  const addr2 = new Map(addr);
+  addr2.set('I099', 'X116');
+  const t = toLogix(program, { ...ctx, io: [...io, unused], addresses: addr2, labels: new Map([...labels, ['X116', unused.description]]) }, logixIoTag).tags;
+  const tag = t.find((x) => x.name === 'Spare_door_switch');
+  assert.ok(tag && tag.aliasFor && /:I\./.test(tag.aliasFor), `unused input is an alias tag (${JSON.stringify(tag)})`);
+  for (const p of io) assert.ok(t.some((x) => x.base === addr.get(p.id)?.toUpperCase()), `${p.id} has a tag`);
+}
+// A point on a slot with no module is a plain tag (Studio 5000 refuses an alias to a module that is not configured).
+{
+  const t = toLogix(program, { ...ctx, modules: [] }, logixIoTag).tags;
+  const onEmpty = t.filter((x) => /^[XY][1-9]\d\d$/.test(x.base ?? ''));
+  assert.ok(onEmpty.length > 0 && onEmpty.every((x) => !x.aliasFor), onEmpty.map((x) => `${x.base}→${x.aliasFor}`).join(', '));
+}
 const all = lx.routines.flatMap((r) => r.rungs.map((g) => g.text));
 const has = (t: string) => assert.ok(all.includes(t), `missing rung ${t}\n${all.join('\n')}`);
 has('[XIC(Start_PB),XIC(Run_Latch)]XIO(Stop_PB)OTE(Run_Latch);'); // shared conditions behind the branch
@@ -143,7 +159,7 @@ assert.ok(map.includes('REMARK,"MOV(Local:3:I.Ch00.Data,Tank_level);"'));
 const bad: LadderProgram = { tags: [], rungs: [{ id: 'x', comment: '', branches: [[{ type: 'NO', address: 'SC19' }, { type: 'NO', address: 'X001' }]], outputs: [{ type: 'OUT', address: 'C1' }] }] };
 const msgs = validateProgram(bad, logixProfile, new Set()).map((i) => i.message).join(' | ');
 assert.match(msgs, /SC19: Logix has no equivalent/);
-assert.match(msgs, /no built-in I\/O/);
+assert.match(msgs, /no embedded I\/O/);
 
 // --- branch factoring: only plain contacts move out of a branch; a repeated one-shot or kept instruction stays in each leg
 {
@@ -156,5 +172,35 @@ assert.match(msgs, /no built-in I\/O/);
   assert.ok(t.some((x) => /^\[XIC\(C1\)OSR\(a,b\),XIC\(C2\)OSR\(a,b\)\]XIC\(C3\)OTE\(C20\);$/.test(x)), `one-shot must stay in each leg\n${t.join('\n')}`);
   assert.ok(t.some((x) => x === '[JSR(Sub,0),JSR(Sub,0)]OTE(C21);'), `repeated JSR legs must both stay\n${t.join('\n')}`);
 }
+
+// ── CompactLogix 5370 (1769): Local:<slot>:I.Data.<bit>, analog Ch<n>Data, embedded I/O on L1 / L2 ──
+{
+  const m1769 = [{ partNumber: '1769-IQ16', inputs: 16, outputs: 0 }, { partNumber: '1769-OB16', inputs: 0, outputs: 16 }, { partNumber: '1769-IF4', inputs: 0, outputs: 0, analogInputs: 4 }];
+  assert.equal(logixIoTag('X101', m1769, '1769-L33ER'), 'Local:1:I.Data.0');
+  assert.equal(logixIoTag('Y216', m1769, '1769-L33ER'), 'Local:2:O.Data.15');
+  assert.equal(logixIoTag('X001', m1769, '1769-L33ER'), null, 'an L3 has no embedded I/O');
+  const df = logixAnalogChannels(LOGIX_CPUS.find((c) => c.id === '1769-L33ER')!, m1769)[0].address;
+  assert.equal(logixIoTag(df, m1769, '1769-L33ER'), 'Local:3:I.Ch0Data');
+  // L2 with embedded discrete I/O and analog (QBFC1B): embedded in slots 1 / 2, modules after them.
+  assert.equal(logixIoTag('X003', [], '1769-L24ER-QBFC1B'), 'Local:1:I.Data.2');
+  assert.equal(logixIoTag('Y016', [], '1769-L24ER-QBFC1B'), 'Local:1:O.Data.15');
+  const l2 = LOGIX_CPUS.find((c) => c.id === '1769-L24ER-QBFC1B')!;
+  assert.equal(logixIoTag(logixAnalogChannels(l2, [])[0].address, [], l2.id), 'Local:2:I.Ch0Data');
+  assert.equal(logixIoTag('X101', [m1769[0]], l2.id), 'Local:4:I.Data.0');
+  // An L1 expands with 1734 POINT I/O: no 1769 module tags after it, only its embedded I/O.
+  assert.equal(logixIoTag('X003', [], '1769-L16ER-BB1B'), 'Local:1:I.Data.2');
+  assert.equal(logixIoTag('X101', [m1769[0]], '1769-L16ER-BB1B'), null);
+  // 5069 stays as it was.
+  assert.equal(logixIoTag('X101', modules), 'Local:1:I.Pt00.Data');
+  // Embedded I/O is allowed where the I/O list assigns it (an L2), an error where the CPU has none.
+  const rung: Rung = { id: 'r', comment: '', branches: [[{ type: 'NO', address: 'X001' }]], outputs: [{ type: 'OUT', address: 'Y001' }] };
+  assert.equal(logixProfile.checkRung!(rung, { ioAddresses: new Set(['X001', 'Y001']) }).length, 0);
+  assert.match(logixProfile.checkRung!(rung, { ioAddresses: new Set() }).map((i) => i.message).join(), /X001: this CompactLogix has no embedded I\/O/);
+}
+
+// Accented letters keep their letter: "Ölstand" → Olstand, "Straße" → Strasse (never O_lstand).
+assert.equal(logixName('Ölstand', new Set(), 'X'), 'Olstand');
+assert.equal(logixName('Straße Förderband', new Set(), 'X'), 'Strasse_Forderband');
+assert.equal(logixName('Température', new Set(), 'X'), 'Temperature');
 
 console.log('logix tests passed');

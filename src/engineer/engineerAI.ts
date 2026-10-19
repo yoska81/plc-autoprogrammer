@@ -5,6 +5,7 @@
  */
 import { callClaude } from '../lib/ai/anthropic';
 import { projectSummary } from '../review/reviewAI';
+import { approxTokens, INPUT_TOKENS } from '../lib/ai/budget';
 import type { ProjectSnapshot } from '../deliverables/collect';
 import type { Effort } from '../store/useSettingsStore';
 import type { ReviewArea, Severity } from '../review/types';
@@ -47,7 +48,10 @@ Rules:
 - explanation: plain English, 2-4 sentences; fix: specific enough to do. 3-15 findings is typical. summary: 2-3 sentences.`;
 
 export async function runEngineerAI(opts: { apiKey: string; model: string; effort: Effort; signal?: AbortSignal }, p: ProjectSnapshot, rules: EngineerFinding[]): Promise<{ summary: string; findings: EngineerFinding[] }> {
-  const r = await callClaude({ ...opts, system: SYSTEM, schema: SCHEMA, messages: [{ role: 'user', content: projectSummary(p, rules) }] });
+  // The electrical review needs the program's outline only when the whole listing is too big for one request.
+  const whole = projectSummary(p, rules);
+  const content = approxTokens(whole) <= INPUT_TOKENS ? whole : projectSummary(p, rules, { outline: true });
+  const r = await callClaude({ ...opts, system: SYSTEM, schema: SCHEMA, messages: [{ role: 'user', content }] });
   let parsed: { summary: string; findings: { severity: Severity; area: ReviewArea; topic: string; title: string; explanation: string; fix: string; tag: string; replaceWith: string }[] };
   try { parsed = JSON.parse(r.text); } catch (err) { throw new Error('The engineer review returned an answer the app could not read. Please try again.', { cause: err }); }
   const ref = p.drawingCtx ? drawingRefs(p.drawingCtx) : () => '';

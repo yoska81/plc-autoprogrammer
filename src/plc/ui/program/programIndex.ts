@@ -23,8 +23,13 @@ const isConst = (a: string) => /^[-+]?(\d+(\.\d*)?|\.\d+)$/.test(a.trim());
 const norm = (a: string) => a.trim().toUpperCase();
 const mathVars = (expr: string) => expr.toUpperCase().match(/[A-Z]+\d+/g)?.filter((a) => a !== 'MOD') ?? [];
 
+const blockIds = new WeakMap<LadderProgram, Set<string>>();
+
 export function blockOf(program: LadderProgram, r: Rung): string {
-  return r.block && (program.blocks ?? []).some((b) => b.id === r.block) ? r.block : GENERAL;
+  // the program's block ids, once per program (called for every rung of programs with thousands of blocks)
+  let ids = blockIds.get(program);
+  if (!ids) { ids = new Set((program.blocks ?? []).map((b) => b.id)); blockIds.set(program, ids); }
+  return r.block && ids.has(r.block) ? r.block : GENERAL;
 }
 
 /** Every address use in one rung. */
@@ -95,8 +100,9 @@ export function issueStatus(program: LadderProgram, issues: ValidationIssue[]) {
     if (sev === 'error') s.errors++; else s.warnings++;
     m.set(k, s);
   };
+  const rungById = new Map(program.rungs.map((r) => [r.id, r]));
   for (const i of issues) {
-    const r = i.rungId ? program.rungs.find((x) => x.id === i.rungId) : undefined;
+    const r = i.rungId ? rungById.get(i.rungId) : undefined;
     if (!r) continue;
     bump(byRung, r.id, i.severity);
     bump(byBlock, blockOf(program, r), i.severity);

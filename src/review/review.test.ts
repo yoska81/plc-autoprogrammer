@@ -18,6 +18,9 @@ import { openCounts } from './useReviewStore';
 import { designReviewTable } from '../deliverables/docs/manual';
 import { pageRoute } from './types';
 import { specMotorRatings } from './checks';
+
+/** The I/O point on an address: findings about a point are keyed by its id (stable across a brand switch). */
+const idAt = (a: string) => [...collectProject().addresses].find(([, v]) => v === a)?.[0] ?? `none-${a}`;
 import type { LadderProgram } from '../plc/core/ladder';
 
 // The stores persist to localStorage, which node doesn't have: silence the warnings.
@@ -60,10 +63,11 @@ test('broken variant: every cross-stage problem is found', () => {
     ...['Horn', 'Valve A', 'Valve B', 'Valve C', 'Valve D'].map((d) => ({ description: d, type: 'output' as const, category: 'Pneumatic' as const })),
   ], false);
   const got = ids();
-  for (const id of ['out-unsafe:Y001', 'out-undriven:Y002', 'alm-noreset:C1101', 'hmi-unwritten:C1203', 'in-unused:X007', 'io-spec:', 'cap:outputs', 'stale:program']) {
+  for (const id of [`out-unsafe:${idAt('Y001')}`, `out-undriven:${idAt('Y002')}`, 'alm-noreset:C1101', 'hmi-unwritten:C1203', `in-unused:${idAt('X007')}`, 'io-spec:', 'cap:outputs', 'stale:program']) {
     assert.ok(got.some((g) => g.startsWith(id)), `expected ${id} in ${got.join(', ')}`);
   }
-  const unsafe = check().find((f) => f.id === 'out-unsafe:Y001')!;
+  const unsafe = check().find((f) => f.id === `out-unsafe:${idAt('Y001')}`)!;
+  assert.equal(unsafe.legacyId, 'out-unsafe:Y001', 'the old id, so a saved mark moves over');
   assert.equal(unsafe.severity, 'critical');
   assert.equal(unsafe.page, 'program');
 });
@@ -111,12 +115,24 @@ test('construction guard: open criticals block, override marks them accepted', (
   broken.rungs.find((r) => r.id === 'r_y1')!.branches = [[{ type: 'NO', address: 'X002' }]];
   useProgramStore.setState({ ladder: broken });
   const open = openCriticalFindings();
-  assert.deepEqual(open.map((f) => f.id), ['out-unsafe:Y001']);
+  assert.deepEqual(open.map((f) => f.id), [`out-unsafe:${idAt('Y001')}`]);
   assert.equal(openCounts(useReviewStore.getState()).critical, 1, 'badge count');
   acceptCriticalForConstruction(open, 'B', 'Interlock added in hardware, program fix in rev C');
   assert.equal(openCriticalFindings().length, 0);
-  assert.match(useReviewStore.getState().marks['out-unsafe:Y001'].reason, /rev B.*Interlock added/);
+  assert.match(useReviewStore.getState().marks[`out-unsafe:${idAt('Y001')}`].reason, /rev B.*Interlock added/);
   assert.equal(openCounts(useReviewStore.getState()).critical, 0);
+});
+
+test('a mark saved under the old address id moves to the I/O id', () => {
+  seedSampleProject();
+  useReviewStore.setState({ ...useReviewStore.getInitialState(), marks: { 'out-unsafe:Y001': { status: 'ignored', reason: 'Hard-wired interlock', at: '2026-10-01T00:00:00.000Z' } } });
+  const broken: LadderProgram = structuredClone(LADDER);
+  broken.rungs.find((r) => r.id === 'r_y1')!.branches = [[{ type: 'NO', address: 'X002' }]];
+  useProgramStore.setState({ ladder: broken });
+  assert.equal(openCriticalFindings().length, 0, 'the old mark still covers the finding');
+  const { marks } = useReviewStore.getState();
+  assert.equal(marks[`out-unsafe:${idAt('Y001')}`]?.reason, 'Hard-wired interlock');
+  assert.equal(marks['out-unsafe:Y001'], undefined);
 });
 
 test('engineer rule checks are part of the design review (one set of counts)', () => {
@@ -226,6 +242,50 @@ test('no safety reset is reported once (code rule), not again as a design warnin
   el.setDesign({ ...d, components: d.components.filter((c) => c.tag !== resetTag) }, 'generated', null);
   const reset = check().filter((f) => /no reset pushbutton/i.test(f.title));
   assert.equal(reset.length, 1, JSON.stringify(reset.map((f) => f.id)));
+});
+
+test('motion: a pulse-train axis on a CLICK C0 is a critical finding with what would fit; none on a CLICK PLUS', () => {
+  const snap = collectProject();
+  const axis = [['Axis 1 servo pulse', 'output'], ['Axis 1 servo direction', 'output'], ['Axis 1 servo ready', 'input']].map(([description, type], i) => ({ id: `ax${i}`, description, type: type as 'input' | 'output', category: 'Servo/Axis' as const }));
+  const c0 = checksFor({ ...snap, io: [...snap.io, ...axis], cpu: { ...snap.cpu, id: 'C0-11DD2E-D' } }).filter((f) => f.id === 'motion:fit');
+  assert.equal(c0.length, 1);
+  assert.equal(c0[0].severity, 'critical');
+  assert.match(c0[0].detail, /no pulse-train \(PTO\) outputs/);
+  assert.match(c0[0].fix, /CLICK PLUS/);
+  const plus = checksFor({ ...snap, io: [...snap.io, ...axis], cpu: { ...snap.cpu, id: 'C2-03CPU' } });
+  assert.ok(!plus.some((f) => f.id === 'motion:fit') && plus.some((f) => f.id.startsWith('motion:note')), 'CLICK PLUS fits, with the slot-0 set-up note');
+  assert.ok(!check().some((f) => f.id.startsWith('motion:')), 'no motion: no finding');
+});
+
+test('S7 project: findings name the I/O terminal with its Siemens address', () => {
+  seedSampleProject();
+  useProjectStore.setState({ plcId: 'siemens-s7', cpuId: '6ES7214-1AG40-0XB0', modules: [] });
+  // An input the program does not read: the finding names it as "X00n (%I0.m)".
+  const io = useIOStore.getState();
+  io.importPoints([{ description: 'Spare door switch', type: 'input', category: 'Station 1' }], false);
+  const f = checksFor(collectProject());
+  const unused = f.find((x) => /Spare door switch/.test(x.title));
+  assert.ok(unused && /\bX0\d\d \(%I\d+\.\d\)/.test(unused.title), unused?.title);
+  assert.ok(f.every((x) => !/\b[XY]\d{3}\b(?!\s*\()/.test(`${x.title} ${x.detail} ${x.fix}`)), 'every terminal has its Siemens address next to it');
+  seedSampleProject();
+  const click = checksFor(collectProject());
+  assert.ok(click.every((x) => !/%[IQ]\d/.test(x.title)), 'CLICK findings unchanged');
+});
+
+test('S7 project: the AI review\'s findings name the I/O terminal too; an old-id mark shows in the deliverables', () => {
+  seedSampleProject();
+  useProjectStore.setState({ plcId: 'siemens-s7', cpuId: '6ES7214-1AG40-0XB0', modules: [] });
+  useReviewStore.setState(useReviewStore.getInitialState());
+  useReviewStore.getState().setAi({ summary: 's', findings: [{ id: 'ai:x', source: 'ai', severity: 'major', area: 'program', title: 'Input X001 is not debounced', detail: 'X001 chatters.', fix: 'Filter X001.', page: 'program', item: '' }] });
+  const row = reviewRows(collectProject()).find((r) => r.source === 'AI review')!;
+  assert.match(row.title, /^Input X001 \(%I0\.0\) is not debounced$/, row.title);
+  // A mark under the old address id still shows before the next check run moves it.
+  const broken: LadderProgram = structuredClone(LADDER);
+  broken.rungs.find((r) => r.id === 'r_y1')!.branches = [[{ type: 'NO', address: 'X002' }]];
+  useProgramStore.setState({ ladder: broken });
+  useReviewStore.setState({ marks: { 'out-unsafe:Y001': { status: 'ignored', reason: 'Hard-wired interlock', at: '2026-10-01T00:00:00.000Z' } } });
+  const unsafe = reviewRows(collectProject()).find((r) => /not gated by Safety OK/.test(r.title))!;
+  assert.deepEqual([unsafe.status, unsafe.reason], ['ignored', 'Hard-wired interlock']);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

@@ -10,7 +10,7 @@ export type CatalogCategory =
   | 'contactor' | 'overload' | 'motorProtector' | 'vfd'
   | 'relay' | 'safetyRelay' | 'terminal' | 'terminalAccessory'
   | 'pushbutton' | 'estop' | 'pilotLight' | 'selector' | 'stackLight'
-  | 'plc' | 'plcModule' | 'hmi' | 'sensor' | 'solenoidValve'
+  | 'plc' | 'plcModule' | 'commModule' | 'hmi' | 'sensor' | 'solenoidValve'
   | 'dinRail' | 'wireDuct' | 'groundBar' | 'fan' | 'other'
   | 'servoDrive' | 'servoMotor' | 'encoder';
 
@@ -66,6 +66,8 @@ export interface DesignInputs {
   /** Control circuits kept as relay logic (a converted machine, "keep relay logic with NA parts"): drawn as NFPA 79
    * ladder sheets instead of PLC I/O sheets. Written by the converter (src/convert), read by the engine and drawings. */
   relayLogic?: RelayLogic;
+  /** The motor list's fromDesign marks are set (the engine writes this; absent on inputs saved before the marks). */
+  motorsMarked?: boolean;
 }
 
 /** Relay control logic: rungs between the control rails, in drawing order. */
@@ -73,6 +75,16 @@ export interface RelayLogic {
   /** Control rails: 24+ / 0V, or X1 / X2 from a control transformer (120 VAC). */
   supply: '24VDC' | '120VAC';
   rungs: RelayRung[];
+  /** Every tag used in the rungs with its North-American part (from the conversion); partNumber null = to select. */
+  devices?: RelayDevice[];
+}
+
+export interface RelayDevice {
+  tag: string;
+  category: string;
+  description: string;
+  partNumber: string | null;
+  manufacturer?: string | null;
 }
 
 /** One rung from the left rail to the right rail. */
@@ -137,6 +149,9 @@ export interface MotorSpec {
   voltage: SupplyVoltage;
   starter: StarterType;
   reversing: boolean;
+  /** The engine read this motor from the description / I/O list (not typed or edited by the designer): a later
+   * design for a machine that no longer has it drops it without a note. */
+  fromDesign?: boolean;
 }
 
 /** One placed component in the design (BOM line + drawing symbol). */
@@ -218,6 +233,12 @@ export interface ElectricalDesign {
   /** How the enclosure was chosen (absent on older designs). */
   enclosureChoice?: EnclosureChoice;
   /** Documented from an existing cabinet (src/convert/photos): the DIN rails top to bottom, each the device tags left to right. */
-  asBuilt?: { source: 'photos'; rails: string[][]; /** Wires traced by their numbers: each wire's ends ("K1:A1", "TB1:3"). */ wires?: { wire: string; ends: string[] }[] };
+  asBuilt?: {
+    source: 'photos'; rails: string[][];
+    /** Wires traced by their numbers: each wire's ends ("K1:A1", "TB1:3"). */
+    wires?: { wire: string; ends: string[] }[];
+    /** Wire numbers read at one place only (the other end is not in the photos). */
+    single?: { wire: string; at: string }[];
+  };
   generatedAt: string;
 }

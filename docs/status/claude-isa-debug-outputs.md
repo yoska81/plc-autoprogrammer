@@ -565,3 +565,55 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - engine.test: unique two-hand tags; one signal wire per field-device terminal; trunk core = device-cable core on every JB terminal;
   - analog.test: THM / current / transmitter cases;
   - review.test: 0-10 V with only a THM.
+
+## Analog channels by signal family; NPN commons (PR #92, on integration f8f47f7)
+- The relay ladder sheets were reviewed separately (changes needed) and are kept off #92; they follow once reworked.
+- **Analog channels:**
+  - Only a 'thermocouple' range uses a thermocouple channel.
+  - `acceptsRange`: current only on a mA channel, voltage only on a V channel.
+  - Module fit (`Need.analogRanges`, all brands) adds the module that takes the missing family: SM 1231 on a 1212C, C0-04AD-1 / C0-04THM on CLICK.
+  - A generated or imported bare thermocouple gets the 'thermocouple' range.
+  - Check-all variant: `rules-sealing-thm`, the user's Sealing Head as built. Its thermocouple lands on C0-04THM CH1.
+- **NPN commons:**
+  - A group with NPN sensors has its common on +24V, so its dry contacts are wired to switch 0V into the input (`IoPoint.supplyWire`). This covers pushbuttons, limit and pressure switches, the safety relay status contact and the VFD fault relay. Before, they were fed +24V and could never turn ON.
+  - The change reaches strip terminals, the wire list, JB terminals and cables, and the I/O sheet (fed from the 0V rail).
+  - A design warning names those contacts.
+  - check_consistency fails when an input can never turn ON (proved: with the old feed it fails X101 / X102 / X105 / X106).
+  - Check-all variant: `rules-sealing-npn`.
+
+## Relay ladder sheets; one pin = one wire number; drive inputs; wire list vs cables; QA A–Z (on integration 0e7b78c)
+- **Relay ladder sheets** (reworked after the #92 review):
+  - one terminal = one net;
+  - terminals only as read ("?" plus a question otherwise);
+  - every coil drawn, with a placeholder rung for one the reading missed;
+  - drive inputs from the drive's common;
+  - wrapped lines;
+  - xref per element;
+  - the ladder's devices are added as parts.
+  - Check-all variant: `rules-relay` (the roll former's 22 circuits).
+- **Input feeds:**
+  - every input's feed terminal is recorded as wired (`IoPoint.feedTo`);
+  - E-stop and N.C. pushbutton inputs go through an N.C. contact (ES1D third block).
+- **Safety: TAH1:R1** carried 24+S in and K1A1 out on the same pin, so the over-temperature limit never broke the heater contactor coil. Now 24+S → TAH1:R1A and R1B → K:A1.
+- **One device pin, one wire number:** new check_consistency rule, plus an engine.test over every scenario. Other pins it found, all fixed:
+  - STK1:A1: one pin per colour plus COM;
+  - K1/K2 61-62, EDM vs interlock: the interlock is on 71-72, with a 2NO+2NC block warning;
+  - OL1:96 on a shared reversing overload: one net when sinking; coil return via 95-96 when sourcing;
+  - PLC:0V vs DFn-: the analog minus on 0V is numbered 0V;
+  - SR1:14, ladder vs engine: the ladder is built around the panel's occupied pins.
+- **Drive inputs are never motors or contactors:**
+  - "U2 DI1 SON" and "U2 DI7 CAM" were invented 1 HP motors; "U1 MI3 jog" got contactor K2.
+  - A drive input on a named drive is wired to that drive's own terminal (U2:DI7, or VFD1:DI3 when U1 is the only VFD).
+  - "SON" is still read as a servo axis by motion.ts (Dev 2's).
+- **Wire list vs cable schedule:**
+  - the JB trunk carried each wire number once, so SOL1's 0V from TB3-2 rode TB2-9's core;
+  - fix: one core per (wire, cabinet terminal);
+  - new check_consistency rule, checked both ways.
+- **QA A–Z:**
+  - Excel wraps long text: BOM, Wire List, Cable Schedule, HMI Tags, Order list, spares;
+  - the BOM sheet wraps instead of shrinking to 4.6 pt;
+  - STO is described per drive, wired or jumpered;
+  - unaddressed points are named, with the reason for analog ones;
+  - the analog sheet title matches the signals, and the shield wire is numbered;
+  - the commissioning checklist is always in the ZIP;
+  - the printPdf frame is removed.

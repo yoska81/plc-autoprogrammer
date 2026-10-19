@@ -4,10 +4,8 @@ import { listSavedWork, restoreAsNewProject, useProjectsStore, type SavedWork } 
 import { useProgramStore } from '../store/useProgramStore';
 import { useSpecStore } from '../store/useSpecStore';
 import { LADDER, SPEC } from '../preview/sampleProject';
-import { deepScan, type Piece } from './recoverScan';
+import { deepScan, groupPieces, type Piece } from './recoverScan';
 
-const th = 'text-left font-medium text-steel-500 px-3 py-1.5 border-b border-steel-200 bg-steel-50';
-const td = 'px-3 py-1.5 border-b border-steel-100 align-top';
 
 /**
  * Every copy of a project saved in this browser (project copies and automatic
@@ -30,7 +28,7 @@ export default function RecoverWork() {
   const startFrom = (pc: Piece) => {
     const name = `Recovered ${pc.kind === 'program' ? 'program' : 'project'} ${new Date().toLocaleDateString()}`;
     if (!useProjectsStore.getState().createProject(name)) return;
-    if (pc.program) useProgramStore.getState().setGeneratedLadder(pc.program, 'Recovered from the browser (' + pc.title + ').', null);
+    if (pc.program) useProgramStore.getState().setGeneratedLadder(pc.program, 'Recovered from the browser (' + pc.title + ').', null, 'user');
     const spec = useSpecStore.getState();
     const note = pc.kind === 'program' ? `Recovered PLC program, rung by rung:\n${pc.text}` : pc.text;
     spec.setSections({ ...spec.sections, overview: `${spec.sections.overview ? spec.sections.overview + '\n\n' : ''}${note}` });
@@ -47,10 +45,30 @@ export default function RecoverWork() {
     }
   };
 
+  // Pieces grouped by project (where they were found), newest first; per project the program history
+  // beyond the latest versions folds away (it is mostly near-duplicate versions).
+  const groups = groupPieces(pieces);
+  const shownPiece = (pc: Piece) => (
+    <li key={pc.id} className="px-3 py-2" data-piece="">
+      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2 items-start">
+        <button onClick={() => setOpenPiece(openPiece === pc.id ? null : pc.id)} className="min-w-0 text-left" aria-expanded={openPiece === pc.id} title={pc.title}>
+          <span className="font-medium text-steel-900 break-words line-clamp-2">{pc.title}</span>
+          {pc.when && <span className="block text-xs text-steel-500">{new Date(pc.when).toLocaleString()}</span>}
+          <span className="text-xs text-steel-500 break-words line-clamp-2" title={previewLine(pc.text)}>{previewLine(pc.text)}</span>
+        </button>
+        <div className={ACTIONS}>
+          <button onClick={() => copy(pc.text)} className="px-2 py-1 text-xs border border-steel-300 rounded-sm hover:bg-steel-50">Copy</button>
+          <button onClick={() => startFrom(pc)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 whitespace-nowrap">Start a new project from this</button>
+        </div>
+      </div>
+      {openPiece === pc.id && <pre className="mt-2 p-2 bg-steel-50 border border-steel-200 text-xs whitespace-pre-wrap break-words max-h-72 overflow-auto">{pc.text}</pre>}
+    </li>
+  );
+
   return (
-    <div className="space-y-4">
-    <section className="bg-white border border-steel-200">
-      <div className="h-8 px-3 flex items-center justify-between bg-[#e9edef] border-b border-steel-200">
+    <div className="space-y-4 min-w-0">
+    <section className="bg-white border border-steel-200 min-w-0">
+      <div className="min-h-8 px-3 py-1 flex flex-wrap items-center justify-between gap-2 bg-[#e9edef] border-b border-steel-200">
         <h4 className="text-xs font-semibold text-steel-700">Pieces of your work found in this browser ({pieces.length})</h4>
         <button onClick={() => setPieces(deepScan({ ladder: LADDER, spec: SPEC as unknown as Record<string, string> }))} className="text-xs text-brand-800 hover:underline">Search again</button>
       </div>
@@ -60,26 +78,26 @@ export default function RecoverWork() {
         Projects are stored in the browser you worked in — if you used another computer or the Claude app instead of the website, look there too.
       </p>
       {!pieces.length ? <p className="px-3 pb-3 text-steel-500">Nothing besides the example was found in this browser.</p> : (
-        <ul className="divide-y divide-steel-100 border-t border-steel-100">
-          {pieces.map((pc) => (
-            <li key={pc.id} className="px-3 py-2">
-              <div className="flex items-center gap-3">
-                <button onClick={() => setOpenPiece(openPiece === pc.id ? null : pc.id)} className="flex-1 text-left">
-                  <span className="font-medium text-steel-900">{pc.title}</span>
-                  <span className="text-xs text-steel-500"> · {pc.where}{pc.when ? ` · ${new Date(pc.when).toLocaleString()}` : ''}</span>
-                  <span className="block text-xs text-steel-500 truncate">{previewLine(pc.text)}</span>
-                </button>
-                <button onClick={() => copy(pc.text)} className="px-2 py-1 text-xs border border-steel-300 rounded-sm hover:bg-steel-50">Copy</button>
-                <button onClick={() => startFrom(pc)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 whitespace-nowrap">Start a new project from this</button>
-              </div>
-              {openPiece === pc.id && <pre className="mt-2 p-2 bg-steel-50 border border-steel-200 text-xs whitespace-pre-wrap max-h-72 overflow-auto">{pc.text}</pre>}
-            </li>
+        <div className="border-t border-steel-100">
+          {groups.map((g) => (
+            <div key={g.where} data-piece-group="">
+              <h5 className="px-3 py-1.5 text-xs font-semibold text-steel-700 bg-steel-50 border-b border-steel-100 break-words">
+                {g.where}{g.latest ? <span className="font-normal text-steel-500"> · last saved {new Date(g.latest).toLocaleDateString()}</span> : null}
+              </h5>
+              <ul className="divide-y divide-steel-100">{g.shown.map(shownPiece)}</ul>
+              {g.older.length > 0 && (
+                <details className="border-t border-steel-100">
+                  <summary className="px-3 py-1.5 text-xs text-brand-800 cursor-pointer hover:underline">{g.older.length} older program version{g.older.length === 1 ? '' : 's'}</summary>
+                  <ul className="divide-y divide-steel-100">{g.older.map(shownPiece)}</ul>
+                </details>
+              )}
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </section>
-    <section className="bg-white border border-steel-200">
-      <div className="h-8 px-3 flex items-center justify-between bg-[#e9edef] border-b border-steel-200">
+    <section className="bg-white border border-steel-200 min-w-0">
+      <div className="min-h-8 px-3 py-1 flex flex-wrap items-center justify-between gap-2 bg-[#e9edef] border-b border-steel-200">
         <h4 className="text-xs font-semibold text-steel-700">Recover saved work ({items.length})</h4>
         <button onClick={() => setItems(listSavedWork())} className="text-xs text-brand-800 hover:underline">Refresh</button>
       </div>
@@ -92,29 +110,29 @@ export default function RecoverWork() {
       {!items.length ? (
         <p className="px-3 pb-3 text-steel-500">Nothing saved yet.</p>
       ) : (
-        <table className="w-full">
-          <thead><tr>{['Project', 'Saved', 'Contents', ''].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
-          <tbody>
-            {items.map((w) => (
-              <tr key={w.key}>
-                <td className={td}>
-                  <div className="font-medium text-steel-900">{w.name}</div>
-                  <div className="text-xs text-steel-500">{w.kind === 'backup' ? 'Automatic backup' : 'Project copy'}{w.reason ? ` · ${w.reason}` : ''}</div>
-                </td>
-                <td className={`${td} whitespace-nowrap text-xs text-steel-600`}>{w.at ? new Date(w.at).toLocaleString() : 'when last switched'}</td>
-                <td className={`${td} text-xs text-steel-600`}>
-                  {w.io} I/O · {w.rungs} rungs
-                  {w.spec && <div className="text-steel-500 italic truncate max-w-md" title={w.spec}>“{w.spec}”</div>}
-                </td>
-                <td className={`${td} text-right`}>
+        <ul className="divide-y divide-steel-100 border-t border-steel-100">
+          {items.map((w) => (
+            <li key={w.key} className="px-3 py-2" data-saved-work="">
+              <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2 items-start">
+                <div className="min-w-0">
+                  <div className="font-medium text-steel-900 break-words line-clamp-2" title={w.name}>{w.name}</div>
+                  <div className="text-xs text-steel-500 break-words">
+                    {w.kind === 'backup' ? 'Automatic backup' : 'Project copy'}{w.reason ? ` · ${w.reason}` : ''} · {w.at ? new Date(w.at).toLocaleString() : 'when last switched'} · {w.io} I/O · {w.rungs} rungs
+                  </div>
+                  {w.spec && <div className="text-xs text-steel-500 italic break-words line-clamp-2" title={w.spec}>“{w.spec}”</div>}
+                </div>
+                <div className={ACTIONS}>
                   <button onClick={() => restore(w)} className="px-3 py-1 text-xs font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 whitespace-nowrap">Open as new project</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
     </div>
   );
 }
+
+/** The action buttons of every row: one right-hand column of the same width on wide screens, under the text on phones. */
+const ACTIONS = 'flex flex-wrap gap-2 sm:justify-end sm:w-72';

@@ -1,3 +1,4 @@
+import { useProjectPanelPart } from '../../hmi/projectPanel';
 import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useElectricalStore } from '../../store/useElectricalStore';
@@ -105,7 +106,7 @@ function useBaseInput(): BaseInput {
   const modules = useProjectStore((s) => s.modules);
   const region = useProjectStore((s) => s.info.region);
   const pref = useVendorPreference();
-  const hmiPartNumber = useHmiStore((s) => s.design?.hmiPartNumber || s.hmiPartNumber || null);
+  const hmiPartNumber = useProjectPanelPart();
   const projectName = useProgramStore((s) => s.projectName);
   const fp = useFingerprints();
   return useMemo(() => ({
@@ -145,13 +146,14 @@ function WhatIfCard({ ctx }: { ctx: DrawingContext }) {
     if (c.plc) {
       // Addresses typed for the old PLC do not carry over.
       for (const p of useIOStore.getState().projectIO) if (p.plcAddress) useIOStore.getState().setPlcAddress(p.id, '');
-      applyEquipment({ cpuId: c.plc.cpuId, modules: c.plc.modules, hmiPartNumber: useHmiStore.getState().hmiPartNumber || null }, useProjectStore.getState().recommendation);
+      const warn = applyEquipment({ cpuId: c.plc.cpuId, modules: c.plc.modules, hmiPartNumber: useHmiStore.getState().hmiPartNumber || null }, useProjectStore.getState().recommendation);
+      if (warn) alert(warn);
     }
     if (c.pref) useProjectStore.getState().setInfo({ vendors: c.pref });
     const d = r.ctx.design;
     useElectricalStore.getState().setInputs({ ...d.inputs, requiredParts: c.plc ? useElectricalStore.getState().inputs.requiredParts : el.inputs.requiredParts });
     useElectricalStore.getState().setDesign(d, 'generated', `Option applied from "Compare options": ${o.label}.`);
-    useStageStore.getState().markGenerated('electrical', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp });
+    useStageStore.getState().markGenerated('electrical', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, panel: useHmiStore.getState().hmiPartNumber || undefined });
     setRes(null);
     setPicked([]);
     notify(`Applied: ${o.label}.${c.plc ? ' The PLC program and the HMI now need updating for the new PLC.' : ''}`);

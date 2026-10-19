@@ -1,9 +1,10 @@
-import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import { useNoTouchPanel, useProjectPanelPart } from './hmi/projectPanel';
+import { useNarrow } from './components/useNarrow';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   DocumentPlusIcon, ArrowUpTrayIcon, PlayIcon, ArrowDownTrayIcon, Cog6ToothIcon,
-  FolderOpenIcon, ArrowDownOnSquareIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, DocumentIcon, InformationCircleIcon,
+  FolderOpenIcon, ArrowDownOnSquareIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, DocumentIcon, InformationCircleIcon, Bars3Icon,
 } from '@heroicons/react/24/outline';
 import { IS_PREVIEW } from './preview/mode';
 import { useAutoReview } from './review/useAutoReview';
@@ -43,9 +44,9 @@ function Menu({ label, children }: { label: string; children: ReactNode }) {
   }, [open]);
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen((v) => !v)} className={`px-2.5 py-0.5 rounded-sm ${open ? 'bg-brand-100' : 'hover:bg-steel-200'}`}>{label}</button>
+      <button onClick={() => setOpen((v) => !v)} className={`px-2.5 py-0.5 rounded-md text-steel-100 after:content-[''] after:inline-block after:w-[5px] after:h-[5px] after:ml-2 after:mb-[3px] after:border-r-[1.5px] after:border-b-[1.5px] after:border-steel-300 after:rotate-45 ${open ? 'bg-white/15' : 'hover:bg-white/10'}`}>{label}</button>
       {open && (
-        <div onClick={() => setOpen(false)} className="absolute left-0 top-full mt-0.5 z-50 min-w-56 bg-white border border-steel-300 shadow-lg py-1">
+        <div onClick={() => setOpen(false)} className="absolute left-0 top-full mt-1 z-50 min-w-56 bg-white text-steel-900 border border-steel-200 rounded-lg shadow-lg py-1">
           {children}
         </div>
       )}
@@ -57,10 +58,12 @@ function MenuItem({ onClick, children }: { onClick: () => void; children: ReactN
   return <button onClick={onClick} className="w-full text-left px-4 py-1.5 hover:bg-brand-50 hover:text-brand-800">{children}</button>;
 }
 
-function ToolButton({ title, onClick, children }: { title: string; onClick: () => void; children: ReactNode }) {
+function ToolButton({ title, onClick, children, ...aria }: {
+  title: string; onClick: () => void; children: ReactNode; ref?: Ref<HTMLButtonElement>; 'aria-expanded'?: boolean; 'aria-controls'?: string;
+}) {
   return (
-    <button title={title} aria-label={title} onClick={onClick}
-      className="w-8 h-8 flex items-center justify-center rounded-sm text-steel-700 hover:bg-brand-50 hover:text-brand-800 border border-transparent hover:border-brand-200">
+    <button title={title} aria-label={title} onClick={onClick} {...aria}
+      className="w-8 h-8 flex items-center justify-center rounded-md text-white bg-white/5 border border-white/20 hover:bg-white/15 hover:border-white/40">
       {children}
     </button>
   );
@@ -77,7 +80,7 @@ function TreeItem({ node, depth, stages }: { node: TreeNode; depth: number; stag
       <span className="w-3.5 flex-shrink-0" onClick={(e) => { if (hasChildren) { e.preventDefault(); e.stopPropagation(); setOpen((v) => !v); } }}>
         {hasChildren && (open ? <ChevronDownIcon className="w-3.5 h-3.5" /> : <ChevronRightIcon className="w-3.5 h-3.5" />)}
       </span>
-      {hasChildren ? <FolderIcon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-white' : 'text-steel-500'}`} /> : <DocumentIcon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-white' : 'text-steel-400'}`} />}
+      {hasChildren ? <FolderIcon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-white' : 'text-steel-300'}`} /> : <DocumentIcon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-white' : 'text-steel-400'}`} />}
       <span className={`truncate ${node.mono ? 'font-mono text-xs' : ''}`}>{node.label}</span>
       {node.questions ? <span className="flex-shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900" title={`${node.questions} open question${node.questions === 1 ? '' : 's'}`} aria-label={`${node.questions} open questions`}>{node.questions}?</span> : null}
       {node.badge}
@@ -88,9 +91,9 @@ function TreeItem({ node, depth, stages }: { node: TreeNode; depth: number; stag
     <li>
       {node.to ? (
         <NavLink to={node.to} style={{ paddingLeft: 8 + depth * 14 }}
-          className={`block pr-2 py-[3px] ${active ? 'bg-brand-600 text-white' : 'text-steel-800 hover:bg-brand-50'}`}>{row}</NavLink>
+          className={`block pr-2 py-[3px] rounded-r ${active ? 'bg-white/10 text-white shadow-[inset_3px_0_0_#e53935]' : 'text-steel-100 hover:bg-white/5'}`}>{row}</NavLink>
       ) : (
-        <div style={{ paddingLeft: 8 + depth * 14 }} className="pr-2 py-[3px] text-steel-600 cursor-default" onClick={() => setOpen((v) => !v)}>{row}</div>
+        <div style={{ paddingLeft: 8 + depth * 14 }} className="pr-2 py-[3px] text-steel-200 cursor-default" onClick={() => setOpen((v) => !v)}>{row}</div>
       )}
       {hasChildren && open && <ul>{node.children!.map((c) => <TreeItem key={c.label + (c.to ?? '')} node={c} depth={depth + 1} stages={stages} />)}</ul>}
     </li>
@@ -107,6 +110,25 @@ export default function App() {
   const noHmi = useNoTouchPanel();
   const rev = currentRevision(useProjectStore((s) => s.info));
   useEffect(() => { ensureActive(); }, [ensureActive]);
+  // Phones: the project navigation folds behind a toolbar button and opens over the page.
+  const narrow = useNarrow();
+  // Open for the page it was opened on: going to another page closes it.
+  const location = useLocation();
+  const here = `${location.pathname}${location.search}`;
+  const [navOpenOn, setNavOpenOn] = useState<string | null>(null);
+  const navOpen = narrow && navOpenOn === here;
+  const navToggle = useRef<HTMLButtonElement>(null);
+  const navDrawer = useRef<HTMLDivElement>(null);
+  /** Close the drawer and give the focus back to its toggle. */
+  const closeNav = () => { setNavOpenOn(null); navToggle.current?.focus(); };
+  // Open: focus into the drawer; Esc closes it.
+  useEffect(() => {
+    if (!navOpen) return;
+    navDrawer.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setNavOpenOn(null); navToggle.current?.focus(); } };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [navOpen]);
   const projectFile = useProjectFile();
   useAutoReview();
 
@@ -120,6 +142,14 @@ export default function App() {
     label: projectName,
     children: [
       { label: 'Project data', to: '/project' },
+      {
+        label: 'Existing machine (import)', to: '/import?tab=drawings',
+        children: [
+          { label: 'Drawings: read / convert', to: '/import?tab=drawings' },
+          { label: 'PLC program: read / upgrade', to: '/import?tab=program' },
+          { label: 'Cabinet photos → drawing', to: '/import?tab=photos' },
+        ],
+      },
       { label: 'Machine description', to: '/spec', stage: 'spec', questions: Object.values(openQ).reduce((a, b) => a + b, 0) },
       {
         label: 'Equipment', to: '/equipment', stage: 'equipment',
@@ -155,6 +185,7 @@ export default function App() {
           { label: 'I/O addressing', to: '/plc' },
           { label: 'Simulation', to: '/simulate' },
           { label: 'Online (real PLC)', to: '/online' },
+          { label: 'Fault finding', to: '/online?tab=troubleshoot' },
           { label: 'Commissioning checklist', to: '/commissioning' },
         ],
       },
@@ -163,19 +194,33 @@ export default function App() {
     ],
   };
 
+  const navBody = (
+    <>
+      <div className="h-7 flex items-center px-3 border-b border-white/10 text-xs font-semibold uppercase tracking-wider text-steel-300">Project navigation</div>
+      <nav className="flex-1 overflow-y-auto py-1 m-1.5 rounded-lg bg-shell-800 border border-white/5">
+        <ul><TreeItem node={tree} depth={0} stages={stages} /></ul>
+      </nav>
+      <div className="border-t border-white/10 px-2 py-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-steel-300">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-600" /> done</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> out of date</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-steel-300" /> to do</span>
+        <span className="flex items-center gap-1" title="Questions the AI asked; answer them on the page or in Design review"><span className="rounded-full bg-amber-100 px-1 text-[10px] font-semibold text-amber-900">2?</span> questions</span>
+      </div>
+    </>
+  );
   return (
-    <div className="flex flex-col h-screen bg-[#f0f2f3] font-sans text-steel-900 text-[13px]">
+    <div className="flex flex-col h-screen bg-[#eef0f2] font-sans text-steel-900 text-[13px]">
       {/* Title bar */}
-      <div className="h-9 flex-shrink-0 bg-white border-b border-steel-200 flex items-center px-3 gap-2" data-testid="title-bar">
-        <span className="h-5 px-1 flex items-center bg-brand-600 text-white text-[10px] font-bold tracking-wider rounded-[3px]" aria-hidden>ISA</span>
-        <span className="font-semibold tracking-[0.14em] text-steel-900 text-sm" aria-label="ISA AUTO PROGRAMMER">AUTO PROGRAMMER</span>
-        <span className="mx-1 text-steel-300">|</span>
-        <span className="truncate text-steel-600 text-xs" data-testid="window-title">{projectName}{dirty ? ' *' : ''}</span>
-        {fileInfo?.name && <span className="truncate text-steel-400 text-xs">— {fileInfo.name}</span>}
+      <div className="h-9 flex-shrink-0 bg-gradient-to-b from-shell-700 to-shell-800 flex items-center px-3 gap-2" data-testid="title-bar">
+        <span className="h-5 px-1 flex items-center bg-steel-100 text-shell-900 text-[10px] font-bold tracking-wider rounded-md" aria-hidden>ISA</span>
+        <span className="font-semibold tracking-[0.22em] text-white text-sm whitespace-nowrap" aria-label="ISA AUTO PROGRAMMER">AUTO PROGRAMMER</span>
+        <span className="mx-1 text-white/30">|</span>
+        <span className="min-w-0 truncate text-steel-200 text-xs" data-testid="window-title">{projectName}{dirty ? ' *' : ''}</span>
+        {fileInfo?.name && <span className="truncate text-steel-300 text-xs">— {fileInfo.name}</span>}
       </div>
 
       {/* Menu bar */}
-      <div className="h-7 flex-shrink-0 bg-[#f7f8f9] border-b border-steel-200 flex items-center px-1 gap-0.5">
+      <div className="h-7 flex-shrink-0 bg-shell-800 flex items-center px-1 gap-0.5">
         <Menu label="Project">
           <MenuItem onClick={() => navigate('/new')}>New project…</MenuItem>
           <MenuItem onClick={projectFile.open}>Open project file (.isap)…<span className="float-right pl-6 text-steel-400">Ctrl+O</span></MenuItem>
@@ -201,7 +246,11 @@ export default function App() {
       </div>
 
       {/* Toolbar */}
-      <div className="h-10 flex-shrink-0 bg-white border-b border-steel-200 flex items-center px-2 gap-1">
+      <div className="h-10 flex-shrink-0 bg-gradient-to-b from-shell-800 to-shell-900 border-b border-black/40 flex items-center px-2 gap-1 min-w-0">
+        {narrow && (
+          <ToolButton ref={navToggle} title={navOpen ? 'Hide project navigation' : 'Project navigation'} aria-expanded={navOpen} aria-controls="app-nav-drawer"
+            onClick={() => (navOpen ? closeNav() : setNavOpenOn(here))}><Bars3Icon className="w-5 h-5" /></ToolButton>
+        )}
         <ToolButton title="New project" onClick={() => navigate('/new')}><DocumentPlusIcon className="w-5 h-5" /></ToolButton>
         <ToolButton title="Open project file (Ctrl+O)" onClick={projectFile.open}><FolderOpenIcon className="w-5 h-5" /></ToolButton>
         <ToolButton title={dirty ? 'Save (Ctrl+S) — unsaved changes' : 'Save (Ctrl+S)'} onClick={projectFile.save}>
@@ -209,35 +258,33 @@ export default function App() {
         </ToolButton>
         <ToolButton title="Import existing machine (drawings / program)" onClick={() => navigate('/import')}><ArrowUpTrayIcon className="w-5 h-5" /></ToolButton>
         {projectFile.input}
-        <span className="w-px h-6 bg-steel-200 mx-1" />
+        <span className="w-px h-6 bg-white/15 mx-1" />
         <ToolButton title="Simulation" onClick={() => navigate('/simulate')}><PlayIcon className="w-5 h-5" /></ToolButton>
         <ToolButton title="Deliverables" onClick={() => navigate('/export')}><ArrowDownTrayIcon className="w-5 h-5" /></ToolButton>
-        <span className="w-px h-6 bg-steel-200 mx-1" />
+        <span className="w-px h-6 bg-white/15 mx-1" />
         <ToolButton title="Settings" onClick={() => navigate('/settings')}><Cog6ToothIcon className="w-5 h-5" /></ToolButton>
         <div className="ml-3"><UpdateAll /></div>
-        <div className="ml-auto flex items-center gap-2">
-          <FolderOpenIcon className="w-4 h-4 text-steel-500" />
+        <div className="ml-auto flex items-center gap-2 min-w-0">
+          <FolderOpenIcon className="w-4 h-4 text-steel-300 shrink-0 hidden sm:block" />
           <select aria-label="Open project" value={activeId ?? ''} onChange={(e) => openProject(e.target.value)}
-            className="border border-steel-300 rounded-sm px-2 py-1 bg-white max-w-[16rem]">
+            className="border border-white/20 rounded-md px-2 py-1 bg-shell-700 text-white min-w-0 w-full max-w-[16rem]">
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Project navigation */}
-        <ResizablePane id="app.nav" defaultSize={256} min={180} max={520} className="bg-white border-r border-steel-300 flex flex-col">
-          <div className="h-7 flex items-center px-2 bg-[#e9edef] border-b border-steel-300 text-xs font-semibold text-steel-700">Project navigation</div>
-          <nav className="flex-1 overflow-y-auto py-1">
-            <ul><TreeItem node={tree} depth={0} stages={stages} /></ul>
-          </nav>
-          <div className="border-t border-steel-200 px-2 py-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-steel-500">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-600" /> done</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> out of date</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-steel-300" /> to do</span>
-            <span className="flex items-center gap-1" title="Questions the AI asked; answer them on the page or in Design review"><span className="rounded-full bg-amber-100 px-1 text-[10px] font-semibold text-amber-900">2?</span> questions</span>
-          </div>
-        </ResizablePane>
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Project navigation: a resizable pane; on phones a drawer over the page, opened from the toolbar */}
+        {!narrow && (
+          <ResizablePane id="app.nav" defaultSize={256} min={180} max={520} className="bg-shell-900 border-r border-black/40 flex flex-col">{navBody}</ResizablePane>
+        )}
+        {navOpen && (
+          <>
+            <div className="absolute inset-0 z-30 bg-black/30" onClick={closeNav} data-testid="nav-backdrop" aria-hidden="true" />
+            <div id="app-nav-drawer" ref={navDrawer} role="dialog" aria-modal="true" aria-label="Project navigation" tabIndex={-1}
+              className="absolute inset-y-0 left-0 z-40 w-[min(85vw,320px)] bg-shell-900 border-r border-black/40 shadow-lg flex flex-col outline-none">{navBody}</div>
+          </>
+        )}
 
         <main className="flex-1 flex flex-col overflow-hidden">
           {IS_PREVIEW && (
@@ -252,15 +299,15 @@ export default function App() {
       </div>
 
       {/* Status bar */}
-      <div className="h-6 flex-shrink-0 bg-brand-600 text-white flex items-center gap-5 px-3 text-[11px]">
+      <div className="h-6 flex-shrink-0 bg-shell-900 border-t border-black/40 text-steel-100 flex items-center gap-5 px-3 text-[11px]">
         <span data-testid="save-state">{dirty ? 'Unsaved changes' : fileInfo?.savedAt ? `Saved ${new Date(fileInfo.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Ready'}</span>
         <AiJobsIndicator />
-        <span>PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
-        <span>HMI: {hmiPart || (noHmi ? 'none (pushbuttons and lamps)' : '—')}</span>
-        <span>Rev {rev.rev} · {rev.description}</span>
+        <span className="max-[479px]:hidden">PLC: {cpuId || '—'}{modules.length ? ` + ${modules.length} module(s)` : ''}</span>
+        <span className="max-[479px]:hidden">HMI: {hmiPart || (noHmi ? 'none (pushbuttons and lamps)' : '—')}</span>
+        <span className="max-[479px]:hidden">Rev {rev.rev} · {rev.description}</span>
         <ReviewStatus />
         <span className="ml-auto" />
-        <span>v{__APP_VERSION__}</span>
+        <span className="max-[479px]:hidden">v{__APP_VERSION__}</span>
       </div>
     </div>
   );

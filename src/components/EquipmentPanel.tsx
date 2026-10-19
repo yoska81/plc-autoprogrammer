@@ -1,3 +1,4 @@
+import { addedOperatorPoints } from '../spec/operatorIo';
 import { isAnalog } from '../types/io';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
@@ -11,7 +12,9 @@ import { getPart, partsIn } from '../electrical/catalog';
 import { getHmi } from '../hmi/hmiCatalog';
 import { normalizePreference } from '../electrical/catalogs';
 import { moduleSlots, ioCapacity } from '../plc/core/modules';
-import { cpuFit, findCpu, platformOf, type Need } from '../plc/core/fit';
+import { cpuFit, findCpu, hmiFit, modulesToFit, platformOf, type Need } from '../plc/core/fit';
+import { PLATFORMS } from '../plc/core/platforms';
+import { nearestPanel } from '../hmi/nearestPanel';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice, usePendingEquipment, type EquipmentChoice } from '../spec/equipment';
 import HmiChooser from './HmiChooser';
@@ -20,6 +23,9 @@ import VendorPreferenceCard from './VendorPreferenceCard';
 import BrandHardwareCard from './BrandHardwareCard';
 import { Spinner, ReasoningPanel } from './common';
 import { useDraft } from '../store/useDraftStore';
+import { useUi } from '../store/useUiStore';
+import { plcPreferenceOf, requestedProfiles, vendorOf } from '../spec/brand';
+import { specToText } from '../spec/types';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 
 const MAX_MODULES = 8;
@@ -34,7 +40,7 @@ function CapacityBar({ label, need, have }: { label: string; need: number; have:
         <span className={ok ? 'text-steel-700' : 'text-red-700 font-medium'}>{need} needed · {have} available{ok ? ` · ${spare} spare` : ` · ${-spare} short`}</span>
       </div>
       <div className="h-2 rounded bg-steel-100 overflow-hidden">
-        <div className={`h-full ${ok ? 'bg-brand-500' : 'bg-red-500'}`} style={{ width: `${have ? Math.min(100, (need / have) * 100) : 100}%` }} />
+        <div className={`h-full ${ok ? 'bg-green-600' : 'bg-red-500'}`} style={{ width: `${have ? Math.min(100, (need / have) * 100) : 100}%` }} />
       </div>
     </div>
   );
@@ -70,6 +76,8 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const busy = useAiJobRunning('equipment');
   const error = useAiJobError('equipment');
   const [reasoning, setReasoning] = useState<string | null>(null);
+  /** Why the touch panel changed with the PLC (it could not stay), shown under the panel chooser. */
+  const [panelNote, setPanelNote] = useState<string | null>(null);
   // A new AI suggestion stays with the project until applied; dropped if the applied one changes.
   const recBasis = JSON.stringify(project.recommendation);
   const [pendingRec, setPendingRec] = useDraft<{ basis: string; rec: EquipmentRecommendation | null } | null>('equipment.rec', null);
@@ -124,32 +132,71 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   });
 
   const cpus = PLC_PROFILES.filter((p) => p.available && p.language === 'ladder').flatMap((p) => p.cpuModels);
+  // The brand asked for (named in the description or set in Brand preference), else the chosen PLC's: its CPUs and its
+  // panels first; the other brands are one click away, never hidden for good.
+  const asked = requestedProfiles(specToText(spec), plcPreferenceOf(project.info.vendors?.plc, project.info.plcChosen));
+  // No brand asked for: the CPU selected on this page (before Apply) leads, on purpose, so picking another brand's
+  // CPU shows that brand's CPUs and panels at once.
+  const mainProfiles = asked.length ? asked : PLC_PROFILES.filter((p) => p.cpuModels.some((c) => c.id === (choice?.cpuId ?? project.cpuId)));
+  const isMain = (id: string) => !mainProfiles.length || mainProfiles.some((p) => p.cpuModels.some((c) => c.id === id));
+  const [otherCpus, setOtherCpus] = useUi('equipment.otherBrandCpus', false);
+  const otherCount = cpus.filter((c) => !isMain(c.id)).length;
+  const shownCpus = otherCpus ? cpus : cpus.filter((c) => isMain(c.id) || c.id === choice?.cpuId);
   // Expansion modules of the chosen CPU's platform (multi-vendor profiles); CLICK modules otherwise.
   const platform = choice ? platformOf(choice.cpuId) : undefined;
   const modules = platform ? platform.modules.map((m) => getPart(m)).filter((p): p is NonNullable<typeof p> => Boolean(p)) : partsIn('plcModule');
   // Touch panels: C-more and every catalog maker's panels; the project's preferred HMI makers
   // first (Brand preference), all makers on request. A panel whose resolution is not confirmed
   // is listed but cannot be chosen (screens are never laid out on a guessed resolution).
-  const hmiMakers = normalizePreference(project.info.vendors).hmi;
+  // Panels of the HMI brands the user chose; none chosen: the PLC brand's own panels first (C-more for CLICK).
+  const plcVendor = mainProfiles[0] ? vendorOf(mainProfiles[0]) : '';
+  // Follows the selected CPU's brand too (before Apply), so the panels listed are ones that CPU can talk to.
+  const hmiMakers = project.info.vendors?.hmi?.length || !plcVendor ? normalizePreference(project.info.vendors).hmi : [plcVendor];
   const cpu = choice ? findCpu(choice.cpuId) : null;
   const fit = cpu && choice ? cpuFit(cpu, choice.modules, need) : null;
   const cap = cpu && choice ? ioCapacity(cpu, moduleSlots(choice.modules)) : null;
+  // something to apply: the user's own pick, or the AI's suggestion (not the default a fresh project starts from)
+  const chosen = Boolean(pending && pending.basis === basis) || Boolean(project.recommendation);
   const applied = choice?.cpuId === project.cpuId
     && JSON.stringify(choice?.modules) === JSON.stringify(project.modules) && (choice?.hmiPartNumber ?? '') === (appliedHmi ?? '');
 
-  // An all-in-one PLC brings its own screen: choosing it selects that screen; leaving it drops the screen.
+  // An all-in-one PLC brings its own screen: choosing it selects that screen. Leaving it, or moving to a PLC the
+  // chosen panel cannot talk to, selects the closest panel that can (screens scale least) and says so.
   const withCpu = (cpuId: string): Partial<EquipmentChoice> => {
+    setPanelNote(null);
     if (hasBuiltInPanel(getPart(cpuId))) return { cpuId, hmiPartNumber: cpuId };
-    return { cpuId, ...(choice?.hmiPartNumber && hasBuiltInPanel(getPart(choice.hmiPartNumber)) ? { hmiPartNumber: null } : {}) };
+    const old = choice?.hmiPartNumber;
+    const was = old ? getHmi(old) : undefined;
+    const builtIn = Boolean(old && hasBuiltInPanel(getPart(old)));
+    if (!old || (!builtIn && was && hmiFit(was, need, cpuId).ok)) return { cpuId };
+    const next = nearestPanel(cpuId, need, was ? { w: was.widthPx, h: was.heightPx } : null, hmiMakers);
+    const why = builtIn ? `The ${old} screen is built into that PLC, so it goes with it.` : `The ${old} cannot talk to the ${cpuId}.`;
+    setPanelNote(next
+      ? `${why} ${next.partNumber} (${next.sizeIn}", ${next.widthPx}×${next.heightPx}) is selected instead: the closest touch panel that can. Designed screens are kept and scaled to it; pick another below if you prefer.${(() => { const n = hmiFit(next, need, cpuId).note; return n ? ` ${n}.` : ''; })()}`
+      : builtIn ? `${why} Choose a touch panel for the ${cpuId} below; designed screens are kept and scaled to it.`
+      // No listed panel can: the current one stays (none would add the door pushbuttons and lamps to the I/O list).
+      : `${why} No listed touch panel can, so the ${old} is kept for now (no door pushbuttons are added); choose another below if one fits.`);
+    return { cpuId, hmiPartNumber: next?.partNumber ?? (builtIn ? null : old) };
   };
   const set = (patch: Partial<EquipmentChoice>) => setChoice((c) => ({ cpuId: c?.cpuId ?? cpus[0].id, modules: c?.modules ?? [], hmiPartNumber: c?.hmiPartNumber ?? null, ...patch }));
   const apply = () => {
     if (!choice || !fit?.ok) return;
-    applyEquipment(choice, rec);
+    // Back from "No touch panel" to a panel: offer to remove the door pushbuttons, selector and lamps it added.
+    const doorPoints = choice.hmiPartNumber && !appliedHmi && project.cpuId ? addedOperatorPoints(useIOStore.getState().projectIO) : [];
+    if (doorPoints.length && confirm(`The touch panel takes over Start, Stop, Reset and Auto/Manual. Remove the door devices added for "No touch panel"?\n\n${doorPoints.map((p) => `• ${p.description}`).join('\n')}\n\n(Cancel keeps them: the program then uses both.)`)) {
+      useIOStore.getState().applyIOUpdate([], [], doorPoints.map((p) => p.id));
+    }
+    // A panel that cannot talk to the chosen CPU is never applied: the closest one that can takes its place (said).
+    const panel = choice.hmiPartNumber ? getHmi(choice.hmiPartNumber) : undefined;
+    const talks = !choice.hmiPartNumber || hasBuiltInPanel(getPart(choice.hmiPartNumber)) || (panel ? hmiFit(panel, need, choice.cpuId).ok : true);
+    const checked = talks ? choice : { ...choice, ...withCpu(choice.cpuId) };
+    if (!talks) setChoice(checked);
+    const warning = applyEquipment(checked, rec);
+    if (warning) alert(warning);
     onApplied?.();
   };
   // Let the New project wizard apply a selection the user did not apply themselves.
-  const pendingLabel = choice && !applied ? `${choice.cpuId}${choice.hmiPartNumber ? ` + ${choice.hmiPartNumber}` : ''}` : null;
+  const pendingLabel = choice && !applied && chosen ? `${choice.cpuId}${choice.hmiPartNumber ? ` + ${choice.hmiPartNumber}` : ''}` : null;
   const canApply = Boolean(pendingLabel && fit?.ok);
   const applyRef = useRef(apply);
   useEffect(() => { applyRef.current = apply; });
@@ -175,7 +222,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
       </div>
       {error && <div role="alert" className="bg-red-50 border border-red-200 p-3 text-red-800">{error}</div>}
       {reasoning && <ReasoningPanel reasoning={reasoning} />}
-      {choice && !applied && (
+      {choice && !applied && chosen && (
         <div role="status" className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border border-amber-300 bg-amber-50 px-4 py-2 text-amber-900 shadow-sm">
           <span className="flex-1 min-w-48">Your equipment selection ({choice.cpuId}{choice.modules.length ? ` + ${choice.modules.length} module(s)` : ''}{choice.hmiPartNumber ? `, ${choice.hmiPartNumber}` : ''}) is not applied to the project yet.</span>
           <button onClick={apply} disabled={!fit?.ok} className="px-3 py-1 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-40">Use this selection</button>
@@ -189,7 +236,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
         </div>
       )}
 
-      <BrandHardwareCard need={need} />
+      <BrandHardwareCard need={need} onPick={(cpuId, mods) => set({ ...withCpu(cpuId), modules: mods })} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
         <div className="xl:col-span-2 space-y-4">
@@ -198,21 +245,40 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
               <table className="w-full">
                 <thead><tr>{['', 'Part number', 'Inputs', 'Outputs', 'Features', 'Fits this machine?'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
                 <tbody>
-                  {cpus.map((c) => {
-                    const f = cpuFit(c, choice?.modules ?? [], need);
+                  {shownCpus.map((c) => {
+                    // The chosen modules this CPU takes (its platform's; on a CLICK, which has no platform entry, only modules
+                    // of no other platform). A CPU with no or too little on-board I/O (S7-1500, CompactLogix 5380) fits once
+                    // its own I/O modules are added after the user's: say which, add them on Select.
+                    const platform = platformOf(c.id);
+                    const base = (choice?.modules ?? []).filter((m) => (platform ? platform.modules.includes(m) : !PLATFORMS.some((x) => x.modules.includes(m))));
+                    const f0 = cpuFit(c, base, need);
+                    const g = f0.ok ? null : modulesToFit(c.id, base, need);
+                    const grow = g && base.every((m, i) => g[i] === m) ? g : null;
+                    const f = grow ? cpuFit(c, grow, need) : f0;
+                    const added = grow ? grow.slice(base.length) : [];
+                    const family = [...new Set(added.map((m) => getPart(m)?.family?.replace(/^SIMATIC\s+/, '') ?? 'I/O'))].join(' / ');
                     const selected = choice?.cpuId === c.id;
+                    // Modules of another platform go with the CPU change (they do not fit this one).
+                    const pick = () => { if (f.ok) set({ ...withCpu(c.id), modules: grow ?? base }); };
                     return (
-                      <tr key={c.id} onClick={() => f.ok && set(withCpu(c.id))}
+                      <tr key={c.id} onClick={pick}
                         className={`${f.ok ? 'cursor-pointer hover:bg-brand-50' : 'text-steel-400 bg-steel-50/60 cursor-not-allowed'} ${selected ? 'bg-brand-100' : ''}`}>
                         <td className={td}><input type="radio" readOnly checked={selected} disabled={!f.ok} aria-label={`Choose ${c.id}`} /></td>
                         <td className={`${td} font-mono`}>{c.id}{rec?.plc.cpuId === c.id && <span className="ml-2 text-[10px] bg-brand-600 text-white px-1.5 py-0.5 rounded-sm font-sans">SUGGESTED</span>}</td>
                         <td className={td}>{c.builtInInputs}</td>
                         <td className={td}>{c.builtInOutputs}</td>
                         <td className={`${td} text-xs`}>{[/ethernet/i.test(c.label) && 'Ethernet', /analog/i.test(c.label) && 'Analog', /relay/i.test(c.label) && 'Relay out', /sourcing/i.test(c.label) && 'Sourcing out', /CLICK PLUS/.test(c.label) && 'CLICK PLUS', /built-in [\d.]+" touch screen/.test(c.label) && 'Built-in touch screen'].filter(Boolean).join(' · ')}</td>
-                        <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes · {f.spareIn} in / {f.spareOut} out spare</span> : f.reason}</td>
+                        <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes{added.length ? ` with ${added.length} ${family} module${added.length === 1 ? '' : 's'} (${selected ? 'select the row again to add them' : 'added when selected'})` : ''} · {f.spareIn} in / {f.spareOut} out spare</span> : f.reason}</td>
                       </tr>
                     );
                   })}
+                  {otherCount > 0 && (
+                    <tr><td colSpan={6} className={`${td} text-xs`}>
+                      <button onClick={() => setOtherCpus(!otherCpus)} className="text-brand-800 font-medium hover:underline" aria-expanded={otherCpus}>
+                        {otherCpus ? `Show only ${[...new Set(mainProfiles.map((p) => `${p.vendor} ${p.name}`))].join(' / ')} CPUs` : `Show ${otherCount} CPUs of other brands`}
+                      </button>
+                    </td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -240,8 +306,9 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
           </Section>
 
           <Section title="Operator panel (HMI)">
+            {panelNote && <p role="status" data-testid="panel-note" className="mb-2 text-sm rounded border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2">{panelNote}</p>}
             <HmiChooser need={need} cpuId={choice?.cpuId} selected={choice?.hmiPartNumber ?? null} suggested={rec?.hmi?.partNumber}
-              makers={hmiMakers} onPick={(pn) => set({ hmiPartNumber: pn })} />
+              makers={hmiMakers} onPick={(pn) => { setPanelNote(null); set({ hmiPartNumber: pn }); }} />
           </Section>
         </div>
 
@@ -258,7 +325,9 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                   {cap && <CapacityBar label="Digital inputs" need={need.digitalInputs} have={cap.inputs} />}
                   {cap && <CapacityBar label="Digital outputs" need={need.digitalOutputs} have={cap.outputs} />}
                   {fit && !fit.ok && <p className="text-red-700 text-xs">{fit.reason}</p>}
-                  {applied ? (
+                  {applied && fit && !fit.ok ? (
+                    <p className="text-xs bg-red-50 border border-red-200 text-red-800 px-2 py-1.5">This is the project's PLC, but it cannot hold the I/O list. Choose a larger CPU or add modules.</p>
+                  ) : applied ? (
                     <p className="text-xs bg-green-50 border border-green-200 text-green-800 px-2 py-1.5">Applied to the project.</p>
                   ) : (
                     <button onClick={apply} disabled={!fit?.ok} className="w-full px-4 py-1.5 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-40">Use this selection</button>
@@ -278,7 +347,17 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                     <div className="font-medium text-steel-800">{a.label}</div>
                     <div className="text-xs font-mono text-steel-600">{a.cpuId}{a.hmiPartNumber ? ` · ${a.hmiPartNumber}` : ''}</div>
                     <p className="text-xs text-steel-600">{a.tradeoff}</p>
-                    <button onClick={() => set({ cpuId: a.cpuId, hmiPartNumber: a.hmiPartNumber })} className="text-xs text-brand-800 font-medium hover:underline">Select</button>
+                    <button onClick={() => {
+                      // The suggestion's own panel when it talks to that CPU, else the same check as any CPU change.
+                      const own = a.hmiPartNumber ? getHmi(a.hmiPartNumber) : undefined;
+                      if (a.hmiPartNumber && (hasBuiltInPanel(getPart(a.hmiPartNumber)) || (own && hmiFit(own, need, a.cpuId).ok))) { setPanelNote(null); set({ cpuId: a.cpuId, hmiPartNumber: a.hmiPartNumber }); }
+                      else {
+                        const patch = withCpu(a.cpuId);
+                        set(patch);
+                        // The current panel talks to that CPU and is kept: say why the suggestion's own was not taken.
+                        if (a.hmiPartNumber && choice?.hmiPartNumber && !('hmiPartNumber' in patch) && choice.hmiPartNumber !== a.hmiPartNumber) setPanelNote(`The suggestion's ${a.hmiPartNumber} cannot talk to the ${a.cpuId}: your ${choice.hmiPartNumber} is kept (it can).`);
+                      }
+                    }} className="text-xs text-brand-800 font-medium hover:underline">Select</button>
                   </div>
                 ))}
               </div>

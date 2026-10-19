@@ -30,7 +30,7 @@ LC1W     7000-12241-2150500 x2    Connection cables for LC1 (sender + receiver)
 SR3      BG5933-22-61-24    x1    Two-hand safety relay (ISO 13851 type IIIC) — both buttons within 0.5 s; its safety output is in series with the closing-stroke output
 PB1      2H-240002          x1    Two-hand control station, Machine — both buttons (1 N.O. + 1 N.C. each) into SR3
 PB2      GCX1101            x1    Stop
-PB3      GCX1102            x1    Fault reset
+PB3      GCX1100            x1    Fault reset
 LS1      PNK-AP-3H          x1    Sealing head up (retracted)
 LS2      PNK-AP-3H          x1    Sealing head down (sealing position)
 PRS1     MPS25-1C-D100D     x1    Air pressure OK — SPDT (dry contact), N.O. closes on rising pressure

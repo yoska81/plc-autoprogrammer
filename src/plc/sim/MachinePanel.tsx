@@ -1,3 +1,4 @@
+import { useContext } from 'react';
 /**
  * "Machine" column of the simulator: every simulated field device as a card
  * with a small animated drawing. Pure view: all state comes from the snapshot,
@@ -8,6 +9,7 @@ import type {
   PushbuttonDevice, SafetyRelayDevice, SelectorDevice, SensorDevice, SimDevice, StackLightDevice,
 } from './machineModel';
 import { PART_END } from './machineModel';
+import { PlcNamesContext } from '../ui/ladder/mnemonics';
 
 export interface MachineActions {
   press(id: string, pressed: boolean): void;
@@ -56,16 +58,27 @@ function Led({ on, color = 'green', size = 10 }: { on: boolean; color?: LightCol
   );
 }
 
+/** An I/O address as the PLC names it (Siemens %I0.0); the app operand otherwise. */
+function useShownIo(address: string): string {
+  const n = useContext(PlcNamesContext)?.(address);
+  return n ? n.io ?? n.name : address;
+}
+
+function ShownIo({ address }: { address: string }) {
+  return <span className="font-mono text-[10.5px] text-steel-500" title={address}>{useShownIo(address)}</span>;
+}
+
 function AddrChip({ address, on, kind }: { address: string; on: boolean; kind: 'in' | 'out' }) {
+  const shown = useShownIo(address);
   return (
     <span
       className={`inline-flex items-center gap-1 rounded px-1.5 py-px font-mono text-[10.5px] font-semibold ${
-        on ? (kind === 'in' ? 'bg-brand-100 text-brand-800' : 'bg-emerald-100 text-emerald-800') : 'bg-steel-100 text-steel-500'
+        on ? (kind === 'in' ? 'bg-sky-100 text-sky-800' : 'bg-emerald-100 text-emerald-800') : 'bg-steel-100 text-steel-500'
       }`}
-      title={`${address} is ${on ? 'ON' : 'OFF'}`}
+      title={`${shown}${shown !== address ? ` (app operand ${address})` : ''} is ${on ? 'ON' : 'OFF'}`}
     >
       <Led on={on} color={kind === 'in' ? 'blue' : 'green'} size={7} />
-      {address}
+      {shown}
     </span>
   );
 }
@@ -278,7 +291,7 @@ function DriveStatus({ d, bits, inputs, onFault }: { d: MotorDevice; bits: Map<s
       <div className="flex items-center gap-2 text-[11px]">
         <span className="font-semibold text-steel-600">VFD</span>
         <span className={`font-mono font-bold ${dr.state.faulted ? 'text-red-700' : 'text-steel-800'}`}>{dr.state.faulted ? 'FAULT' : `${hz < 0 ? 'REV ' : ''}${Math.abs(hz).toFixed(1)} Hz`}</span>
-        <div className="h-1.5 flex-1 overflow-hidden rounded bg-steel-200"><div className={`h-full ${dr.state.faulted ? 'bg-red-500' : 'bg-brand-600'}`} style={{ width: `${pct}%` }} /></div>
+        <div className="h-1.5 flex-1 overflow-hidden rounded bg-steel-200"><div className={`h-full ${dr.state.faulted ? 'bg-red-500' : 'bg-sky-600'}`} style={{ width: `${pct}%` }} /></div>
         <span className="text-[10px] text-steel-400">0–{dr.maxHz} Hz</span>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -343,7 +356,7 @@ function CylinderCard({ d, bits, inputs, onSet }: { d: CylinderDevice; bits: Map
     <Card title={`${d.label} cylinder`} tag={d.tag} bypass={{ d, onSet }}>
       <CylinderDrawing d={d} />
       <div className="mt-1 flex flex-wrap items-center gap-1">
-        <span className={`mr-1 text-[11px] font-bold ${status === 'EXTENDED' ? 'text-amber-700' : status === 'MOVING' ? 'text-brand-800' : 'text-steel-500'}`}>{status}</span>
+        <span className={`mr-1 text-[11px] font-bold ${status === 'EXTENDED' ? 'text-amber-700' : status === 'MOVING' ? 'text-sky-800' : 'text-steel-500'}`}>{status}</span>
         <span className="text-[10px] text-steel-400">sol</span>
         <AddrChip address={d.extendOutput} on={bits.get(d.extendOutput) ?? false} kind="out" />
         {d.retractOutput && <AddrChip address={d.retractOutput} on={bits.get(d.retractOutput) ?? false} kind="out" />}
@@ -453,7 +466,7 @@ function SensorsCard({ sensors, inputs, onToggle, onSet }: { sensors: SensorDevi
               >
                 <Led on={on} color="blue" />
                 <span className="min-w-0 flex-1 truncate text-steel-700">{s.label}</span>
-                <span className="font-mono text-[10.5px] text-steel-500">{s.input}</span>
+                <ShownIo address={s.input} />
               </button>
               <BypassControl d={s} onSet={onSet} />
             </li>

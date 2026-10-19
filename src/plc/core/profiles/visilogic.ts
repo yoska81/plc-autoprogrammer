@@ -93,7 +93,7 @@ export function visiOperands(program: LadderProgram, ctx: ExportContext): VisiMa
     return { operand: `${type} ${index}`, type, index, name, comment };
   };
   const nameOf = (a: string) => nick.get(a)?.nickname || labels.get(a) || a;
-  const commentOf = (a: string) => [labels.get(a), nick.get(a)?.comment].filter(Boolean).join(' — ') || a;
+  const commentOf = (a: string) => [labels.get(a), nick.get(a)?.comment].filter((x, i, all): x is string => !!x && all.indexOf(x) === i).join(' — ') || a;
   const TYPE: Record<string, VisiType> = { C: 'MB', DS: 'MI', DH: 'MI', DD: 'ML', DF: 'MF', T: 'T', CT: 'C' };
   const sorted = [...used].sort((a, b) => { const [pa, na] = nkey(a), [pb, nb] = nkey(b); return pa === pb ? na - nb : pa.localeCompare(pb); });
   for (const a of sorted) {
@@ -301,7 +301,7 @@ export const visionProfile: PlcProfile = {
   exporters: EXPORTERS,
   analogChannels: unitronicsAnalogChannels,
   mnemonics: VISILOGIC_MNEMONICS,
-  ioTag: (a) => visiIo(a, undefined),
+  ioTag: (a, _modules, cpuId) => visiIo(a, cpuId),
   importSteps: [
     'VisiLogic has no ladder or program import: enter each net from the net listing (or the printable ladder) in the Ladder editor. The operand map at the top says which VisiLogic operand each app address became.',
     'Open the operands CSV in Excel and save it as .xls with the sheet named "Operands" (header in row 2); then Edit › Import Operand Descriptions names every operand.',

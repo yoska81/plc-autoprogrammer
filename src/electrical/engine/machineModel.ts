@@ -5,7 +5,7 @@
  * (./index.ts) turns it into the complete ElectricalDesign.
  */
 import type { IOPoint } from '../../types/io';
-import type { DesignInputs, EnclosureRating, FieldDeviceType, MotorSpec, StarterType } from '../types';
+import type { DesignInputs, ElectricalDesign, EnclosureRating, FieldDeviceType, MotorSpec, StarterType } from '../types';
 import { looksLeftOver } from '../../spec/leftovers';
 
 export type MotorStart = 'dol' | 'reversing' | 'vfd' | 'motor-protector';
@@ -89,10 +89,25 @@ export function staleMotors(motors: MotorSpec[], io: IOPoint[], spec: string): M
   return motors.filter((m) => looksLeftOver(m.description, hay, 1).leftOver);
 }
 
+/**
+ * Inputs saved before motors carried fromDesign marks: when the motor list is still exactly the generated design's
+ * (the page wrote the design's motors back), those motors are the design's, so a new design for another machine drops
+ * them without a note. A list the designer changed since, or one already marked, is left as it is.
+ */
+export function markLegacyMotors(inputs: DesignInputs, design: ElectricalDesign | null | undefined, source: string | null | undefined): DesignInputs {
+  if (inputs.motorsMarked || !design || source !== 'generated' || design.inputs.motorsMarked || !inputs.motors.length) return inputs;
+  const key = (ms: MotorSpec[]) => JSON.stringify(ms.map((m) => [m.tag, m.description, m.hp, m.starter, m.reversing]));
+  if (key(inputs.motors) !== key(design.inputs.motors)) return inputs;
+  return { ...inputs, motors: inputs.motors.map((m) => ({ ...m, fromDesign: true })), motorsMarked: true };
+}
+
 export function defaultMachineModel(io: IOPoint[], inputs: DesignInputs, spec = ''): MachineModel {
   const assumptions: string[] = [];
-  const stale = new Set(staleMotors(inputs.motors, io, spec).map((m) => m.tag));
-  for (const m of inputs.motors.filter((x) => stale.has(x.tag))) {
+  const staleList = staleMotors(inputs.motors, io, spec);
+  const stale = new Set(staleList.map((m) => m.tag));
+  // a motor an earlier design read from another machine is just dropped; one the designer typed is asked about
+  const asked = new Set(staleList.filter((m) => !m.fromDesign).map((m) => m.tag));
+  for (const m of inputs.motors.filter((x) => asked.has(x.tag))) {
     assumptions.push(`${m.tag} ${m.description} (${m.hp} HP) is in the motor list but not in the machine description or I/O list, so it was left out of the design: add it back on the Design tab if this machine has it.`);
   }
   const motors: ModelMotor[] = inputs.motors.filter((m) => !stale.has(m.tag)).map((m) => ({ tag: m.tag, description: m.description, hp: m.hp, start: m.starter === 'vfd' ? 'vfd' : m.starter === 'motor-protector' ? 'motor-protector' : m.reversing ? 'reversing' : 'dol' }));
@@ -108,9 +123,10 @@ export function defaultMachineModel(io: IOPoint[], inputs: DesignInputs, spec = 
       const vfd = p.deviceType === 'vfd-input' || /\b(vfd|drive|speed)\b/i.test(p.description);
       const reversing = io.some((q) => q !== p && q.type === 'output' && /\b(rev|reverse)\b/i.test(q.description) && wordsShared(p.description, q.description));
       const name = name0 || 'Motor';
-      // New tags skip the left-over motors' tags, so "M1 Conveyor motor … left out" never names a different motor.
+      // New tags skip the tags of left-over motors that are asked about, so "M1 Conveyor motor … left out" never
+      // names a different motor (a dropped design motor's tag is free again).
       let n = motors.length + 1;
-      while (stale.has(`M${n}`) || motors.some((m) => m.tag === `M${n}`)) n++;
+      while (asked.has(`M${n}`) || motors.some((m) => m.tag === `M${n}`)) n++;
       motors.push({ tag: `M${n}`, description: /motor/i.test(name) ? name : `${name} motor`, hp, start: vfd ? 'vfd' : reversing ? 'reversing' : 'dol', ...(/\b(hoist|lift|elevat\w*|crane|winch)\b/i.test(name) ? { vertical: true } : {}) });
       if (!HP_RE.test(p.description) && !fromSpec) assumptions.push(`${name}: motor power not given — assumed ${hp} HP; confirm the nameplate.`);
     }
@@ -157,6 +173,9 @@ function specPower(spec: string, name: string): number | undefined {
   return Number(m[1]) * (m[2].toLowerCase() === 'kw' ? 1.341 : 1);
 }
 
+/** A drive input terminal or servo-drive input signal named in an I/O description (DI1, MI3, SON, CAM, ARST…). */
+export const DRIVE_INPUT_RE = /\b(?:DI|MI)\d{1,2}\b|\b(?:S-?ON|E-?CAM|CAM|ARST|EMGS)\b/i;
+
 /**
  * Motors the I/O list runs through a VFD (run / fault on a drive) are designed on a drive whatever the motor
  * list or the AI said — otherwise the drive I/O would be wired to a drive that is not in the design.
@@ -170,7 +189,9 @@ export function drivesFromIo(model: MachineModel, io: IOPoint[], spec = ''): Mac
     return { ...m, start: 'vfd' as const };
   });
   // A drive run output no motor matches (the motor list is from another machine): a motor on a drive for it.
-  const runs = driveIo.filter((p) => p.type === 'output' && p.signal !== 'analog' && !/\b(rev|reverse|speed|preset|fault)\b/i.test(p.description));
+  // an output that switches a drive's input terminal ("U2 DI1 SON", "VFD1 MI1", "DI7 CAM engage") is a signal to a
+  // drive already on the machine, never a motor of its own
+  const runs = driveIo.filter((p) => p.type === 'output' && p.signal !== 'analog' && !/\b(rev|reverse|speed|preset|fault)\b/i.test(p.description) && !DRIVE_INPUT_RE.test(p.description));
   // drives on the motor list a run output already stands for (by shared words); generic outputs ("VFD1 run",
   // "Drive 2 run") take the drives no output names, in order — they are not extra motors
   const claimed = new Set(runs.flatMap((p) => motors.filter((m) => m.start === 'vfd' && wordsShared(p.description, m.description)).map((m) => m.tag)));

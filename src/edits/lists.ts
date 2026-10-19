@@ -3,7 +3,7 @@
  * tag / wire number and ends (stable while the design is regenerated), written into the CSV and
  * Excel files next to the generated columns.
  */
-import { cableScheduleCsv, wireListCsv, wireNumbers, type Cable, type DrawingContext, type WireRecord } from '../electrical/derive';
+import { buildModel, cableScheduleCsv, wireListCsv, type Cable, type DrawingContext, type WireRecord } from '../electrical/derive';
 import { currentEdits } from './useEditsStore';
 
 export const cableKey = (c: Pick<Cable, 'tag'>) => `cable:${c.tag}`;
@@ -19,6 +19,12 @@ export function wireKeys(wires: Pick<WireRecord, 'wire' | 'from' | 'to'>[]): str
     return wireKey(w, n);
   });
 }
+
+/**
+ * Note keys of the design's wire list, row for row: by the app's wire numbers and pins (X001, PLC:X001) also when the
+ * list shows the PLC's own (I0.0 on an S7), so a note stays with its wire when the CPU changes.
+ */
+export const wireNoteKeys = (ctx: DrawingContext): string[] => wireKeys(buildModel(ctx).wires);
 
 /** The user's note for a key ('' = none). */
 export const noteOf = (key: string, notes: Record<string, string> = currentEdits().notes): string => notes[key] ?? '';
@@ -54,6 +60,6 @@ export function cableScheduleCsvWithNotes(ctx: DrawingContext, notes: Record<str
 /** Wire list CSV with the user's notes. */
 export function wireListCsvWithNotes(ctx: DrawingContext, notes: Record<string, string> = currentEdits().notes): string {
   // The CSV has one row per wire record, in the same order.
-  const keys = wireKeys(wireNumbers(ctx));
+  const keys = wireNoteKeys(ctx);
   return withNotes(wireListCsv(ctx), (_c, i) => noteOf(keys[i] ?? '', notes));
 }

@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useProjectsStore } from '../store/useProjectsStore';
+import { PROJECT_NAME_MAX, useProjectsStore } from '../store/useProjectsStore';
 import { useProjectStore, type Region } from '../store/useProjectStore';
 import { isIec, NEMA_TO_IP, REGIONS, regionSpec, SUPPLY_INFO } from '../standards/regions';
 import { useElectricalStore } from '../store/useElectricalStore';
@@ -97,7 +97,7 @@ export default function NewProjectPage() {
         if (!createProject(name.trim())) return;
         setCreated(true);
       }
-      useProjectStore.getState().setInfo({ region, customer, site, standards, company, projectNumber, drawingPrefix: prefix.trim().toUpperCase(), preparedBy });
+      useProjectStore.getState().setInfo({ region, customer, site, standards, company, projectNumber, drawingPrefix: prefix.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 8), preparedBy });
       const el = useElectricalStore.getState();
       el.setInputs({ ...el.inputs, supply, enclosureRating: enclosure });
       if (start === 'drawings') {
@@ -138,8 +138,8 @@ export default function NewProjectPage() {
       </header>
 
       {/* Step indicator */}
-      <nav aria-label="Wizard steps" className="bg-white border-b border-steel-200 px-6">
-        <ol className="flex">
+      <nav aria-label="Wizard steps" className="bg-white border-b border-steel-200 px-4 sm:px-6 overflow-x-auto">
+        <ol className="flex min-w-max sm:min-w-0">
           {STEPS.map((label, i) => (
             <li key={label} className="flex-1">
               <button type="button" disabled={i > Math.max(step, reached) || (i > 0 && !created)} onClick={() => setStep(i)}
@@ -167,13 +167,13 @@ export default function NewProjectPage() {
                   </div>
                 </section>
                 <section className="bg-white border border-steel-200 rounded-md p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Field label="Project name *"><input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Line 3 case packer" className={input} /></Field>
+                  <Field label="Project name *"><input autoFocus value={name} maxLength={PROJECT_NAME_MAX} onChange={(e) => setName(e.target.value)} placeholder="e.g. Line 3 case packer" className={input} /></Field>
                   <Field label="Customer"><input value={customer} onChange={(e) => setCustomer(e.target.value)} className={input} /></Field>
                   <Field label="Site / location"><input value={site} onChange={(e) => setSite(e.target.value)} className={input} /></Field>
                   <Field label="Your company"><input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Shown on drawings and documents" className={input} /></Field>
                   <Field label="Project / job number"><input value={projectNumber} onChange={(e) => setProjectNumber(e.target.value)} placeholder="e.g. 24-117" className={input} /></Field>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Drawing prefix"><input value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="e.g. WCC" maxLength={8} className={`${input} uppercase placeholder:normal-case`} /></Field>
+                    <Field label="Drawing prefix"><input value={prefix} onChange={(e) => setPrefix(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))} placeholder="e.g. WCC" maxLength={8} className={`${input} uppercase placeholder:normal-case`} /></Field>
                     <Field label="Engineer (initials)"><input value={preparedBy} onChange={(e) => setPreparedBy(e.target.value)} placeholder="e.g. Y.S." className={input} /></Field>
                   </div>
                 </section>

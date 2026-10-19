@@ -5,6 +5,7 @@
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/sweep.e2e.cjs
 // Screenshots land in e2e/out-sweep/.
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('fs');
 const OUT = __dirname + '/out-sweep/';
 fs.rmSync(OUT, { recursive: true, force: true });
@@ -72,9 +73,15 @@ function audit() {
  * Analog points on the example project: an input and an output switched to analog with a range and units in
  * the I/O list, then the analog drawing sheet, the simulator slider and an HMI bar graph bound to the input.
  */
+/** The app has mounted and no lazily loaded page is still loading. */
+async function settled(page) {
+  await page.waitForFunction(() => document.getElementById('root')?.childElementCount && !document.querySelector('[data-page-loading]'), null, { timeout: 20000 }).catch(() => {});
+}
+
 async function analogPass(browser, problems) {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   const page = await ctx.newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -89,7 +96,7 @@ async function analogPass(browser, problems) {
   const fail = (msg) => { problems.push(['analog', [msg]]); log('analog:', msg); };
 
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
 
@@ -137,13 +144,16 @@ async function analogPass(browser, problems) {
   // Drawings: an analog loop sheet exists and renders.
   for (const tab of ['cabinet', 'machine']) {
     await page.goto(`${BASE}/electrical?tab=${tab}`);
-    await page.waitForTimeout(1200);
+    // the page loads lazily and the drawing set is built after it: wait for the sheet list, not a fixed time
+    await settled(page);
+    await page.locator('nav[aria-label="Drawing sheets"] button[title]').first().waitFor({ timeout: 20000 }).catch(() => {});
     const t = page.locator('nav[aria-label="Drawing sheets"] button[title*="ANALOG"]');
     if (await t.count()) {
       await t.first().click();
-      await page.waitForTimeout(800);
       // The sheet list and the stacked sheets are in the same order.
       const i = (await page.locator('nav[aria-label="Drawing sheets"] button[title]').evaluateAll((bs) => bs.map((b) => b.title))).findIndex((t) => t.includes('ANALOG'));
+      // sheets are drawn a few at a time (the clicked one at once): wait for its drawing
+      await page.locator('[data-sheet]').nth(i).locator('svg').first().waitFor({ timeout: 10000 }).catch(() => {});
       const svgText = (await page.locator('[data-sheet]').nth(i).textContent().catch(() => '')) ?? '';
       if (!svgText.includes('psi') && !svgText.includes(made[0]?.address ?? '§')) fail('analog sheet does not show the analog input');
       await check(`drawing_${tab}`);
@@ -195,12 +205,13 @@ async function analogPass(browser, problems) {
 async function iecPass(browser, problems, region) {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   const page = await ctx.newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   await page.goto(BASE + '/project');
@@ -209,7 +220,7 @@ async function iecPass(browser, problems, region) {
   if (opts.join() !== 'iec81346,iec60617,A3') problems.push([`iec_${region}`, [`region defaults not applied: ${opts.join()}`]]);
   // Stand-in for a design regenerated for the region: the example's design at 400 V 50 Hz.
   await page.evaluate(async () => {
-    const { useElectricalStore: E } = await import('/src/store/useElectricalStore.ts');
+    const { useElectricalStore: E } = await appImport('/src/store/useElectricalStore.ts');
     const d = E.getState().design;
     E.setState({ design: { ...d, inputs: { ...d.inputs, supply: '400VAC-3PH', motors: d.inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' })) } } });
   });
@@ -238,8 +249,8 @@ async function iecPass(browser, problems, region) {
   }
   // The drawings PDF: every page A3 (1190.55 x 841.89 pt).
   const pdf = await page.evaluate(async () => {
-    const { buildDrawingsPdf } = await import('/src/deliverables/files.ts');
-    const { collectProject } = await import('/src/deliverables/collect.ts');
+    const { buildDrawingsPdf } = await appImport('/src/deliverables/files.ts');
+    const { collectProject } = await appImport('/src/deliverables/collect.ts');
     const blob = await buildDrawingsPdf(collectProject());
     const text = new TextDecoder('latin1').decode(await blob.arrayBuffer());
     const boxes = [...text.matchAll(/\/MediaBox \[([^\]]+)\]/g)].map((m) => m[1].trim().split(/\s+/).map(Number).slice(2).map((v) => Math.round(v)).join('x'));
@@ -259,26 +270,30 @@ async function iecPass(browser, problems, region) {
 async function copiedExamplePass(browser, problems) {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   const page = await ctx.newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   await page.evaluate(async () => {
-    const ps = await import('/src/store/useProjectsStore.ts');
+    const ps = await appImport('/src/store/useProjectsStore.ts');
     ps.addProjectFromData('Sealing Head', ps.activeProjectData().data);
-    const { useSpecStore } = await import('/src/store/useSpecStore.ts');
-    const { EMPTY_SECTIONS } = await import('/src/spec/types.ts');
+    const { useSpecStore } = await appImport('/src/store/useSpecStore.ts');
+    const { EMPTY_SECTIONS } = await appImport('/src/spec/types.ts');
     useSpecStore.getState().setSections({ ...EMPTY_SECTIONS, overview: 'Sealing head: a pneumatic heat-sealing head closes on a pouch, holds for the dwell time at the set temperature, then opens. Two-hand start, light curtain, heater with thermocouple.' });
-    (await import('/src/store/useProgramStore.ts')).useProgramStore.getState().setUserPrompt('Conveyor pusher: keep the pusher retracted while the conveyor runs; batch counter on the photo-eye.');
+    (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().setUserPrompt('Conveyor pusher: keep the pusher retracted while the conveyor runs; batch counter on the photo-eye.');
   });
   for (const [route, testid] of [['/spec', 'start-clean'], ['/project', 'start-clean'], ['/electrical?tab=design', 'leftover-motor'], ['/program', 'leftover-notes']]) {
     await page.goto(BASE + route);
-    await page.waitForTimeout(route.includes('electrical') ? 1500 : 800);
-    if (route === '/program') { const d = page.getByRole('button', { name: 'Build', exact: true }); if (await d.count()) { await d.first().click(); await page.waitForTimeout(300); } }
+    await settled(page);
+    // the warning shows once the page (and on Electrical, the design) is built: wait for it, then audit
+    if (route !== '/program') await page.getByTestId(testid).first().waitFor({ timeout: 15000 }).catch(() => {});
+    else await page.waitForTimeout(800);
+    if (route === '/program') { const d = page.getByRole('button', { name: 'Build', exact: true }); if (await d.count()) { await d.first().click(); await page.waitForTimeout(300); } await page.getByTestId(testid).first().waitFor({ timeout: 15000 }).catch(() => {}); }
     const name = `copied_${route.replace(/\W+/g, '_').replace(/^_|_$/g, '')}`;
     await page.screenshot({ path: `${OUT}${name}.png` });
     const found = await page.evaluate(audit);
@@ -297,6 +312,7 @@ async function copiedExamplePass(browser, problems) {
     for (const [w, h] of VIEWPORTS) {
       const ctx = await browser.newContext({ viewport: { width: w, height: h } });
       const page = await ctx.newPage();
+      await useAppModules(page);
       const errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -308,7 +324,7 @@ async function copiedExamplePass(browser, problems) {
         if (scenario === 'example') {
           // The dev build has no example project: load the preview seed through the module graph.
           await page.goto(BASE + '/spec');
-          await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+          await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
           // The example is its own project: open it.
           await page.goto(BASE + '/spec');
           await page.locator('select[aria-label="Open project"]').selectOption('p_example');

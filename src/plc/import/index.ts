@@ -9,7 +9,12 @@ import { readPlcopen } from './plcopen';
 import { readStSource } from './stSource';
 import { readClickCsv } from './clickCsv';
 import { convertForeign } from './convert';
-import { decodeCsv, isGxComments, isGxProgram, readGxCsv } from './gxCsv';
+import { decodeCsv, isGxComments, isGxProgram, isIlComments, isIlText, readGxCsv, readIlText } from './gxCsv';
+import { isSiemensTagTable, mergeSiemensTags, readSiemensTags } from './siemensTags';
+import { isStlSource, readStlSource } from './stl';
+import { readTiaXml } from './tiaXml';
+import { isYmw7, readYmw7 } from './mpe720';
+import { isEmtp, readEmtp } from './emtp';
 import type { ForeignProgram, ImportedProgram, SourceFormat } from './types';
 
 export { materialize } from './convert';
@@ -27,6 +32,9 @@ export const NATIVE_FILES: { ext: RegExp; product: string; howTo: string }[] = [
   { ext: /\.vlp$|\.ulpr$|\.vlpx$/i, product: 'Unitronics project', howTo: 'Unitronics projects cannot be exported as text: print the ladder to PDF (File › Print) and upload the PDF.' },
   { ext: /\.ccwsln$|\.ccwarc$/i, product: 'Connected Components Workbench project', howTo: 'In CCW: export the programs as PLCopen XML (right-click the program › Export) and upload the .xml.' },
   { ext: /\.project$|\.projectarchive$/i, product: 'CODESYS project', howTo: 'In CODESYS: Project › Export PLCopenXML… and upload the .xml.' },
+  { ext: /\.mwt$|\.zwt$/i, product: 'Yaskawa MotionWorks IEC project', howTo: 'In MotionWorks IEC: open the project, then File › Export › PLCopen XML for the whole project, and upload the .xml.' },
+  { ext: /\.pcwex$/i, product: 'Yaskawa iCube Engineer / PLCnext Engineer project', howTo: 'In iCube Engineer: export the programs as PLCopen XML and upload the .xml. A printout of the ladder (PDF) also works, under "Or a printout of the program" below.' },
+  { ext: /\.jbi$/i, product: 'Yaskawa Motoman robot job (.JBI)', howTo: 'A robot job holds the robot\'s moves, not the machine\'s PLC program, and is not read here. Upload the PLC program that runs with the robot (with MotoLogix, the Studio 5000 .L5X or the Siemens project export).' },
 ];
 
 export function detectFormat(fileName: string, text: string): SourceFormat | null {
@@ -36,6 +44,8 @@ export function detectFormat(fileName: string, text: string): SourceFormat | nul
   if (/<Document>[\s\S]*SW\.Blocks/i.test(head)) return 'siemens-xml';
   if (/^\s*(IE_VER\s*:=|CONTROLLER\s+\w+\s*\()/m.test(head) || /\.l5k$/i.test(fileName)) return 'l5k';
   if (isGxProgram(head)) return 'mitsubishi-csv';
+  if (isIlText(text)) return 'il-text';
+  if (isStlSource(text) || /\.awl$|\.stl$/i.test(fileName)) return 'siemens-stl';
   const first = head.split(/\r?\n/)[0] ?? '';
   if (/address/i.test(first) && /nickname/i.test(first)) return 'click-csv';
   if (/\b(ORGANIZATION_BLOCK|DATA_BLOCK)\b/.test(head) || /FUNCTION_BLOCK\s+"/.test(head) || (/\bBEGIN\b/.test(text) && /\bEND_FUNCTION_BLOCK\b|\bEND_ORGANIZATION_BLOCK\b/.test(text)) || /\.scl$/i.test(fileName)) return 'siemens-scl';
@@ -47,9 +57,11 @@ export function detectFormat(fileName: string, text: string): SourceFormat | nul
 export function unreadableReason(fileName: string, text: string): string | null {
   const native = NATIVE_FILES.find((n) => n.ext.test(fileName));
   if (native) return `${native.product}: this file is in the maker's own format and cannot be read here. ${native.howTo}`;
+  // A PDF is a printout: it is read by the printout reader on the same page, not here.
+  if (/\.pdf$/i.test(fileName) || text.startsWith('%PDF')) return 'This is a PDF. A printout of the ladder (PDF or pictures) is read under "Or a printout of the program" below; this box takes the program exported as text.';
   // Binary content (zip, OLE, …).
   // eslint-disable-next-line no-control-regex -- binary files contain control characters
-  if (/[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 2000))) return 'This file is not a text export. Export the program as text (L5X / L5K, PLCopen XML, SCL / ST source, CSV) or upload a PDF printout of the ladder.';
+  if (/[\x00-\x08\x0E-\x1F]/.test(text.slice(0, 2000))) return 'This file is not a text export. Export the program as text (L5X / L5K, PLCopen XML, SCL / ST source, CSV). A printout of the ladder (PDF or pictures) goes under "Or a printout of the program" below.';
   return null;
 }
 
@@ -63,6 +75,9 @@ function read(format: SourceFormat, text: string): ForeignProgram {
     case 'siemens-scl': return readStSource(text.replace(/\r\n?/g, '\n'), true);
     case 'click-csv': return readClickCsv(text);
     case 'mitsubishi-csv': return readGxCsv(text);
+    case 'il-text': return readIlText(text);
+    case 'siemens-stl': return readStlSource(text);
+    case 'siemens-xml': return readTiaXml(text);
     default: throw new Error('This file type is not read yet.');
   }
 }
@@ -76,7 +91,7 @@ export function importProgramText(fileName: string, text: string): ImportedProgr
   return convertForeign(read(format, text), fileName);
 }
 
-const NOT_RECOGNISED = 'This file was not recognised as a PLC program export. Supported: Studio 5000 .L5X / .L5K, PLCopen XML, Structured Text / SCL source, Mitsubishi GX Works CSV (program + device comments), CLICK address list (CSV). Or upload a PDF printout of the ladder.';
+const NOT_RECOGNISED = 'This file was not recognised as a PLC program export. Supported: Studio 5000 .L5X / .L5K, PLCopen XML, Structured Text / SCL source, Mitsubishi GX Works CSV (program + device comments), CLICK address list (CSV), Yaskawa MPE720 project (.YMW7). Or upload a PDF printout of the ladder.';
 
 /** File bytes as text: UTF-16 exports (GX Works) are decoded by their byte order mark. */
 export function fileText(name: string, bytes: Uint8Array): string {
@@ -87,7 +102,15 @@ export function fileText(name: string, bytes: Uint8Array): string {
  * Read the files of one program: the program file plus companions (GX Works device comments).
  * Returns the program and the name of the main file.
  */
-export function importProgramFiles(files: { name: string; text: string }[]): { program: ImportedProgram; main: { name: string; text: string } } {
+export function importProgramFiles(files: { name: string; text: string; bytes?: Uint8Array }[]): { program: ImportedProgram; main: { name: string; text: string } } {
+  // Yaskawa MPE720 project (binary), with the Weintek touch-panel project when it came along.
+  const ymw = files.find((f) => f.bytes && isYmw7(f.name, f.bytes));
+  const panel = files.find((f) => f.bytes && isEmtp(f.name, f.bytes));
+  if (ymw) {
+    const fp = readYmw7(ymw.bytes!, ymw.name, panel ? readEmtp(panel.bytes!) : undefined);
+    return { program: convertForeign(fp, ymw.name), main: { name: ymw.name, text: '' } };
+  }
+  if (panel) throw new Error(`${panel.name}: this is the touch-panel project (Weintek EasyBuilder Pro). Add the PLC project with it (Yaskawa MPE720: the .YMW7 file).`);
   for (const f of files) { const why = unreadableReason(f.name, f.text); if (why) throw new Error(`${f.name}: ${why}`); }
   const gx = files.find((f) => isGxProgram(f.text));
   if (gx) {
@@ -98,6 +121,19 @@ export function importProgramFiles(files: { name: string; text: string }[]): { p
     if (files.every((f) => isGxComments(f.text))) throw new Error('This is a GX Works device comment file: add the program CSV (Project › Export to CSV) with it.');
   }
   const main = files.find((f) => detectFormat(f.name, f.text) && detectFormat(f.name, f.text) !== 'click-csv') ?? files.find((f) => detectFormat(f.name, f.text));
-  if (!main) throw new Error(NOT_RECOGNISED);
+  if (!main) throw new Error(files.some((f) => isSiemensTagTable(f.text)) ? 'This is a PLC tag table: add the program (SCL source or PLCopen XML) with it.' : NOT_RECOGNISED);
+  const format = detectFormat(main.name, main.text)!;
+  // Delta / Inovance / Xinje instruction list with its device comment list.
+  if (format === 'il-text') {
+    const comments = files.find((f) => f !== main && isIlComments(f.text));
+    return { program: convertForeign(readIlText(main.text, comments?.text ?? ''), main.name), main };
+  }
+  // Siemens: the PLC tag table gives the addresses the SCL source does not have.
+  const table = files.find((f) => f !== main && isSiemensTagTable(f.text));
+  if (table && (format === 'siemens-scl' || format === 'siemens-stl' || format === 'siemens-xml' || format === 'st' || format === 'plcopen')) {
+    const fp = read(format, main.text);
+    mergeSiemensTags(fp, readSiemensTags(table.text));
+    return { program: convertForeign(fp, main.name), main };
+  }
   return { program: importProgramText(main.name, main.text), main };
 }

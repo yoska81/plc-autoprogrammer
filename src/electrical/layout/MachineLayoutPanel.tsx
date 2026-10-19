@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { loadPdfjs } from '../../lib/pdfjs';
-import { buildModel, type DrawingContext } from '../derive';
+import { nativeModel, type DrawingContext } from '../derive';
 import { useElectricalStore } from '../../store/useElectricalStore';
 import { useProjectsStore } from '../../store/useProjectsStore';
 import { TO_M, unitsPerMeter, type Pt } from './geometry';
@@ -101,7 +101,7 @@ export default function MachineLayoutPanel({ ctx }: { ctx: DrawingContext | null
   // position while dragging; saved to the layout when the pointer is released
   const [dragAt, setDragAt] = useState<{ key: string; p: Pt } | null>(null);
 
-  const model = useMemo(() => (ctx ? buildModel(ctx) : null), [ctx]);
+  const model = useMemo(() => (ctx ? nativeModel(ctx) : null), [ctx]);
   const k = L.scale?.unitsPerMeter ?? 0; // canvas units per metre
   const toM = (u: number) => (k ? u / k : 0);
   const fmtLen = (m: number) => (L.display === 'ft' ? `${(m / 0.3048).toFixed(1)} ft` : `${m.toFixed(1)} m`);
@@ -292,9 +292,9 @@ export default function MachineLayoutPanel({ ctx }: { ctx: DrawingContext | null
   if (!ctx) return <div className="flex-1 flex items-center justify-center text-sm text-steel-500">No design yet. Fill in the Design tab and click Generate.</div>;
 
   return (
-    <div className="flex-1 overflow-hidden flex bg-steel-50" data-testid="machine-layout">
-      {/* left: placing */}
-      <aside className="w-60 shrink-0 border-r border-steel-200 bg-white overflow-auto p-3 text-xs space-y-3">
+    <div className="flex-1 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row bg-steel-50" data-testid="machine-layout">
+      {/* left: placing (on a phone the three columns stack) */}
+      <aside className="w-full md:w-60 shrink-0 border-b md:border-b-0 md:border-r border-steel-200 bg-white overflow-auto p-3 text-xs space-y-3">
         <div>
           <div className="font-semibold text-steel-700 mb-1">Layout picture</div>
           <label className={`${btn} inline-block cursor-pointer`}>
@@ -374,7 +374,8 @@ export default function MachineLayoutPanel({ ctx }: { ctx: DrawingContext | null
       </aside>
 
       {/* canvas */}
-      <div className="flex-1 overflow-auto p-3">
+      {/* The drawing pans both ways (it is wider than a phone). */}
+      <div className="flex-1 overflow-auto p-3 min-h-[60vh] md:min-h-0" data-scroll-x="">
         {!L.scale && <div className="mb-2 text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded px-3 py-1.5">Set the scale first (two points and the real distance) — cable lengths are calculated only on a scaled layout.</div>}
         <svg ref={svgRef} viewBox={`0 0 ${L.canvas.w} ${L.canvas.h}`} className={`w-full bg-white border border-steel-300 select-none ${tool !== 'select' || placing ? 'cursor-crosshair' : ''}`}
           style={{ aspectRatio: `${L.canvas.w} / ${L.canvas.h}`, maxHeight: '78vh' }} data-testid="layout-canvas" role="img" aria-label="Machine layout"
@@ -447,7 +448,7 @@ export default function MachineLayoutPanel({ ctx }: { ctx: DrawingContext | null
       </div>
 
       {/* right: suggestions and cables */}
-      <aside className="w-[26rem] shrink-0 border-l border-steel-200 bg-white overflow-auto p-3 text-xs space-y-4">
+      <aside className="w-full md:w-[26rem] shrink-0 border-t md:border-t-0 md:border-l border-steel-200 bg-white overflow-auto p-3 text-xs space-y-4">
         <section data-testid="layout-suggestions">
           <div className="font-semibold text-steel-700 mb-1">Suggestions ({open.length})</div>
           {!ctx.machineLayout && <p className="text-steel-400">Set the scale and place the cabinet and devices to get suggestions.</p>}

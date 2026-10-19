@@ -24,18 +24,22 @@ export async function printPdf(pdf: Blob, fallbackName: string, page: { wMm: num
     await new Promise<void>((resolve, reject) => {
       const frame = document.createElement('iframe');
       frame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;';
-      const timer = setTimeout(() => reject(new Error('timeout')), 15000);
+      // the frame never stays behind: gone when printing fails, and after the print dialog closes (or a minute)
+      const done = () => { if (frame.isConnected) frame.remove(); };
+      const fail = (e: unknown) => { done(); reject(e instanceof Error ? e : new Error(String(e))); };
+      const timer = setTimeout(() => fail(new Error('timeout')), 15000);
       frame.onload = () => {
         clearTimeout(timer);
         try {
+          frame.contentWindow!.addEventListener('afterprint', () => setTimeout(done, 1000), { once: true });
           frame.contentWindow!.focus();
           frame.contentWindow!.print();
           resolve();
         } catch (e) {
-          reject(e instanceof Error ? e : new Error(String(e)));
+          fail(e);
+          return;
         }
-        // Keep the frame long enough for the print dialog to read it.
-        setTimeout(() => frame.remove(), 60000);
+        setTimeout(done, 60000);
       };
       frame.src = url;
       document.body.appendChild(frame);

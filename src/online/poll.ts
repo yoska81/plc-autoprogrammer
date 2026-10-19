@@ -62,10 +62,30 @@ export function decodeWord(regs: number[], type: ModbusType, swapWords = false):
   }
 }
 
-/** Encode a value for writing a single register (16-bit types only). */
+/** What a register can hold: INT16 (DS), INT32 (DD), 16-bit unsigned (DH and the like). */
+export const WORD_RANGE: Partial<Record<ModbusType, [number, number]>> = { int16: [-32768, 32767], int32: [-2147483648, 2147483647], uint16: [0, 65535], hex: [0, 65535] };
+
+/**
+ * Why a value cannot be written to a register (null when it can): not a whole number, outside what the
+ * register holds, or outside the range the project declares for it (an HMI entry's min / max, the program's
+ * first-scan limits). A value is never clamped: a refused one is not sent at all.
+ */
+export function wordValueError(address: string, value: number, type: ModbusType, declared?: { min: number | null; max: number | null }): string | null {
+  if (!Number.isFinite(value)) return `${address}: "${value}" is not a number. Nothing was written.`;
+  const range = WORD_RANGE[type];
+  if (range && !Number.isInteger(value)) return `${address} holds whole numbers only: ${value} was not written.`;
+  if (range && (value < range[0] || value > range[1])) return `${value} is outside what ${address} can hold (${range[0]} to ${range[1]}). Nothing was written.`;
+  if (declared && ((declared.min !== null && value < declared.min) || (declared.max !== null && value > declared.max))) {
+    return `${value} is outside the range set for ${address} in the project (${declared.min ?? '…'} to ${declared.max ?? '…'}). Nothing was written.`;
+  }
+  return null;
+}
+
+/** Encode a value for writing a single register (16-bit types only). A value it cannot hold is refused, never clamped. */
 export function encodeWord(value: number, type: ModbusType): number {
-  if (type === 'int16') return (Math.max(-32768, Math.min(32767, Math.round(value))) + 0x10000) & 0xffff;
-  return Math.max(0, Math.min(0xffff, Math.round(value)));
+  const range = WORD_RANGE[type === 'int16' ? 'int16' : 'uint16']!;
+  if (!Number.isInteger(value) || value < range[0] || value > range[1]) throw new RangeError(`${value} does not fit a ${type === 'int16' ? '16-bit signed' : '16-bit'} register (${range[0]} to ${range[1]}).`);
+  return type === 'int16' ? (value + 0x10000) & 0xffff : value;
 }
 
 export interface PollResult {

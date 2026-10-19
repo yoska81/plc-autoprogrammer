@@ -1,4 +1,5 @@
 import type JSZip from 'jszip';
+import { addressTextFor } from './docs/addressText';
 import type { PDFDict, PDFRef } from 'pdf-lib';
 import type { ProjectSnapshot } from './collect';
 import { buildEngineeringPdf } from './engineering';
@@ -46,7 +47,7 @@ export type Progress = (step: string, done: number, total: number) => void;
 
 /** I/O list, BOM and label list as small documents. */
 const ioListPdf = (p: ProjectSnapshot) =>
-  simpleDoc(p, 'I/O list', `${p.io.length} points · ${p.profile.name} ${p.cpu.id}`, (w) => w.table(ioListTable(p), { fontSize: 7.4 }));
+  simpleDoc(p, 'I/O list', `${p.io.length} points · ${p.profile.name} ${p.cpu.id}`, (w) => { w.mapText = addressTextFor(p); w.table(ioListTable(p), { fontSize: 7.4 }); });
 
 const bomPdf = (p: ProjectSnapshot) =>
   simpleDoc(p, 'Bill of materials', 'Control panel parts, grouped by category', (w) => w.table(bomTable(p), { fontSize: 7.2 }));
@@ -55,6 +56,7 @@ const labelListPdf = (p: ProjectSnapshot) => {
   const labels = listLabels(p.drawingCtx!);
   const total = labels.reduce((s, l) => s + l.copies, 0);
   return simpleDoc(p, 'Label list', `${labels.length} different labels, ${total} to print`, (w) => {
+    w.mapText = addressTextFor(p);
     w.para('Every marker and tag the panel and the machine need. Print them from Electrical design → Labels (label printer PDF, sheet PDF, CSV or Excel for the printer software).');
     for (const k of LABEL_KINDS) {
       const ls = labels.filter((l) => l.kind === k.kind);
@@ -298,11 +300,11 @@ export async function addPackageToZip(zip: JSZip, p: ProjectSnapshot, pre: Prebu
     const { buildCheckoutPdf } = await import('../online/checkoutPdf');
     zip.file(`commissioning/${p.fileBase}_IO_checkout.pdf`, await buildCheckoutPdf(p, p.checkout));
   }
-  // The commissioning checklist once work on site has started (ticks, notes or a signature).
+  // The commissioning checklist: a blank form to take to site, or as filled in once work there has started.
   const comm = commissioningFor(useProjectsStore.getState().activeId);
-  if (Object.keys(comm.results).length || comm.signoff) {
-    const [{ commissioningItems }, { commissioningPdf, commissioningXlsx }] = await Promise.all([import('../commissioning/checklist'), import('../commissioning/export')]);
-    const items = commissioningItems(p);
+  const [{ commissioningItems }, { commissioningPdf, commissioningXlsx }] = await Promise.all([import('../commissioning/checklist'), import('../commissioning/export')]);
+  const items = commissioningItems(p);
+  if (items.length) {
     zip.file(`commissioning/${p.fileBase}_commissioning_checklist.pdf`, await commissioningPdf(p, items, comm));
     zip.file(`commissioning/${p.fileBase}_commissioning_checklist.xlsx`, await commissioningXlsx(p.projectName, items, comm));
   }

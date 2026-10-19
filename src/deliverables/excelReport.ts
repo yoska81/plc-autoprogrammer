@@ -7,6 +7,8 @@ import { qaTable } from '../components/questions/qaTable';
 import { billOfMaterials, cableSchedule, designWarnings, supplyText, terminalPlan, wireNumbers } from '../electrical/derive';
 import { describeElement, describeOutput } from '../plc/core/clickExport';
 import { getHmi } from '../hmi/hmiCatalog';
+import { nativeIoLabel, screenIoName } from '../hmi/nativeIo';
+import { exportContext } from './exportContext';
 import { calcWarnings, calculations } from './docs/calcs';
 import { designReviewTable, operatorManual } from './docs/manual';
 import { aiReviewNote } from '../review/report';
@@ -17,7 +19,7 @@ import { safetyFunctionTable, safetyFunctions } from './docs/safety';
 import { fatProcedure, satChecklist, satTable, testTable } from './docs/fat';
 import { pmSchedule, sparePartsTable } from './docs/maintenance';
 import { isGroup, type DocTable } from './docs/table';
-import { cableKey, noteOf, wireKeys } from '../edits/lists';
+import { cableKey, noteOf, wireNoteKeys } from '../edits/lists';
 
 /** Deep blue: title rows (white text) and dark text. */
 const BRAND = 'FF0B2A5C';
@@ -33,6 +35,14 @@ function header(ws: Worksheet, cols: { header: string; key: string; width: numbe
   row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEAD } };
   row.alignment = { vertical: 'middle', wrapText: true };
   ws.views = [{ state: 'frozen', ySplit: 1 }];
+}
+
+/** Long text wraps in its column (descriptions, functions, notes) instead of running across the next cells. */
+export function wrapCells(ws: Worksheet, fromRow = 2) {
+  ws.eachRow((row, n) => {
+    if (n < fromRow) return;
+    row.eachCell((c) => { c.alignment = { ...c.alignment, wrapText: true, vertical: c.alignment?.vertical ?? 'top' }; });
+  });
 }
 
 /** A sheet from a shared DocTable (same rows as the engineering package PDF). */
@@ -184,6 +194,7 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
     for (const g of billOfMaterials(p.drawingCtx)) {
       for (const l of g.lines) bom.addRow({ i: l.note ? '' : l.item, q: l.qty, pn: l.partNumber, m: l.manufacturer, d: l.description, tags: l.tags.join(', '), c: g.title });
     }
+    wrapCells(bom);
 
     tableSheet(wb, 'Protective Devices', protectiveDeviceTable(p));
     const sc = sccrTable(p);
@@ -195,8 +206,9 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
       { header: 'Color', key: 'c', width: 8 }, { header: 'Size', key: 's', width: 10 }, { header: 'Function', key: 'fn', width: 40 }, { header: 'Note', key: 'n', width: 40 },
     ]);
     const wireList = wireNumbers(p.drawingCtx);
-    const keys = wireKeys(wireList);
+    const keys = wireNoteKeys(p.drawingCtx);
     wireList.forEach((w, i) => wires.addRow({ w: w.wire, f: w.from, t: w.to, c: w.color, s: w.size, fn: w.function, n: noteOf(keys[i]) }));
+    wrapCells(wires);
 
     const cab = wb.addWorksheet('Cable Schedule');
     header(cab, [
@@ -208,6 +220,7 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
       cab.addRow({ c: c.tag, z: c.zone, f: c.from, t: c.to, ty: c.type, pn: c.partNumber ?? '', s: c.size, l: c.length, n: noteOf(cableKey(c)) }).font = { bold: true };
       for (const k of c.cores) cab.addRow({ core: k.core, w: k.wire, col: k.color, f: k.from, t: k.to });
     }
+    wrapCells(cab);
 
     const tb = wb.addWorksheet('Terminal Plan');
     header(tb, [
@@ -236,12 +249,16 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
       { header: 'Access', key: 'x', width: 11 }, { header: 'Description', key: 'd', width: 70 },
     ]);
     for (const t of p.hmi.tags) tags.addRow({ a: t.address, n: t.name, t: t.dataType, x: t.access, d: t.description });
+    wrapCells(tags);
     const al = wb.addWorksheet('HMI Alarms');
     header(al, [{ header: 'Address', key: 'a', width: 10 }, { header: 'Severity', key: 's', width: 10 }, { header: 'Message', key: 'm', width: 80 }]);
     for (const a of p.hmi.alarms) al.addRow({ a: a.address, s: a.severity, m: a.message });
     const sc = wb.addWorksheet('HMI Screens');
     header(sc, [{ header: 'Screen', key: 's', width: 20 }, { header: 'Element', key: 'e', width: 30 }, { header: 'Kind', key: 'k', width: 14 }, { header: 'Address', key: 'a', width: 10 }, { header: 'Action', key: 'x', width: 11 }]);
-    for (const s of p.hmi.screens) for (const e of s.elements) sc.addRow({ s: s.name, e: e.label, k: e.kind, a: e.address ?? '', x: e.action ?? '' });
+    // Labels as the screens and their images show them (%I0.0 on an S7); the Address column stays the app's.
+    const ctx = exportContext(p);
+    const ioName = screenIoName(p.profile, p.cpu, ctx.modules ?? [], new Set([...p.addresses.values()].map((x) => x.toUpperCase())));
+    for (const s of p.hmi.screens) for (const e of s.elements) sc.addRow({ s: s.name, e: nativeIoLabel(e.label, ioName), k: e.kind, a: e.address ?? '', x: e.action ?? '' });
   }
 
   // No touch panel: the operator station is the operator interface.

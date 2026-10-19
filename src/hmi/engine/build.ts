@@ -8,6 +8,7 @@
  */
 import type { AccessLevel, HmiAlarm, HmiDesign, HmiElement, HmiScreen, HmiState, HmiTag, MachineSymbol, MachineSymbolKind } from '../types';
 import { GAP, MIN_TOUCH, cutTexts, layoutBands } from '../layout';
+import { safeScreenSize } from '../screenSize';
 import type { HmiActuator, HmiAxis, HmiContent, HmiEncoder } from './content';
 
 interface Rect { x: number; y: number; w: number; h: number }
@@ -213,10 +214,14 @@ function planTags(c: HmiContent, t: TagPlan): Plan {
   if (c.process?.dwell) {
     plan.dwellSp = t.as('sp:dwell').sp(c.process.dwell.name.replace(/\s+/g, '_'), `${c.process.dwell.name} in ms (100-10000, default ${c.process.dwell.defaultMs} on the first scan): the cycle's ${c.process.dwell.name.toLowerCase()} step lasts this long.`);
   }
-  if (c.partSensor) {
-    const counter = t.as('word:count').counter('Part_Count', `Counter value: the PLC counts each rising edge of ${c.partSensor.address} (${c.partSensor.description}).`);
-    const resetC = t.as('cmd:countreset').cmd('Count_Reset', 'Momentary: resets the part counter CT1.');
-    const batch = t.as('sp:batch').sp('Batch_Target', 'Batch size in parts (0 = no limit): the PLC stops the cycle when CTD1 reaches it.');
+  if (c.partSensor || c.programCount) {
+    const counter = t.as('word:count').counter('Part_Count', c.programCount
+      ? `Counter value: the program's counter ${c.programCount.name}.`
+      : `Counter value: the PLC counts each rising edge of ${c.partSensor!.address} (${c.partSensor!.description}).`);
+    // The counter's own name (CTD3 counts in CT3), whichever counter the program uses.
+    const ct = counter.replace(/^CTD/i, 'CT');
+    const resetC = t.as('cmd:countreset').cmd('Count_Reset', `Momentary: resets the part counter ${ct}.`);
+    const batch = t.as('sp:batch').sp('Batch_Target', `Batch size in parts (0 = no limit): the PLC stops the cycle when ${counter} reaches it.`);
     const rate = t.as('word:rate').word('Parts_Per_Min', 'Parts counted in the last 60 s.');
     plan.count = { counter, reset: resetC, batch, rate };
   }
@@ -306,7 +311,8 @@ export interface BuildOptions {
 }
 
 export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
-  const W = o.widthPx, H = o.heightPx;
+  // A size that is not a number (a part the catalog does not know) would put NaN in every element: use the catalog's.
+  const { w: W, h: H } = safeScreenSize(o.widthPx, o.heightPx, { hmiPartNumber: o.partNumber } as HmiDesign);
   const bands = layoutBands(W, H);
   const area = bands.content;
   const rowH = Math.max(MIN_TOUCH.h, H <= 300 ? 48 : H <= 600 ? 52 : 60);
@@ -470,7 +476,7 @@ export function buildHmi(c: HmiContent, o: BuildOptions): HmiDesign {
   for (const s of screens) s.elements = s.elements.map(fitTexts);
 
   return {
-    hmiPartNumber: o.partNumber, machineName: c.machineName, screens, alarms: t.alarms, tags: t.tags,
+    hmiPartNumber: o.partNumber ?? '', machineName: c.machineName, screens, alarms: t.alarms, tags: t.tags,
     notes: [
       `Rule-based HMI: ${screens.length} screens (${groups.map((g) => g.name).join(', ')}), ${t.tags.length} HMI tags in the standard ranges (commands C1001-, alarms C1101-, status C1201-, setpoints DS1001-/DF101-, status words DS1101-).`,
       'Passwords: Maintenance for Manual, Setup and counter resets; Engineer for the service interval. Confirm the levels with the customer.',

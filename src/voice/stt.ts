@@ -168,6 +168,10 @@ export function micError(e: unknown): string {
 
 let active: Dictation | null = null;
 
+/** Longest wait for the microphone to start listening. */
+const START_MS = 10_000;
+export const MIC_DID_NOT_START = 'The microphone did not start within 10 seconds. Check that this window may use the microphone (the icon in the address bar) and that one is connected, then try again.';
+
 /** Start listening. Only one dictation runs at a time: starting a new one finishes the previous. */
 export async function startDictation(h: DictationHandlers, o: DictationOptions = {}): Promise<Dictation> {
   // The claude.ai preview frame has no microphone: no prompt, every request is refused.
@@ -196,7 +200,8 @@ function browserDictation(lang: string, h: DictationHandlers, o: DictationOption
   const done = new Promise<string>((res, rej) => { resolve = res; reject = rej; });
   const text = () => `${finals} ${interim}`.replace(/\s+/g, ' ').trim();
   h.onState('starting');
-  rec.onstart = () => h.onState('listening');
+  let started = false;
+  rec.onstart = () => { started = true; h.onState('listening'); };
   rec.onresult = (e) => {
     interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -220,7 +225,14 @@ function browserDictation(lang: string, h: DictationHandlers, o: DictationOption
     else resolve(text());
   };
   const timer = setTimeout(() => rec.stop(), o.maxMs ?? 5 * 60_000);
-  void done.finally(() => clearTimeout(timer)).catch(() => undefined);
+  // The microphone never started (no device, or a permission prompt left unanswered): stop waiting, say why.
+  const startTimer = setTimeout(() => {
+    if (started || cancelled) return;
+    error = new Error(MIC_DID_NOT_START);
+    try { rec.abort(); } catch { /* already stopped */ }
+    reject(error);
+  }, START_MS);
+  void done.finally(() => { clearTimeout(timer); clearTimeout(startTimer); }).catch(() => undefined);
   try { rec.start(); } catch (e) { reject(e); }
   return {
     engine: 'browser',

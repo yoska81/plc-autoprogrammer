@@ -12,7 +12,7 @@ import type { LadderProgram, Rung } from '../core/ladder';
 export type SourceFormat =
   | 'l5x' | 'l5k' | 'click-csv' | 'plcopen' | 'st'
   | 'siemens-scl' | 'siemens-stl' | 'siemens-xml' | 'siemens-tags'
-  | 'mitsubishi-csv' | 'il-text' | 'printout';
+  | 'mitsubishi-csv' | 'il-text' | 'yaskawa-mpe720' | 'printout';
 
 export const FORMAT_LABEL: Record<SourceFormat, string> = {
   l5x: 'Studio 5000 / RSLogix 5000 export (.L5X)',
@@ -26,6 +26,7 @@ export const FORMAT_LABEL: Record<SourceFormat, string> = {
   'siemens-tags': 'Siemens PLC tag table',
   'mitsubishi-csv': 'Mitsubishi GX Works program (CSV)',
   'il-text': 'Instruction list (Mitsubishi / Delta / Inovance / Xinje)',
+  'yaskawa-mpe720': 'Yaskawa MPE720 project (.YMW7)',
   printout: 'Printout or screenshot of the program (read by the AI)',
 };
 
@@ -60,13 +61,25 @@ export interface ForeignRoutine {
   untranslated: string[];
   /** Where the routine is in the original file (program and routine name), for writing changes back into it. */
   origin?: { program: string; routine: string };
+  /** Rung id → the number of the original rung it came from (one original rung can give several). */
+  rungNumbers?: Record<string, string>;
 }
+
+/**
+ * One network axis as the project file has it: MECHATROLINK line (circuit) and axis number, the drive and motor
+ * model when the file names them. 'virtual': no drive (an SVR virtual axis).
+ */
+export interface NetworkAxisImport { line: number; axis: number; drive?: string; motor?: string; kind: 'servo' | 'virtual' }
 
 export interface ForeignProgram {
   format: SourceFormat;
   vendor: string;
   /** Controller / CPU as the file names it (e.g. "1769-L33ER", "CPU 1214C", "FX5U"). */
   controller: string;
+  /** The I/O modules in the controller's own rack, by slot, as the file names them ("1769-IQ16/A"). */
+  modules?: { slot: number; catalog: string }[];
+  /** Network (MECHATROLINK) axes the project configures: not I/O points, each one its drive and motor. */
+  axes?: NetworkAxisImport[];
   projectName: string;
   tags: ForeignTag[];
   routines: ForeignRoutine[];
@@ -101,7 +114,7 @@ export interface ImportReport {
 }
 
 export interface ImportedProgram {
-  source: { format: SourceFormat; vendor: string; controller: string; projectName: string; fileName: string };
+  source: { format: SourceFormat; vendor: string; controller: string; projectName: string; fileName: string; modules?: { slot: number; catalog: string }[]; axes?: NetworkAxisImport[] };
   /** Program with neutral addresses; I/O points are written as "@IN:<n>" / "@OUT:<n>" until a PLC is chosen (materialize). */
   program: LadderProgram;
   io: ImportedIoPoint[];
@@ -110,4 +123,6 @@ export interface ImportedProgram {
   report: ImportReport;
   /** Block id → its routine in the original file. */
   blockOrigin: Record<string, { program: string; routine: string }>;
+  /** App rung id → number of the original rung it came from (in its routine). */
+  rungOrigin: Record<string, string>;
 }

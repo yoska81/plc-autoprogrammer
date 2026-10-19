@@ -7,7 +7,7 @@
 import type { IOPoint } from '../../types/io';
 import type { AnalogSetupRow } from '../../plc/core/analog';
 import type { Region } from '../../standards/regions';
-import { enclosureText, powerText, SUPPLY_INFO } from '../../standards/regions';
+import { enclosureText, isIec, powerText, SUPPLY_INFO } from '../../standards/regions';
 import { DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
 import { enclosureFamily, enclosurePanelArea, enclosureRank, enclosureSize, enclosuresFor, panelLayout, SPARE_RULE, spareSpace, terminalCounts, motorFla, vendorTerminal, type DrawingContext } from '../derive';
 import { DC_LOAD_A } from '../../deliverables/docs/calcs';
@@ -21,6 +21,7 @@ import { devicesAndWiring, motorFor, OVER_TEMP_RE } from './devices';
 import { processLoads } from './process';
 import { num, Picker } from './select';
 import { controlInputAmps, motionDesign, motionDeviceType } from '../motion';
+import { commModulesFor } from '../commModule';
 
 export { defaultMachineModel, type MachineModel } from './machineModel';
 
@@ -94,7 +95,9 @@ export function generateDesign(input: EngineInput): EngineResult {
   const { inputs, getPart } = input;
   const supply = inputs.supply;
   const pk = new Picker(input.pref ?? DEFAULT_PREFERENCE);
-  const tags = new Tags(['PLC', 'ENC1', 'SP1', 'DS1', 'SR1']);
+  // the relay logic's devices keep their converted tags (CR1, K1, PB4…): the rules never hand those out again
+  const relayDevices = inputs.relayLogic?.devices ?? [];
+  const tags = new Tags(['PLC', 'ENC1', 'SP1', 'DS1', 'SR1', ...relayDevices.map((d) => d.tag)]);
   // Servo axes, encoders and ultrasonic sensors (src/electrical/motion.ts): wired there, left out of the rules below.
   const motion = motionDesign({ io: input.io, addresses: input.addresses, supply, region: input.region, pref: input.pref, spec: input.spec, nextTag: (p) => tags.next(p), extraParts: input.motionParts });
   const io = input.io.filter((p) => !motion.claimed.has(p.id));
@@ -134,6 +137,10 @@ export function generateDesign(input: EngineInput): EngineResult {
     const kind = /analog/i.test(p?.description ?? '') && !discrete ? 'Analog' : /snap-in/i.test(p?.description ?? '') ? 'Snap-in I/O' : 'I/O';
     plc.push(comp(`IO${i + 1}`, pn, 1, `${kind} module, slot ${i + 1}`));
   });
+  // The PLC-side module the touch panel needs to reach the PLC (src/electrical/commModule.ts): a part, never an I/O slot.
+  const comm = commModulesFor(input.hmiPartNumber, input.plc.cpuPartNumber, getPart, (p) => tags.next(p));
+  plc.push(...comm.components);
+  notes.push(...comm.notes);
 
   // Unitronics: the input type is set by wiring / a jumper, and some analog inputs are digital input terminals.
   const cpuPart = getPart(input.plc.cpuPartNumber);
@@ -165,6 +172,18 @@ export function generateDesign(input: EngineInput): EngineResult {
     required.push(comp(tags.next(TAG_PREFIX[p?.category ?? 'other'] ?? 'X'), r.partNumber, r.quantity, `Required by the designer${p ? `: ${p.description}` : ''}`));
   }
 
+  // Relay logic kept from a converted machine: each device of the rungs is a part of the design under its own tag
+  // (the converter's North-American part); a device without a part, or one the catalog does not know, is to select.
+  const taken = new Set([...power.components, ...dev.components, ...plc, ...required].map((c) => c.tag));
+  const toSelect: string[] = [];
+  for (const d of relayDevices) {
+    if (taken.has(d.tag)) continue;
+    const p = d.partNumber ? getPart(d.partNumber) : undefined;
+    if (p) { required.push(comp(d.tag, p.partNumber, 1, `${d.description} (relay logic)`)); taken.add(d.tag); }
+    else toSelect.push(`${d.tag} (${d.category}${d.partNumber ? `, ${d.partNumber} not in the catalog` : ''})`);
+  }
+  if (toSelect.length) notes.push(`Relay logic: select a part for ${toSelect.join(', ')} — drawn on the ladder, not yet in the parts list.`);
+
   // a button of a station (PB1L / PB1R on station PB1) is the station's part, not an uncatalogued sensor
   const compOf = (tag: string) => dev.components.find((c) => c.tag === tag) ?? dev.components.find((c) => tag.startsWith(c.tag) && /^[A-Z]$/.test(tag.slice(c.tag.length)));
   const fieldInputs = dev.ioWiring.filter((w) => w.location && w.location !== 'Cabinet' && w.location !== 'Cabinet door' && !input.getPart(compOf(w.deviceTag)?.partNumber ?? '')).length;
@@ -176,6 +195,8 @@ export function generateDesign(input: EngineInput): EngineResult {
     tag: b.motor.tag, description: b.motor.description, hp: b.motor.hp, voltage: supply,
     starter: b.vfd ? 'vfd' : power.components.some((c) => c.motorTag === b.motor.tag && getPart(c.partNumber)?.category === 'motorProtector') ? 'motor-protector' : 'contactor-overload',
     reversing: b.reversing,
+    // a motor the designer typed stays theirs; one the engine read from this machine is marked as the design's
+    ...(inputs.motors.some((m) => m.tag === b.motor.tag && m.description === b.motor.description && !m.fromDesign) ? {} : { fromDesign: true }),
   }));
   if (power.branches.length) {
     const basis = SUPPLY_INFO[supply].hz === 50 ? 'IEC 60947-4-1 Annex G' : 'NEC Table 430.250 / 430.248';
@@ -198,7 +219,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   const ctxOf = (components: DesignComponent[], design: Partial<ElectricalDesign> = {}): DrawingContext => ({
     projectName: input.projectName ?? 'Machine',
     design: {
-      inputs: { ...inputs, motors: motorSpecs }, components, ioWiring: [...dev.ioWiring, ...motion.ioWiring], notes: [], machine: dev.machine,
+      inputs: { ...inputs, motors: motorSpecs, motorsMarked: true }, components, ioWiring: [...dev.ioWiring, ...motion.ioWiring], notes: [], machine: dev.machine,
       generatedAt: input.now ?? new Date().toISOString(), ...design,
     },
     getPart, plc: input.plc,
@@ -228,7 +249,7 @@ export function generateDesign(input: EngineInput): EngineResult {
     if (hit) return hit;
     const sub = pk.byNumber(String(enc.ratings.subpanel ?? '')) ?? getPart(String(enc.ratings.subpanel ?? ''));
     const depth = num(enc.ratings.depthIn) ?? 8;
-    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth, proc.amps + motion.loadA);
+    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth, proc.amps + motion.loadA, !isIec(input.region));
     const head = [
       comp('ENC1', enc.partNumber, 1, `Main enclosure ${enc.ratings.heightIn}x${enc.ratings.widthIn}x${enc.ratings.depthIn} ${enclosureText(inputs.enclosureRating, input.region)}`),
       ...(sub ? [comp('SP1', sub.partNumber, 1, 'Back panel')] : []),
@@ -348,7 +369,7 @@ export function generateDesign(input: EngineInput): EngineResult {
 
   return {
     design: {
-      inputs: { ...inputs, motors: motorSpecs, enclosureRating: inputs.enclosureRating },
+      inputs: { ...inputs, motors: motorSpecs, motorsMarked: true, enclosureRating: inputs.enclosureRating },
       components: best.components,
       ioWiring: [...dev.ioWiring, ...motion.ioWiring],
       notes: [...askUser, ...notes],

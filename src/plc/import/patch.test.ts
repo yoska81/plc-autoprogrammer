@@ -14,7 +14,7 @@ import { planUpgrade, type UpgradePlan } from './upgrade';
 import { exportUpgrade, upgradeChanges } from './exportUpgrade';
 import { gunzipText, gzipText } from './gz';
 import { buildL5x } from '../core/profiles/l5x';
-import { buildScl } from '../core/profiles/siemens';
+import { buildScl, siemensTagsSdf } from '../core/profiles/siemens';
 import { validateProgram } from '../core/validate';
 import { getCpu, getProfile } from '../core/profiles';
 import { resolveAddresses, type ExportContext } from '../core/profile';
@@ -190,7 +190,10 @@ function routineRange(xml: string, name: string): [number, number] {
   const scl = buildScl(fixed, { io, addresses, labels, header: 't', extraTags: [], cpuId: plan.cpuId, modules: moduleSlots(plan.modules), projectName: 'MixTank' }).scl;
   assert.ok(scl.indexOf('FUNCTION "FC_ScaleAnalog" : REAL') < scl.indexOf('FUNCTION_BLOCK "Machine"'), 'the function is a block of its own in the SCL source');
   assert.match(scl, /NORM_X\(MIN := 0, VALUE := #Raw, MAX := 27648\)/);
-  assert.match(scl, /#Level_Pct := "FC_ScaleAnalog"\(Raw := "Level_Raw"|#Level_Pct := "FC_ScaleAnalog"\(Raw := #?\w+/, 'the call uses the export\'s own variables');
+  assert.match(scl, /#Level_Pct := "FC_ScaleAnalog"\(Raw := "Level_Raw_raw", LoEng := 0\.0, HiEng := 100\.0\);/, 'the kept call gets the raw Int word (TIA: Raw : INT), and writes the static');
+  assert.match(scl, /"Level_Raw_raw"/);
+  const sdf = siemensTagsSdf(fixed, { io, addresses, labels, header: 't', extraTags: [], cpuId: plan.cpuId, modules: moduleSlots(plan.modules), projectName: 'MixTank' });
+  assert.match(sdf, /^"Level_Raw_raw","%IW\d+","Int"/m, 'the raw word is an Int PLC tag on an input word');
 }
 
 // ── The original file is kept compressed ──

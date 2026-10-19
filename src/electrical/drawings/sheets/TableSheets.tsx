@@ -1,5 +1,6 @@
 /** Cover, notes, terminal plan and bill of materials sheets (tabular). */
 import { WIRE_NUMBERING_NOTES, codeRefs, ratingText, supplyText } from '../../derive';
+import { renameWire } from '../../ioNames';
 import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
 import { TERM_ROWS, type DrawingPlan, type PlannedSheet, type SheetSpec } from '../plan';
 import { Line, Txt } from '../symbols';
@@ -85,7 +86,9 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
   const ny = cy + 5.5 + colors.length * 3.6 + 5;
   const numLines: { text: string; y: number; bullet: boolean }[] = [];
   let yy = ny + 5.5;
-  for (const n of WIRE_NUMBERING_NOTES) {
+  // the examples in the PLC's own naming (I0.0 / Q0.0 on an S7)
+  const ex = (a: string) => renameWire(model.ioNames, a);
+  for (const n of WIRE_NUMBERING_NOTES.map((t) => t.replace(/\bY001A\b/g, ex('Y001A')).replace(/\bX001\b/g, ex('X001')).replace(/\bY001\b/g, ex('Y001')))) {
     wrapText(n, W - 4, 2.3).forEach((t, k) => { numLines.push({ text: t, y: yy, bullet: k === 0 }); yy += 3.1; });
     yy += 0.8;
   }
@@ -252,6 +255,19 @@ export function TerminalSheet({ plan, sheet }: { plan: DrawingPlan; sheet: Plann
 // BOM
 // ---------------------------------------------------------------------------
 
+/** A BOM cell that wraps onto a second line of its row instead of shrinking long text to an unreadable size. */
+function Cell2({ x, yy, w, text, mono, italic }: { x: number; yy: number; w: number; text: string; mono?: boolean; italic?: boolean }) {
+  const one = wrapText(text, w, 2.4, mono);
+  if (one.length <= 1) return <Txt x={x} y={yy - 1.8} size={2.4} mono={mono} italic={italic} maxW={w}>{text}</Txt>;
+  const [a, ...rest] = wrapText(text, w, 2.2, mono);
+  return (
+    <g>
+      <Txt x={x} y={yy - 3.6} size={2.2} mono={mono} italic={italic} maxW={w}>{a}</Txt>
+      <Txt x={x} y={yy - 0.9} size={2.2} mono={mono} italic={italic} maxW={w}>{rest.join(' ')}</Txt>
+    </g>
+  );
+}
+
 export function BomSheet({ sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
   const sp = sheet.spec as Extract<SheetSpec, { kind: 'bom' }>;
   const x = AREA.x + 8;
@@ -284,8 +300,8 @@ export function BomSheet({ sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) 
             <Txt x={x + cols[1] + 6} y={yy - 1.8} size={2.5} mono bold anchor="middle">{l.qty}</Txt>
             <Txt x={x + cols[2] + 1.5} y={yy - 1.8} size={2.5} mono bold maxW={cols[3] - cols[2] - 3}>{l.partNumber || '—'}</Txt>
             <Txt x={x + cols[3] + 1.5} y={yy - 1.8} size={2.4} maxW={cols[4] - cols[3] - 3}>{l.manufacturer || '—'}</Txt>
-            <Txt x={x + cols[4] + 1.5} y={yy - 1.8} size={2.4} maxW={cols[5] - cols[4] - 3} italic={l.note}>{l.description}</Txt>
-            <Txt x={x + cols[5] + 1.5} y={yy - 1.8} size={2.4} mono maxW={w - cols[5] - 3}>{l.tags.join(', ')}</Txt>
+            <Cell2 x={x + cols[4] + 1.5} yy={yy} w={cols[5] - cols[4] - 3} italic={l.note} text={l.description} />
+            <Cell2 x={x + cols[5] + 1.5} yy={yy} w={w - cols[5] - 3} mono text={l.tags.join(', ')} />
             <Line x1={x} y1={yy} x2={x + w} y2={yy} w={0.12} />
           </g>
         );

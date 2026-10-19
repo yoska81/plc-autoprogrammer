@@ -5,7 +5,8 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { clickModbus, isWritable, modbus984 } from './clickModbus';
-import { planReads, pollOnce, decodeWord, encodeWord } from './poll';
+import { planReads, pollOnce, decodeWord, encodeWord, wordValueError } from './poll';
+import { useOnlineStore, writePlc } from './useOnline';
 import { rungPowerFromValues } from './power';
 import type { ModbusBridge } from '../desktop/bridge';
 import type { LadderProgram } from '../plc/core/ladder';
@@ -45,6 +46,20 @@ assert.equal(decodeWord([0x0001, 0x0002], 'int32'), 0x20001);
 assert.equal(decodeWord([0x0002, 0x0001], 'int32', true), 0x20001);
 assert.ok(Math.abs(decodeWord([0x0000, 0x3fc0], 'float') - 1.5) < 1e-6);
 assert.equal(encodeWord(-1, 'int16'), 0xffff);
+// Out-of-range values are refused with a plain message, never clamped (70000 into DS1001 is not sent as 32767).
+assert.throws(() => encodeWord(70000, 'int16'), RangeError);
+assert.throws(() => encodeWord(-40000, 'int16'), RangeError);
+assert.throws(() => encodeWord(1.5, 'int16'), RangeError);
+assert.equal(encodeWord(32767, 'int16'), 0x7fff);
+assert.equal(encodeWord(-32768, 'int16'), 0x8000);
+assert.match(wordValueError('DS1001', 70000, 'int16')!, /70000 is outside what DS1001 can hold \(-32768 to 32767\)\. Nothing was written\./);
+assert.equal(wordValueError('DS1001', 32767, 'int16'), null);
+assert.match(wordValueError('DS1', 2.5, 'int16')!, /whole numbers only/);
+assert.match(wordValueError('DS1', Number.NaN, 'int16')!, /not a number/);
+assert.equal(wordValueError('DD1', 70000, 'int32'), null, 'DD is 32-bit');
+assert.match(wordValueError('DD1', 2 ** 31, 'int32')!, /outside what DD1 can hold/);
+assert.match(wordValueError('DS10', 45, 'int16', { min: 1, max: 30 })!, /outside the range set for DS10 in the project \(1 to 30\)/);
+assert.equal(wordValueError('DS10', 30, 'int16', { min: 1, max: 30 }), null);
 
 // Against the fake server through the desktop app's own Modbus client (electron/modbus.cjs).
 const srv = fakeServer();
@@ -63,6 +78,16 @@ await bridge.writeRegister(r('DS2').register, encodeWord(-5, 'int16'));
 const res2 = await pollOnce(bridge, blocks);
 assert.deepEqual([res2.bits.get('C1'), res2.words.get('DS2')], [true, -5]);
 assert.deepEqual(srv.state.log.filter((l: { fc: number }) => l.fc === 5 || l.fc === 6).map((l: { fc: number; address: number }) => [l.fc, l.address]), [[5, 16384], [6, 1]]);
+// writePlc refuses before anything is sent: no write on the wire, a failed entry in the write log.
+useOnlineStore.setState({ status: 'connected', allowWrites: true, writes: [] });
+const before = srv.state.log.length;
+await assert.rejects(writePlc('DS1001', 70000, bridge), /70000 is outside what DS1001 can hold/);
+await assert.rejects(writePlc('DS10', 45, bridge, { min: 1, max: 30 }), /outside the range set for DS10/);
+assert.equal(srv.state.log.slice(before).filter((l: { fc: number }) => l.fc === 6).length, 0, 'nothing sent');
+assert.deepEqual(useOnlineStore.getState().writes.map((w) => [w.address, w.value, w.ok]), [['DS10', '45', false], ['DS1001', '70000', false]]);
+await writePlc('DS1001', 12345, bridge);
+assert.equal(srv.mem.holding[r('DS1001').register], 12345, 'a value in range is written as typed');
+useOnlineStore.setState({ status: 'disconnected', allowWrites: false });
 await bridge.disconnect();
 await srv.close();
 

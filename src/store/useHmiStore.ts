@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { HmiDesign, HmiElement } from '../hmi/types';
 import { keepAlarmTexts } from '../edits/hmiTexts';
+import { appPersistStorage } from '../lib/appStorage';
 
 interface HmiStore {
   /** Chosen HMI part number (before or after a design exists). */
@@ -24,7 +25,8 @@ export const useHmiStore = create<HmiStore>()(
       design: null,
       explanation: null,
       // Alarm messages the user rewrote stay through regenerations.
-      setDesign: (design, explanation) => set({ design: keepAlarmTexts(design), explanation }),
+      // A design made without a panel part number (QA: a rules-built KTP700 design drew NaN) is the project's panel.
+      setDesign: (design, explanation) => set((s) => ({ design: keepAlarmTexts(design && !design.hmiPartNumber?.trim() && s.hmiPartNumber ? { ...design, hmiPartNumber: s.hmiPartNumber } : design), explanation })),
       updateElement: (screenId, el) =>
         set((s) => (s.design ? {
           design: { ...s.design, screens: s.design.screens.map((sc) => (sc.id === screenId ? { ...sc, elements: sc.elements.map((e) => (e.id === el.id ? el : e)) } : sc)) },
@@ -38,6 +40,7 @@ export const useHmiStore = create<HmiStore>()(
     }),
     {
       name: 'plc-hmi-store',
+      storage: appPersistStorage(),
       partialize: (s) => ({ hmiPartNumber: s.hmiPartNumber, design: s.design, explanation: s.explanation }),
     }
   )

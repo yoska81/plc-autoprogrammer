@@ -1,5 +1,5 @@
 import {
-  buildModel, cableSchedule, naturalCompare, panelLayout, resolveComponents, terminalPlan, wireNumbers,
+  nativeModel, cableSchedule, naturalCompare, panelLayout, resolveComponents, terminalPlan, wireNumbers,
   type DrawingContext,
 } from './derive';
 
@@ -65,7 +65,7 @@ export function buildLabels(ctx: DrawingContext): Label[] {
   }
 
   // Field devices and junction boxes on the machine.
-  const machine = buildModel(ctx).machine;
+  const machine = nativeModel(ctx).machine;
   for (const d of [...machine.devices].sort((a, b) => naturalCompare(a.tag, b.tag))) {
     out.push({ kind: 'field', code: d.tag, description: d.description, copies: 1, group: d.zone });
   }

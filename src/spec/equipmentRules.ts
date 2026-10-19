@@ -1,5 +1,6 @@
 import { getProfile, PLC_PROFILES } from '../plc/core/profiles';
-import { cpuFit, findCpu, modulesToFit, type Need } from '../plc/core/fit';
+import { analogRangesOf, cpuFit, findCpu, modulesToFit, type Need } from '../plc/core/fit';
+import type { AnalogRange } from '../types/io';
 import type { EquipmentChoice } from './equipment';
 
 /**
@@ -8,13 +9,21 @@ import type { EquipmentChoice } from './equipment';
  * added when short); otherwise the CPU of the same PLC family that needs the fewest modules, the
  * smallest first. The HMI stays as chosen.
  */
-export function needFromIo(io: { type: string; signal?: string }[], ethernetHmi: boolean, spare = 0.2): Need {
+export function needFromIo(io: { type: string; signal?: string; analog?: { range: AnalogRange } }[], ethernetHmi: boolean, spare = 0.2): Need {
   const n = (type: string, analog: boolean) => io.filter((p) => p.type === type && (p.signal === 'analog') === analog).length;
   const up = (x: number) => (x ? Math.ceil(x * (1 + spare)) : 0);
-  return { digitalInputs: up(n('input', false)), digitalOutputs: up(n('output', false)), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi, minHmiSizeIn: null };
+  return { digitalInputs: up(n('input', false)), digitalOutputs: up(n('output', false)), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi, minHmiSizeIn: null, analogRanges: analogRangesOf(io) };
 }
 
-export function rulesEquipment(io: { type: string; signal?: string }[], cur: { plcId: string; cpuId: string; modules: string[]; hmiPartNumber: string | null }): (EquipmentChoice & { kept: boolean }) | null {
+/** Why the CPU and modules cannot hold the I/O list (cpuFit's reason), or null when they can (or nothing is known). */
+export function hardwareShortfall(cpuId: string, modules: string[], io: Parameters<typeof needFromIo>[0]): string | null {
+  const cpu = io.length ? findCpu(cpuId) : null;
+  if (!cpu) return null;
+  const f = cpuFit(cpu, modules, needFromIo(io, false, 0));
+  return f.ok ? null : f.reason ?? 'The CPU and its modules cannot hold the I/O list.';
+}
+
+export function rulesEquipment(io: { type: string; signal?: string; analog?: { range: AnalogRange } }[], cur: { plcId: string; cpuId: string; modules: string[]; hmiPartNumber: string | null }): (EquipmentChoice & { kept: boolean }) | null {
   const need = needFromIo(io, Boolean(cur.hmiPartNumber));
   const curCpu = findCpu(cur.cpuId);
   if (curCpu) {

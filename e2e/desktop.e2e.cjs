@@ -17,6 +17,15 @@ const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'isa-desktop-'));
 const log = (...a) => console.log('•', ...a);
 const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what); };
 
+/** A generated L5X (no customer data): `programs` stations of 50 rungs, too big for localStorage once imported. */
+function bigL5x(programs) {
+  const io = 512;
+  const tags = Array.from({ length: io }, (_, i) => `<Tag Name="In_${i}" TagType="Alias" AliasFor="Local:${(i >> 4) + 1}:I.Data.${i % 16}"/><Tag Name="Out_${i}" TagType="Alias" AliasFor="Local:${(io >> 4) + (i >> 4) + 1}:O.Data.${i % 16}"/>`).join('');
+  const mods = Array.from({ length: (io >> 4) * 2 }, (_, s) => `<Module Name="M${s}" CatalogNumber="${s < io >> 4 ? '1769-IQ16/A' : '1769-OB16/A'}" ParentModule="Local"><Ports><Port Id="1" Address="${s + 1}" Type="Compact" Upstream="true"/></Ports></Module>`).join('');
+  const progs = Array.from({ length: programs }, (_, p) => `<Program Name="Station_${p}" MainRoutineName="Main"><Tags/><Routines><Routine Name="Main" Type="RLL"><RLLContent>${Array.from({ length: 50 }, (_, r) => `<Rung Number="${r}" Type="N"><Comment><![CDATA[Station ${p} step ${r}]]></Comment><Text><![CDATA[XIC(In_${(p * 7 + r) % io})XIO(In_${(p + r + 1) % io})OTE(Out_${(p * 5 + r) % io});]]></Text></Rung>`).join('')}</RLLContent></Routine></Routines></Program>`).join('');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<RSLogix5000Content SchemaRevision="1.0" TargetName="Big" TargetType="Controller"><Controller Use="Target" Name="Big" ProcessorType="1769-L33ER"><Modules><Module Name="Local" CatalogNumber="1769-L33ER" ParentModule="Local"/>${mods}</Modules><Tags>${tags}</Tags><Programs>${progs}</Programs></Controller></RSLogix5000Content>`;
+}
+
 const launch = (env = {}) => electron.launch({
   executablePath: require(path.join(ROOT, 'node_modules', 'electron')),
   args: [ROOT, '--no-sandbox'],
@@ -135,9 +144,30 @@ async function closeApp(app, win) {
   check(mb.afterDisconnect === 'Not connected' && mb.statuses.some((s) => s.connected) && !mb.statuses.at(-1).connected, 'modbus: status events');
   await plc.close();
 
+  // DWG import: GNU LibreDWG's dwg2dxf.exe comes with the Windows installer; this run is the unpackaged app on
+  // Linux, where the Windows converter can't run: the bridge and Settings say so plainly
+  const dwg = await win.evaluate(async () => ({ status: await window.isaDesktop.dwg.status(), read: await window.isaDesktop.dwg.read([{ name: 'a.dwg', bytes: new TextEncoder().encode('AC1032..') }]) }));
+  const winBuild = process.platform === 'win32';
+  check(winBuild ? dwg.status.ok && dwg.status.builtIn : dwg.status.ok === false && dwg.read.notConfigured === true, `dwg converter status: ${JSON.stringify(dwg)}`);
+  await win.evaluate(() => { window.history.pushState({}, '', '/settings'); window.dispatchEvent(new PopStateEvent('popstate')); });
+  const dwgCard = win.getByTestId('dwg-reader-settings');
+  await dwgCard.waitFor({ timeout: 10000 });
+  const cardText = await dwgCard.innerText();
+  check((winBuild ? /Ready: DWG files are converted by GNU LibreDWG/ : /Not available in this installation/).test(cardText) && /Advanced: use another DWG reader/.test(cardText) && !/ODA/.test(cardText), 'Settings → DWG drawings: built-in converter, other reader only under Advanced');
+
   const printers = await win.evaluate(async () => window.isaDesktop.listPrinters());
   log('Printers seen by Windows/CUPS:', printers.length ? printers.map((p) => p.name).join(', ') : 'none (no printers on this machine)');
   await win.screenshot({ path: path.join(OUT, '02_deliverables.png') });
+
+  // A big program (only IndexedDB can hold it) made the project just before the window closes: closing waits
+  // for the write, and it is all there after the restart.
+  await win.evaluate(() => { history.pushState({}, '', '/import?tab=program'); dispatchEvent(new PopStateEvent('popstate')); });
+  await win.getByTestId('program-file').setInputFiles({ name: 'Big_Line.L5X', mimeType: 'application/xml', buffer: Buffer.from(bigL5x(400)) });
+  await win.getByTestId('program-found').waitFor({ timeout: 120000 });
+  await win.getByTestId('program-apply').click();
+  await win.waitForFunction(() => !document.querySelector('[data-testid=program-apply]')?.disabled, null, { timeout: 120000 });
+  // the stores write a moment after the change; then the window is closed at once, with the write in flight
+  await win.waitForFunction(() => localStorage.getItem('plc-program-store') === '\u0000in-indexeddb', null, { timeout: 10000 });
   await closeApp(app, win);
 
   // ── Second run: projects kept; window size remembered ──
@@ -148,6 +178,13 @@ async function closeApp(app, win) {
   log('Projects after restart:', projects2.join(' | '));
   check(projects2.includes('Desktop Test Cell') && projects2.filter((t) => /example/i.test(t)).length === 1, 'projects kept after restart');
   check(fs.existsSync(path.join(PROFILE, 'window-state.json')), 'window size remembered');
+  const kept = await win.evaluate(() => new Promise((resolve) => {
+    const r = indexedDB.open('isa-auto-programmer');
+    r.onsuccess = () => { const g = r.result.transaction('kv').objectStore('kv').get('plc-program-store'); g.onsuccess = () => resolve(JSON.parse(g.result ?? 'null')?.state?.ladder?.rungs?.length ?? 0); };
+    r.onerror = () => resolve(-1);
+  }));
+  log('Big program after restart:', kept, 'rungs');
+  check(kept === 400 * 50, 'the big program written just before closing is all there after the restart');
   await closeApp(app, win);
 
   // ── Printing: a 2-label PDF (38 x 12 mm) and a mixed-size PDF, laid out by the print window ──

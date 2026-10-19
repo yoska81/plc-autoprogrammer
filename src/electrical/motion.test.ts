@@ -31,6 +31,11 @@ assert.equal(servoRole({ type: 'output', description: 'Axis 1 direction' }), 'di
 assert.equal(servoRole({ type: 'output', description: 'Axis 1 alarm reset' }), 'reset');
 assert.equal(servoRole({ type: 'input', description: 'Axis 1 servo alarm' }), 'alarm');
 assert.equal(servoRole({ type: 'input', description: 'Axis 2 in position' }), 'inPosition');
+// E-CAM engage is a drive signal (the roll former's "U2 DI7 CAM engage"), not a plain output; SON stays enable.
+assert.equal(servoRole({ type: 'output', description: 'U2 DI7 CAM engage' }), 'cam');
+assert.equal(servoRole({ type: 'output', description: 'Axis 1 E-cam engage' }), 'cam');
+assert.equal(servoRole({ type: 'output', description: 'U2 DI1 SON' }), 'enable');
+assert.equal(servoRole({ type: 'output', description: 'Camera trigger' }), null);
 assert.equal(axisKey('Axis 2 servo ready'), '2');
 assert.equal(encoderChannel('Line encoder B'), 'B');
 assert.equal(encoderChannel('Encoder Z index'), 'Z');

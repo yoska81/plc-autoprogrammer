@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { testAnthropicConnection } from '../lib/ai/anthropic';
 import { clearAiCache } from '../lib/ai/cache';
 import VoiceSettingsCard from '../voice/VoiceSettingsCard';
+import DwgReaderCard from '../convert/DwgReaderCard';
 import { IS_PREVIEW, PREVIEW_ACCOUNT_KEY } from '../preview/mode';
 import {
   useSettingsStore,
@@ -226,7 +227,7 @@ export default function SettingsPage() {
               <select id="settings-small-model" value={draft.smallTaskModel} onChange={(e) => update('smallTaskModel', e.target.value)} className={inputClass}>
                 {SMALL_TASK_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
-              <p className="text-xs text-gray-400 mt-1">Used only to name HMI items and choose the equipment. A faster model answers these in a few seconds; the engineering stays with the rules.</p>
+              <p className="text-xs text-gray-400 mt-1">Used only to name HMI items, choose the equipment and help with fault finding (matching the problem to a point, ordering causes, plainer steps). A faster model answers these in a few seconds; the engineering stays with the rules.</p>
             </div>
           </ProviderCard>
 
@@ -288,6 +289,8 @@ export default function SettingsPage() {
 
           {/* Voice settings apply as they are changed (no API keys in them). */}
           <VoiceSettingsCard />
+          {/* DWG drawings on Import → Drawings (the Windows app's built-in LibreDWG converter). */}
+          <DwgReaderCard />
         </div>
       </div>
     </>

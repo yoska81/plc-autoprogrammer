@@ -88,4 +88,83 @@ assert.ok(sdf.includes('"Tank_level_raw","%IW64","Int","True","True","False","Ta
 
 const bad: LadderProgram = { tags: [], rungs: [{ id: 'x', comment: '', branches: [[{ type: 'NO', address: 'SC19' }]], outputs: [{ type: 'OUT', address: 'C1' }] }] };
 assert.match(validateProgram(bad, siemensProfile, new Set()).map((i) => i.message).join(' | '), /SC19: S7 has no equivalent/);
+// Every tag name in the .sdf is unique: a used analog "Tank level" and an unused one with the same description.
+{
+  const twin: IOPoint = { id: 'I009', description: 'Tank level', type: 'input', category: 'Analog/Process', signal: 'analog', analog: { range: '0-10V', min: 0, max: 100, units: '%' } };
+  const io2 = [...io, twin];
+  const addr2 = siemensProfile.autoAddresses(io2, cpu, modules);
+  const sdf = siemensTagsSdf(program, { ...ctx, io: io2, addresses: addr2, labels: new Map([...labels, [addr2.get('I009')!, twin.description]]) });
+  const names = sdf.trim().split(/\r?\n/).map((l) => JSON.parse(`[${l}]`)[0] as string);
+  assert.equal(new Set(names.map((n) => n.toLowerCase())).size, names.length, `unique tag names: ${names.join(', ')}`);
+  assert.ok(names.includes('Tank_level_raw') && names.some((n) => /^Tank_level_raw_\d$/.test(n)), names.join(', '));
+}
+
+// Comments in the program's own names: an HMI description quoting the app's operands is written with the SCL names.
+{
+  const withHmi = { ...ctx, extraTags: [{ address: 'C1001', nickname: 'HMI_Start', comment: 'Momentary Start: runs when Start PB (X001) is ON and Run (C1) is off; Fill_Timer TD1 below DF101; Cycles CTD1' }] };
+  const out = buildScl(program, withHmi).scl;
+  const decl = out.split('\n').find((l) => /^\s+HMI_Start : Bool;/.test(l)) ?? '';
+  assert.match(decl, /Start PB \("Start_PB"\)/, decl);
+  assert.match(decl, /Run \(#Run\) is off/);
+  assert.match(decl, /#Fill_Timer\.ET below #Level_SP/);
+  assert.match(decl, /#Cycles\.CV/);
+  assert.ok(!/\b(X001|C1|TD1|DF101|CTD1)\b/.test(decl.split('//')[1] ?? ''), `no app operand left: ${decl}`);
+}
+// The user's own descriptions keep their words: "(cylinder C1, tank T1)" is not the program's C1 / T1.
+{
+  const own = { ...ctx, io: ctx.io.map((x, i) => (i === 0 ? { ...x, description: 'Pusher extended (cylinder C1, tank T1)' } : x)) };
+  const desc = own.io[0];
+  const out = buildScl(program, { ...own, extraTags: [{ address: 'C1001', nickname: 'HMI_Push', comment: `HMI: shows ${addr.get(desc.id)} (Pusher extended (cylinder C1, tank T1)) and Run (C1)` }] }).scl;
+  assert.ok(out.includes('Pusher extended (cylinder C1, tank T1)'), 'the description as written');
+  const decl = out.split('\n').find((l) => /^\s+HMI_Push : Bool;/.test(l)) ?? '';
+  assert.match(decl, /\(Pusher extended \(cylinder C1, tank T1\)\) and Run \(#Run\)/, decl);
+  assert.ok(!decl.includes(`shows ${addr.get(desc.id)} `), `the app's operand is renamed: ${decl}`);
+}
+
+// The example project on an S7-1214C: no app operand anywhere in the .scl outside the user's own I/O descriptions
+// (the generator's tag and rung comments name the symbols too).
+{
+  const { seedSampleProject } = await import('../../../preview/sampleProject');
+  const { applyEquipment } = await import('../../../spec/equipment');
+  const { collectProject } = await import('../../../deliverables/collect');
+  const { exportContext } = await import('../../../deliverables/exportContext');
+  const warn = console.warn;
+  console.warn = () => {};
+  seedSampleProject();
+  applyEquipment({ cpuId: '6ES7214-1AG40-0XB0', modules: [], hmiPartNumber: '6AV2123-2GB03-0AX0' }, null);
+  const p = collectProject();
+  console.warn = warn;
+  let text = buildScl(p.ladder, exportContext(p)).scl;
+  for (const x of [...p.io].sort((a, b) => b.description.length - a.description.length)) text = text.split(x.description).join('');
+  const left = [...new Set(text.match(/\b(?:CTD|TD|CT|DS|DD|DH|DF|SC|SD|TXT|C|T|X|Y)\d+\b/g) ?? [])];
+  assert.deepEqual(left, [], 'no app operand in the example\'s SCL outside the I/O descriptions');
+}
+
+// S7-1500 + ET 200SP: no on-board I/O. The real input X101 is %I0.0; a stale contact X001 in the program gets no
+// hardware address (no second tag at %I0.0), it stays a static of the block, said in its comment.
+{
+  const c1500 = SIEMENS_CPUS.find((c) => c.id === '6ES7511-1AL03-0AB0')!;
+  const et: ModuleSlot[] = [{ partNumber: '6ES7131-6BH01-0BA0', inputs: 16, outputs: 0 }, { partNumber: '6ES7132-6BH01-0BA0', inputs: 0, outputs: 16 }];
+  assert.equal(siemensAddress('X001', c1500, et), null, 'no on-board terminal on an S7-1500');
+  assert.equal(siemensAddress('X101', c1500, et)?.address, '%I0.0');
+  const pts = [{ id: 'a', description: 'Start button', type: 'input', category: 'Operator/HMI' }, { id: 'b', description: 'Motor run', type: 'output', category: 'Motor' }] as IOPoint[];
+  const adr = new Map([['a', 'X101'], ['b', 'Y101']]);
+  const prog: LadderProgram = { tags: [], rungs: [{ id: 'r1', comment: '', branches: [[{ type: 'NO', address: 'X101' }, { type: 'NO', address: 'X001' }]], outputs: [{ type: 'OUT', address: 'Y101' }] }] };
+  const out = buildScl(prog, { io: pts, addresses: adr, labels: new Map([['X101', 'Start button'], ['Y101', 'Motor run']]), header: 'h', extraTags: [], cpuId: c1500.id, modules: et, projectName: 'p' });
+  const at00 = out.tags.filter((t) => t.address === '%I0.0');
+  assert.deepEqual(at00.map((t) => t.name), ['Start_button'], 'one tag at %I0.0');
+  assert.ok(!out.tags.some((t) => /X001/.test(t.name)), out.tags.map((t) => `${t.name}@${t.address}`).join(', '));
+  assert.match(out.scl, /: Bool;\s+\/\/ .*\(no I\/O point: not wired\)/, 'the stale contact is a static, said');
+  assert.match(out.scl, /no I\/O point on this CPU/);
+}
+
+// A typed name for an unnamed register never takes the name of the user's own tag, whichever comes first in the
+// program: C1 (no name) is met before C5 ("Flag_1"); the user's keeps Flag_1, the typed one becomes Flag_1_2.
+{
+  const prog: LadderProgram = { tags: [{ address: 'C5', nickname: 'Flag_1', comment: 'my flag' }], rungs: [{ id: 'r1', comment: '', branches: [[{ type: 'NO', address: 'C1' }, { type: 'NO', address: 'C5' }]], outputs: [{ type: 'OUT', address: 'C2' }] }] };
+  const out = buildScl(prog, { ...ctx, extraTags: [] }).scl;
+  assert.match(out, /^\s+Flag_1 : Bool;\s+\/\/ .*my flag/m, out.split('\n').filter((l) => /Flag_/.test(l)).join('\n'));
+  assert.match(out, /^\s+Flag_1_2 : Bool;\s+\/\/ no name in the project/m);
+}
+
 console.log('siemens tests passed');

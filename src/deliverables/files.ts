@@ -1,4 +1,5 @@
 import { hmiReadme, hmiTagCsv, needsHmiTagList } from './hmiTags';
+import { weintekMpFamily, weintekReadme, weintekTagCsv } from './weintekMp';
 import { exportContext, hmiExtraTags } from './exportContext';
 import { sheetOnPaper } from '../standards/regions';
 import { backPanelDxf, doorDxf, enclosureFaceDxfs } from '../electrical/dxf';
@@ -11,6 +12,7 @@ import SheetView from '../electrical/drawings/SheetView';
 import { planDrawings } from '../electrical/drawings/plan';
 import HmiScreenView from '../hmi/HmiScreenView';
 import { svgToPngDataUrl } from '../hmi/svgToPng';
+import { drawEachScreen, hmiImagesNote, type HmiImage, type HmiImageFailure } from './hmiImages';
 import { LOOK_LABEL, lookOf } from '../hmi/theme';
 import { getHmi } from '../hmi/hmiCatalog';
 import { bomCsv, terminalPlanCsv, buildModel, type DrawingContext, type DrillingPlan } from '../electrical/derive';
@@ -35,6 +37,8 @@ async function renderOffscreen<T>(el: ReactElement, read: (host: HTMLElement) =>
     if (sync) flushSync(() => root.render(el));
     else root.render(el);
     await new Promise((r) => setTimeout(r, sync ? 0 : 300)); // let React commit and layout settle
+    // a busy page (a big project, other work) may not have committed yet: wait for the content (up to 10 s)
+    for (let t = 0; !host.firstElementChild && t < 200; t++) await new Promise((r) => setTimeout(r, 50));
     return await read(host);
   } finally {
     root.unmount();
@@ -87,23 +91,28 @@ export async function buildMachiningPdf(ctx: DrawingContext, which: DrillingPlan
   return sheetsPdf(ctx, sheets.map((s) => createElement(SheetView, { key: s.n, plan, sheet: s })), 'Machining drawings');
 }
 
-/** Every HMI screen as a PNG at the panel's native resolution, in the design's look. */
-export async function buildHmiImages(p: ProjectSnapshot): Promise<{ name: string; dataUrl: string }[]> {
+/**
+ * Every HMI screen as a PNG at the panel's native resolution, in the design's look. A screen that fails to
+ * draw is left out and added to `failed` (when given), so one screen never stops the download.
+ */
+export async function buildHmiImages(p: ProjectSnapshot, failed?: HmiImageFailure[]): Promise<HmiImage[]> {
   const model = p.hmi ? getHmi(p.hmi.hmiPartNumber) : undefined;
   if (!p.hmi || !model) return [];
-  const out: { name: string; dataUrl: string }[] = [];
-  for (const [i, screen] of p.hmi.screens.entries()) {
-    const dataUrl = await renderOffscreen(
-      createElement(HmiScreenView, { screen, widthPx: model.widthPx, heightPx: model.heightPx, design: p.hmi }),
-      async (host) => svgToPngDataUrl(host.querySelector('svg')!, model.widthPx, model.heightPx),
-    );
-    out.push({ name: `${String(i + 1).padStart(2, '0')}_${screen.name.replace(/[^\w-]+/g, '_')}.png`, dataUrl });
-  }
-  return out;
+  const design = p.hmi;
+  const r = await drawEachScreen(design.screens, (screen) => renderOffscreen(
+    createElement(HmiScreenView, { screen, widthPx: model.widthPx, heightPx: model.heightPx, design }),
+    async (host) => {
+      const svg = host.querySelector('svg');
+      if (!svg) throw new Error(`HMI screen "${screen.name}" could not be drawn for its image.`);
+      return svgToPngDataUrl(svg, model.widthPx, model.heightPx);
+    },
+  ));
+  failed?.push(...r.failed);
+  return r.images;
 }
 
 /** HMI screens as one PDF (one page per screen, with the screen name). */
-export async function buildHmiPdf(p: ProjectSnapshot, images: { name: string; dataUrl: string }[]): Promise<Blob | null> {
+export async function buildHmiPdf(p: ProjectSnapshot, images: HmiImage[]): Promise<Blob | null> {
   const model = p.hmi ? getHmi(p.hmi.hmiPartNumber) : undefined;
   if (!p.hmi || !model || !images.length) return null;
   const { jsPDF } = await import('jspdf');
@@ -116,14 +125,17 @@ export async function buildHmiPdf(p: ProjectSnapshot, images: { name: string; da
   // room for the running header (top) and the document-control footer (bottom)
   const top = margin + 6, bottom = pageH - margin - 6;
   const scale = Math.min((pageW - 2 * margin) / model.widthPx, (bottom - top - 12) / model.heightPx);
-  images.forEach((img, i) => {
+  // one page per screen (the package's bookmarks count on it); a screen that could not be drawn says so
+  const screens = p.hmi.screens;
+  screens.forEach((screen, i) => {
     if (i > 0) doc.addPage('letter', 'landscape');
-    const screen = p.hmi!.screens[i];
+    const img = images.find((x) => x.screen === i);
     doc.setFontSize(14);
     doc.text(pdfSafe(`${screen.name} — HMI ${model.partNumber} — ${LOOK_LABEL[lookOf(p.hmi)]} look`), margin, top);
     doc.setFontSize(9);
     doc.text(pdfSafe(screen.purpose.slice(0, 160)), margin, top + 6);
-    doc.addImage(img.dataUrl, 'PNG', margin, top + 10, model.widthPx * scale, model.heightPx * scale, undefined, 'FAST');
+    if (img) doc.addImage(img.dataUrl, 'PNG', margin, top + 10, model.widthPx * scale, model.heightPx * scale, undefined, 'FAST');
+    else doc.text('This screen could not be drawn as an image. It is in the project: open it in the HMI editor.', margin, top + 16);
     // document control on every page: project, revision and date, status, page i of n
     doc.setFontSize(8);
     doc.text(pdfSafe(m.company || ''), margin, margin - 3);
@@ -134,7 +146,7 @@ export async function buildHmiPdf(p: ProjectSnapshot, images: { name: string; da
     doc.line(margin, pageH - margin + 1, pageW - margin, pageH - margin + 1);
     doc.setFontSize(7);
     doc.text(pdfSafe(`${m.status} · Rev ${m.rev.rev} · ${m.rev.date}`), margin, pageH - margin + 5);
-    doc.text(`Page ${i + 1} of ${images.length}`, pageW - margin, pageH - margin + 5, { align: 'right' });
+    doc.text(`Page ${i + 1} of ${screens.length}`, pageW - margin, pageH - margin + 5, { align: 'right' });
   });
   return doc.output('blob');
 }
@@ -147,6 +159,8 @@ function analogFiles(p: ProjectSnapshot): { name: string; content: string }[] {
 }
 
 export function programFiles(p: ProjectSnapshot): { name: string; content: string }[] {
+  // A program kept read only on the machine's own PLC: nothing is written until the PLC to move it to is chosen.
+  if (p.profile.readOnly) return [];
   if (p.profile.language === 'st') return p.stCode ? [{ name: `${p.fileBase}.st`, content: p.stCode }] : [];
   // the analog channel setup is PLC configuration: it ships before any program exists
   if (!p.ladder.rungs.length) return analogFiles(p);
@@ -172,7 +186,14 @@ export function programFiles(p: ProjectSnapshot): { name: string; content: strin
 
 export function ioCsv(p: ProjectSnapshot): string {
   const cell = (v: string) => `"${v.replace(/"/g, '""')}"`;
-  return ['ID,PLC Address,Type,Category,Description', ...p.io.map((x) => [x.id, p.addresses.get(x.id) ?? '', x.type, x.category, x.description].map(cell).join(','))].join('\r\n');
+  // A PLC with its own address format (Siemens %I0.0, Logix tags…): that address too, as the I/O list page shows it.
+  const { modules, cpuId } = exportContext(p);
+  const native = p.profile.ioTag ? (a: string) => (a ? p.profile.ioTag!(a, modules ?? [], cpuId) ?? '' : '') : null;
+  const head = native ? `ID,PLC Address,${p.profile.vendor} Address,Type,Category,Description` : 'ID,PLC Address,Type,Category,Description';
+  return [head, ...p.io.map((x) => {
+    const a = p.addresses.get(x.id) ?? '';
+    return [x.id, a, ...(native ? [native(a)] : []), x.type, x.category, x.description].map(cell).join(',');
+  })].join('\r\n');
 }
 
 /** A data: URL as a Blob, decoded here: fetch() of a data URL can be blocked by the preview frame's content policy. */
@@ -187,7 +208,8 @@ export async function dataUrlToBlob(url: string): Promise<Blob> {
 }
 
 /** Everything in one ZIP. */
-export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step: string) => void): Promise<Blob> {
+/** `failed`: filled with the HMI screens that could not be drawn (the ZIP has a note for them, and so can the page). */
+export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step: string) => void, failed: HmiImageFailure[] = []): Promise<Blob> {
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
   const pre: import('./fullPackage').Prebuilt = {};
@@ -226,14 +248,18 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
   }
   if (p.hmi) {
     onProgress?.('HMI screens');
-    const images = await buildHmiImages(p);
+    const images = await buildHmiImages(p, failed);
     for (const img of images) zip.file(`hmi/${img.name}`, await dataUrlToBlob(img.dataUrl));
+    if (failed.length) zip.file('hmi/SCREENS_NOT_DRAWN.txt', hmiImagesNote(failed));
     pre.hmiPdf = await buildHmiPdf(p, images);
     if (pre.hmiPdf) zip.file(`hmi/${p.fileBase}_hmi_screens.pdf`, pre.hmiPdf);
     // Panels of other makers: the tag list bound to the PLC program's tags and how to rebuild the screens.
     if (needsHmiTagList(p)) {
       zip.file(`hmi/${p.fileBase}_hmi_tags.csv`, hmiTagCsv(p));
-      zip.file('hmi/README.txt', hmiReadme(p));
+      // A Weintek / Maple panel on a Yaskawa MP: the tags as EasyBuilder Pro driver addresses too.
+      const mp = weintekMpFamily(p);
+      if (mp) zip.file(`hmi/${p.fileBase}_weintek_tags.csv`, weintekTagCsv(p, mp));
+      zip.file('hmi/README.txt', [hmiReadme(p), ...(mp ? weintekReadme(p, mp) : [])].join('\r\n'));
     }
   }
   onProgress?.('Engineering package');

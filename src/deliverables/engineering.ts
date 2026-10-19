@@ -1,4 +1,5 @@
 import { isIec, regionSpec } from '../standards/regions';
+import { addressTextFor } from './docs/addressText';
 import type { ProjectSnapshot } from './collect';
 import { getHmi, isCmore } from '../hmi/hmiCatalog';
 import { supplyText } from '../electrical/derive';
@@ -64,7 +65,7 @@ async function pictures(p: ProjectSnapshot): Promise<{ cabinet: { view: string; 
   if (p.hmi) {
     try {
       const { buildHmiImages } = await import('./files');
-      for (const [i, im] of (await buildHmiImages(p)).entries()) out.hmi.push({ name: p.hmi.screens[i]?.name ?? im.name, img: await toJpeg(im.dataUrl, 900) });
+      for (const im of await buildHmiImages(p)) out.hmi.push({ name: p.hmi.screens[im.screen]?.name ?? im.name, img: await toJpeg(im.dataUrl, 900) });
     } catch { /* screens are optional */ }
   }
   return out;
@@ -213,6 +214,7 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
   const m = docMeta(p);
   doc.setProperties({ title: `${m.docNo} — Controls Engineering Package — ${p.projectName}`, subject: 'Controls engineering package', author: m.preparedBy || m.company || 'ISA Auto Programmer', creator: 'ISA Auto Programmer', keywords: `${m.docNo} Rev ${m.rev.rev}` });
   const w = new PdfWriter(doc);
+  w.mapText = addressTextFor(p);
   const pics = await pictures(p);
   const info = programInfo(p);
   const sf = safetyFunctions(p);

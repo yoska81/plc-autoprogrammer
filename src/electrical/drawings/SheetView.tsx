@@ -5,13 +5,16 @@ import type { DrawingPlan, PlannedSheet } from './plan';
 import { doorScale, drillSheetScale, machineLayoutScale, panelScale, scaleText } from './scale';
 import SheetFrame from './SheetFrame';
 import { SymbolSetContext } from './symbolSet';
+import { WireNamesContext } from './wireNames';
 import { IoSheet } from './sheets/IoSheet';
 import { DoorLayoutSheet, PanelLayoutSheet } from './sheets/LayoutSheets';
 import { ControlSheet, MotorSheet, PowerSheet } from './sheets/SchematicSheets';
+import { LadderSheet } from './sheets/LadderSheet';
 import { DrillingSheet } from './sheets/DrillingSheet';
 import { ServoSheet } from './sheets/ServoSheet';
 import { DriveSheet } from './sheets/DriveSheet';
 import { AnalogSheet } from './sheets/AnalogSheet';
+import { AsBuiltSheet } from './sheets/AsBuiltSheet';
 import { CableScheduleSheet, JunctionBoxSheet, MachineOverviewSheet } from './sheets/MachineSheets';
 import { MachineLayoutSheet } from './sheets/MachineLayoutSheet';
 import { BomSheet, CoverSheet, NotesSheet, TerminalSheet } from './sheets/TableSheets';
@@ -27,6 +30,7 @@ function Content({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
     case 'power': return <PowerSheet plan={plan} sheet={sheet} />;
     case 'motors': return <MotorSheet plan={plan} sheet={sheet} />;
     case 'control': return <ControlSheet plan={plan} sheet={sheet} />;
+    case 'ladder': return <LadderSheet plan={plan} sheet={sheet} />;
     case 'io': return <IoSheet plan={plan} sheet={sheet} />;
     case 'panel': return <PanelLayoutSheet plan={plan} sheet={sheet} />;
     case 'door': return <DoorLayoutSheet plan={plan} sheet={sheet} />;
@@ -39,6 +43,7 @@ function Content({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
     case 'drill': return <DrillingSheet plan={plan} sheet={sheet} />;
     case 'analog': return <AnalogSheet plan={plan} sheet={sheet} />;
     case 'drive': return <DriveSheet plan={plan} sheet={sheet} />;
+    case 'asbuilt': return <AsBuiltSheet plan={plan} sheet={sheet} />;
     case 'servo': return <ServoSheet plan={plan} sheet={sheet} />;
   }
 }
@@ -61,7 +66,9 @@ function SheetView({ plan, sheet, width, height }: { plan: DrawingPlan; sheet: P
         doc: plan.doc, rev: sheet.rev, supply: supplyText(plan.model.supply),
       }}
     >
-      <SymbolSetContext.Provider value={plan.ctx.symbols ?? 'ansi'}><g data-cad-sheet={kind}><Content plan={plan} sheet={sheet} /></g></SymbolSetContext.Provider>
+      <SymbolSetContext.Provider value={plan.ctx.symbols ?? 'ansi'}>
+        <WireNamesContext.Provider value={plan.model.ioNames}><g data-cad-sheet={kind}><Content plan={plan} sheet={sheet} /></g></WireNamesContext.Provider>
+      </SymbolSetContext.Provider>
     </SheetFrame>
   );
 }

@@ -16,9 +16,9 @@ export type CadEntity =
 export type DxfText = Extract<CadEntity, { text: string }>;
 
 /**
- * Reader for DWG files in the browser (none is bundled). In the Windows app a DWG is converted to DXF by the
- * installed ODA File Converter instead (src/convert/derive.ts); otherwise the upload explains how to export
- * DXF or PDF.
+ * Reader for DWG files in the browser (none is bundled). In the Windows app a DWG is converted to DXF by GNU
+ * LibreDWG's dwg2dxf, shipped with the installer (electron/dwgReader.cjs); in the browser the upload says to
+ * use DXF or PDF.
  */
 export type DwgReader = (dwg: ArrayBuffer) => Promise<CadEntity[]>;
 let dwgReader: DwgReader | null = null;
@@ -34,6 +34,8 @@ export function cleanDxfText(s: string): string {
   return s
     .replace(/\\U\+([0-9A-Fa-f]{4})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)))
     .replace(/\\P/g, ' ')
+    .replace(/\\~/g, ' ')
+    .replace(/\\p[^;\\]*;/g, '')
     .replace(/\\[ACFHQTW][^;\\]*;/gi, '')
     .replace(/\\[LlOoKk]/g, '')
     .replace(/\\S([^;^/#]*)[\^/#]([^;]*);/g, '$1/$2')
@@ -44,42 +46,144 @@ export function cleanDxfText(s: string): string {
     .trim();
 }
 
-/** Entities of a DXF file: text, attributes, lines and polylines. */
-export function parseDxfEntities(dxf: string): CadEntity[] {
+/** One DXF entity as read: its type, layer and group codes (in order; a code may repeat). */
+interface RawEnt { type: string; layer: string; codes: [string, string][] }
+
+const num = (e: RawEnt, code: string, def = 0) => { const v = e.codes.find(([c]) => c === code); return v ? Number(v[1]) || 0 : def; };
+const str = (e: RawEnt, code: string) => e.codes.find(([c]) => c === code)?.[1].trim() ?? '';
+
+/** The DXF as sections of raw entities; BLOCKS split into named blocks with their base point. */
+function readSections(dxf: string): { entities: RawEnt[]; blocks: Map<string, { base: [number, number]; ents: RawEnt[] }> } {
   const lines = dxf.split(/\r?\n/);
-  const out: CadEntity[] = [];
-  let ent: { type: string; layer: string; x: number; y: number; x2: number; y2: number; text: string[]; attr?: string; pts: [number, number][]; flags: number } | null = null;
-  const flush = () => {
-    if (!ent) return;
-    if (/^(TEXT|MTEXT|ATTRIB)$/.test(ent.type)) {
-      const text = cleanDxfText(ent.text.join(''));
-      // (ATTDEF is a block definition's placeholder, not drawing text)
-      if (text) out.push({ type: ent.type as 'TEXT', layer: ent.layer, x: ent.x, y: ent.y, text, ...(ent.attr ? { attr: ent.attr } : {}) });
-    } else if (ent.type === 'LINE') out.push({ type: 'LINE', layer: ent.layer, points: [[ent.x, ent.y], [ent.x2, ent.y2]] });
-    else if (ent.type === 'LWPOLYLINE' && ent.pts.length) out.push({ type: 'LWPOLYLINE', layer: ent.layer, points: ent.pts, closed: (ent.flags & 1) === 1 });
-    ent = null;
+  const entities: RawEnt[] = [];
+  const blocks = new Map<string, { base: [number, number]; ents: RawEnt[] }>();
+  let section = '';
+  let block: { name: string; base: [number, number]; ents: RawEnt[] } | null = null;
+  let cur: RawEnt | null = null;
+  let expectSectionName = false;
+  const done = () => {
+    if (!cur) return;
+    const e = cur;
+    cur = null;
+    if (e.type === 'BLOCK') { block = { name: str(e, '2'), base: [num(e, '10'), num(e, '20')], ents: [] }; return; }
+    if (e.type === 'ENDBLK') { if (block) blocks.set(block.name, { base: block.base, ents: block.ents }); block = null; return; }
+    if (section === 'ENTITIES') entities.push(e);
+    else if (section === 'BLOCKS' && block) block.ents.push(e);
   };
   for (let i = 0; i + 1 < lines.length; i += 2) {
     const code = lines[i].trim();
     const value = lines[i + 1];
     if (code === '0') {
-      flush();
-      ent = { type: value.trim(), layer: '', x: 0, y: 0, x2: 0, y2: 0, text: [], pts: [], flags: 0 };
+      done();
+      const type = value.trim();
+      if (type === 'SECTION') { expectSectionName = true; continue; }
+      if (type === 'ENDSEC') { section = ''; continue; }
+      cur = { type, layer: '', codes: [] };
       continue;
     }
-    if (!ent) continue;
-    if (code === '8') ent.layer = value.trim();
-    else if (code === '10') { ent.x = Number(value) || 0; if (ent.type === 'LWPOLYLINE') ent.pts.push([ent.x, 0]); }
-    else if (code === '20') { ent.y = Number(value) || 0; if (ent.type === 'LWPOLYLINE' && ent.pts.length) ent.pts[ent.pts.length - 1][1] = ent.y; }
-    else if (code === '11') ent.x2 = Number(value) || 0;
-    else if (code === '21') ent.y2 = Number(value) || 0;
-    else if (code === '70') ent.flags = Number(value) || 0;
-    // MTEXT splits long text over code 3 (chunks) then code 1 (the rest)
-    else if (code === '3' && ent.type === 'MTEXT') ent.text.push(value);
-    else if (code === '1') ent.text.push(value);
-    else if (code === '2' && (ent.type === 'ATTRIB' || ent.type === 'ATTDEF')) ent.attr = value.trim();
+    if (expectSectionName && code === '2') { section = value.trim(); expectSectionName = false; continue; }
+    if (!cur) continue;
+    if (code === '8') cur.layer = value.trim();
+    cur.codes.push([code, value]);
   }
-  flush();
+  done();
+  // a file with no SECTION markers (a bare entity list) is all entities
+  if (!entities.length && !blocks.size && !/\bSECTION\b/.test(dxf)) return readSections(`0\nSECTION\n2\nENTITIES\n${dxf}\n0\nENDSEC`);
+  return { entities, blocks };
+}
+
+/** A transform from a block's coordinates to the drawing: insertion point, scale, rotation (degrees), block base. */
+interface Xf { x: number; y: number; sx: number; sy: number; rot: number; bx: number; by: number }
+const apply = (t: Xf[], px: number, py: number): [number, number] => {
+  let x = px, y = py;
+  for (const f of t) {
+    const dx = (x - f.bx) * f.sx, dy = (y - f.by) * f.sy;
+    const c = Math.cos(f.rot * Math.PI / 180), s = Math.sin(f.rot * Math.PI / 180);
+    x = f.x + dx * c - dy * s;
+    y = f.y + dx * s + dy * c;
+  }
+  return [x, y];
+};
+
+/**
+ * Entities of a DXF file, in drawing coordinates: text (TEXT, MTEXT, ATTRIB, and DIMENSION text), lines and
+ * polylines (LWPOLYLINE and the old POLYLINE / VERTEX). Block definitions are not drawing content by
+ * themselves: each INSERT draws its block where it is placed (position, scale, rotation), and a DIMENSION
+ * draws its own block (its text). A converter that repeats an entity (LibreDWG's "stale" subentities)
+ * gives it once.
+ */
+export function parseDxfEntities(dxf: string): CadEntity[] {
+  const { entities, blocks } = readSections(dxf);
+  const out: CadEntity[] = [];
+  const seen = new Set<string>();
+  const push = (e: CadEntity) => {
+    const key = 'text' in e ? `${e.type}|${e.text}|${e.x.toFixed(3)}|${e.y.toFixed(3)}` : `${e.type}|${e.points.map((p) => p.map((v) => v.toFixed(3)).join(',')).join(';')}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(e);
+  };
+  const walk = (list: RawEnt[], t: Xf[], depth: number, layerOf: (l: string) => string) => {
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      const layer = layerOf(e.layer);
+      if (e.type === 'TEXT' || e.type === 'MTEXT' || e.type === 'ATTRIB') {
+        // MTEXT splits long text over code 3 (chunks) then code 1 (the rest)
+        const text = cleanDxfText(e.codes.filter(([c]) => c === '1' || (c === '3' && e.type === 'MTEXT')).map(([, v]) => v).join(''));
+        if (!text) continue;
+        const [x, y] = apply(t, num(e, '10'), num(e, '20'));
+        const attr = e.type === 'ATTRIB' ? str(e, '2') : '';
+        push({ type: e.type, layer, x, y, text, ...(attr ? { attr } : {}) });
+      } else if (e.type === 'LINE') {
+        push({ type: 'LINE', layer, points: [apply(t, num(e, '10'), num(e, '20')), apply(t, num(e, '11'), num(e, '21'))] });
+      } else if (e.type === 'LWPOLYLINE') {
+        const xs = e.codes.filter(([c]) => c === '10').map(([, v]) => Number(v) || 0);
+        const ys = e.codes.filter(([c]) => c === '20').map(([, v]) => Number(v) || 0);
+        if (xs.length) push({ type: 'LWPOLYLINE', layer, points: xs.map((x, k) => apply(t, x, ys[k] ?? 0)), closed: (num(e, '70') & 1) === 1 });
+      } else if (e.type === 'POLYLINE') {
+        // the old form: its VERTEX entities follow, up to SEQEND. A 3D polyline (flag 8) is drawn flat; a
+        // polygon or polyface mesh (flags 16 / 64) is a surface, not a path: its vertices are skipped.
+        const mesh = (num(e, '70') & (16 | 64)) !== 0;
+        const pts: [number, number][] = [];
+        let j = i + 1;
+        for (; j < list.length && list[j].type === 'VERTEX'; j++) {
+          if (mesh) continue;
+          const p = apply(t, num(list[j], '10'), num(list[j], '20'));
+          if (!pts.length || pts[pts.length - 1][0] !== p[0] || pts[pts.length - 1][1] !== p[1]) pts.push(p);
+        }
+        i = j < list.length && list[j].type === 'SEQEND' ? j : j - 1;
+        if (pts.length) push({ type: 'LWPOLYLINE', layer, points: pts, closed: (num(e, '70') & 1) === 1 });
+      } else if ((e.type === 'INSERT' || e.type === 'DIMENSION') && depth < 8) {
+        const b = blocks.get(str(e, '2'));
+        if (e.type === 'DIMENSION') {
+          // the dimension's block holds its lines and its text, already in place
+          if (b) walk(b.ents, t, depth + 1, (l) => (l === '0' || !l ? layer : l));
+          else {
+            const over = e.codes.find(([c]) => c === '1')?.[1] ?? '';
+            const value = String(Math.round(num(e, '42') * 100) / 100);
+            const text = cleanDxfText(!over ? value : over.replace('<>', value));
+            const [x, y] = apply(t, num(e, '11'), num(e, '21'));
+            if (text) push({ type: 'TEXT', layer, x, y, text });
+          }
+          continue;
+        }
+        if (!b) continue;
+        // MINSERT: a grid of columns × rows at the given spacing (in the block's rotated frame)
+        const cols = Math.max(1, num(e, '70', 1)), rows = Math.max(1, num(e, '71', 1));
+        const dx = num(e, '44'), dy = num(e, '45'), rot = num(e, '50');
+        const c = Math.cos(rot * Math.PI / 180), sn = Math.sin(rot * Math.PI / 180);
+        for (let r = 0; r < Math.min(rows, 100); r++) {
+          for (let k = 0; k < Math.min(cols, 100); k++) {
+            const ox = k * dx * c - r * dy * sn, oy = k * dx * sn + r * dy * c;
+            const f: Xf = { x: num(e, '10') + ox, y: num(e, '20') + oy, sx: num(e, '41', 1) || 1, sy: num(e, '42', 1) || 1, rot, bx: b.base[0], by: b.base[1] };
+            // entities on layer 0 inside a block take the INSERT's layer
+            walk(b.ents, [f, ...t], depth + 1, (l) => (l === '0' || !l ? layer : l));
+          }
+        }
+      }
+      // ATTDEF (a block's placeholder), SEQEND, VERTEX on their own and everything else: not drawing text
+    }
+  };
+  walk(entities, [], 0, (l) => l);
   return out;
 }
 
@@ -118,20 +222,32 @@ export function sheetFrames(entities: CadEntity[]): Box[] {
   return frames.sort((a, b) => (Math.abs(b.y2 - a.y2) > h / 2 ? b.y2 - a.y2 : a.x1 - b.x1));
 }
 
-/** Rows of text in reading order: "text [layer]" joined left to right, rows top to bottom. */
-function textRows(texts: DxfText[], rowH: number): string[] {
-  const sorted = [...texts].sort((a, b) => (Math.abs(b.y - a.y) > rowH ? b.y - a.y : a.x - b.x));
-  const rows: string[] = [];
-  let lastY = Infinity;
-  let row: string[] = [];
-  for (const t of sorted) {
-    if (Math.abs(lastY - t.y) > rowH && row.length) { rows.push(row.join('   ')); row = []; }
-    row.push(`${t.attr ? `${t.attr}=` : ''}${t.text}${t.layer && t.layer !== '0' ? ` [${t.layer}]` : ''}`);
-    lastY = t.y;
+interface TextRow { text: string; x: number; y: number; layers: string[] }
+
+/**
+ * Rows of text in reading order: "text [layer]" joined left to right, rows top to bottom. Texts are grouped
+ * into rows by height first (top to bottom, a text within rowH of its row's top text joins it), then each row
+ * is sorted left to right: one fixed order whatever order the texts come in.
+ */
+function textRowsAt(texts: DxfText[], rowH: number): TextRow[] {
+  const byY = [...texts].sort((a, b) => b.y - a.y || a.x - b.x);
+  const groups: DxfText[][] = [];
+  for (const t of byY) {
+    const g = groups.at(-1);
+    if (g && g[0].y - t.y <= rowH) g.push(t); else groups.push([t]);
   }
-  if (row.length) rows.push(row.join('   '));
-  return rows;
+  return groups.map((g) => {
+    const row = g.sort((a, b) => a.x - b.x || b.y - a.y);
+    return {
+      text: row.map((t) => `${t.attr ? `${t.attr}=` : ''}${t.text}${t.layer && t.layer !== '0' ? ` [${t.layer}]` : ''}`).join('   '),
+      x: row[0].x, y: row[0].y, layers: row.map((t) => t.layer),
+    };
+  });
 }
+const textRows = (texts: DxfText[], rowH: number) => textRowsAt(texts, rowH).map((r) => r.text);
+
+// Layers a title block or border is drawn on (AutoCAD, EPLAN and Chinese CAD conventions).
+const TITLE_LAYER = /title|^tb[-_]|[-_]tb$|^tb$|frame|border|sheet|图框|标题|图签|边框/i;
 
 // Title-block labels, alone or bilingual ("图名 Sheet title", "Drawing title / 图名"): never a sheet's name.
 const NAME_LABEL = /^(?:(?:图\s*名|图纸名称|(?:sheet|drawing)\s*title|title)\s*[/|:：]?\s*)+/i;
@@ -159,7 +275,13 @@ function sheetTitle(texts: DxfText[]): string {
     const ownLabel = (t: DxfText) => !sorted.some((o) => o !== label && Math.abs(o.y - t.y) <= 2 && o.x > label.x && o.x < t.x && isLabel(o.text.trim()));
     const right = values.filter((t) => Math.abs(t.y - label.y) <= 2 && t.x > label.x && ownLabel(t)).sort((a, b) => dist(a) - dist(b))[0];
     const below = values.filter((t) => t.y < label.y - 2 && label.y - t.y <= 15 && t.x > label.x - 20 && t.x < label.x + 150).sort((a, b) => dist(a) - dist(b))[0];
-    return (right ?? below)?.text.trim() ?? '';
+    const value = right ?? below;
+    if (!value) return '';
+    // a bilingual title: the English line just under the Chinese one ("主电源分配" over "Power distribution")
+    const under = /[\u4e00-\u9fff]/.test(value.text) && !/[A-Za-z]{3}/.test(value.text)
+      ? values.find((t) => t !== value && t.y < value.y && value.y - t.y <= 8 && Math.abs(t.x - value.x) < 30 && /^[A-Za-z]/.test(t.text.trim()) && !/[\u4e00-\u9fff]/.test(t.text))
+      : undefined;
+    return under ? `${value.text.trim()} / ${under.text.trim()}` : value.text.trim();
   };
   const name = after(NAME_LABEL) || after(PROJECT_LABEL);
   const page = sorted.map((t) => t.text).find((t) => /第\s*\d+\s*页/.test(t)) ?? '';
@@ -198,17 +320,28 @@ export function cadToText(entities: CadEntity[], name = 'drawing'): string {
   const rowH = frames.length ? (frames[0].y2 - frames[0].y1) / 120 : 2.5;
   if (frames.length < 2) return `${name} (CAD drawing, ${texts.length} text items, top to bottom; [layer]):\n${textRows(texts, rowH).join('\n')}`;
   const used = new Set<DxfText>();
-  const sheets = frames.map((f, i) => {
+  const perSheet = frames.map((f, i) => {
     const mine = texts.filter((t) => !used.has(t) && inside(f, t.x, t.y));
     mine.forEach((t) => used.add(t));
     const title = sheetTitle(mine);
     // the sheet's own number (sheets 2, 3, 5, 6 of an 8-sheet set), else its place in the file
     const no = sheetNumber(mine);
     const label = no ? `Sheet ${no.n}${no.of ? ` of ${no.of}` : ''}${no.of !== frames.length ? ` (frame ${i + 1} of ${frames.length} in this file)` : ''}` : `Sheet ${i + 1} of ${frames.length}`;
-    return `--- ${label}${title ? `: ${title}` : ''} ---\n${textRows(mine, rowH).join('\n')}`;
+    return { head: `--- ${label}${title ? `: ${title}` : ''} ---`, rows: textRowsAt(mine, rowH), frame: f };
   });
+  // Title-block rows repeated word for word on 3+ sheets (company, drawn-by, project…) are given once, on the
+  // first sheet: a big set otherwise repeats them on every sheet (the sheet numbers and titles differ, so they
+  // stay). Only rows on a title-block / frame layer, or in the title-block band of the frame (its bottom or
+  // right quarter): a row the circuit repeats on every sheet ("L1 L2 L3 PE" on the bus) is kept on each.
+  const inTitleBlock = (r: TextRow, f: Box) => r.layers.every((l) => TITLE_LAYER.test(l))
+    || (r.y - f.y1) / (f.y2 - f.y1) <= 0.25 || (r.x - f.x1) / (f.x2 - f.x1) >= 0.75;
+  const onSheets = new Map<string, number>();
+  for (const sh of perSheet) for (const r of new Set(sh.rows.filter((r) => inTitleBlock(r, sh.frame)).map((r) => r.text))) onSheets.set(r, (onSheets.get(r) ?? 0) + 1);
+  const repeated = new Set([...onSheets].filter(([, n]) => n >= 3).map(([r]) => r));
+  const seen = new Set<string>();
+  const sheets = perSheet.map((sh) => [sh.head, ...sh.rows.filter((r) => !repeated.has(r.text) || !inTitleBlock(r, sh.frame) || (!seen.has(r.text) && seen.add(r.text))).map((r) => r.text)].join('\n'));
   const rest = texts.filter((t) => !used.has(t));
-  return `${name} (CAD drawing, ${frames.length} sheets side by side, split by their border frames; ${texts.length} text items; [layer]):\n${sheets.join('\n')}${rest.length ? `\n--- Outside the sheet frames ---\n${textRows(rest, rowH).join('\n')}` : ''}`;
+  return `${name} (CAD drawing, ${frames.length} sheets side by side, split by their border frames; ${texts.length} text items; [layer]${repeated.size ? `; ${repeated.size} rows repeated on every sheet (title block) are given on the first sheet only` : ''}):\n${sheets.join('\n')}${rest.length ? `\n--- Outside the sheet frames ---\n${textRows(rest, rowH).join('\n')}` : ''}`;
 }
 
 /** A DXF file as text for the AI (see cadToText). */

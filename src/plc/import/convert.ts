@@ -9,6 +9,9 @@
 import { rawTextNames, type LadderElement, type LadderOutput, type LadderProgram, type ProgramBlock, type Rung, type TagDefinition } from '../core/ladder';
 import type { CpuModel, ModuleSlot, PlcProfile } from '../core/profile';
 import { resolveAddresses } from '../core/profile';
+import { siemensAddress, siemensAnalogChannels } from '../core/profiles/siemens';
+import { logixAnalogChannels, logixIoTag } from '../core/profiles/logix';
+import type { AnalogRange, IOCategory } from '../../types/io';
 import type { IOPoint } from '../../types/io';
 import type { ForeignProgram, ForeignTag, ImportedIoPoint, ImportedProgram, ImportReport } from './types';
 import { slug } from './l5x';
@@ -146,6 +149,8 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     const lower = base.toLowerCase();
     if (ioIndex.has(lower)) continue;
     if (/^S:FS$/i.test(base) || /^(FirstScan|First_Scan|%?M?\s*FirstScan)$/i.test(base)) { map.set(lower, 'SC2'); continue; }
+    // The app's own system bits (a reader already mapped the PLC's: SC1 always on, SC7 1-second clock).
+    if (/^SC\d+$/.test(base)) { map.set(lower, base); continue; }
     const kind = kindOf(base, roles);
     const addr = alloc(kind === 'bit' ? 'C' : kind === 'int' ? 'DS' : kind === 'dint' ? 'DD' : kind === 'real' ? 'DF' : kind === 'timer' ? 'T' : 'CT');
     map.set(lower, addr);
@@ -219,6 +224,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
   const usedIds = new Set<string>();
   const notConverted: ImportReport['notConverted'] = [];
   const blockOrigin: ImportedProgram['blockOrigin'] = {};
+  const rungOrigin: ImportedProgram['rungOrigin'] = {};
   for (const r of fp.routines) {
     for (const u of r.untranslated) notConverted.push({ where: r.name, text: u });
     if (!r.rungs.length) continue;
@@ -227,27 +233,34 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     if (r.origin) blockOrigin[id] = r.origin;
     blocks.push({ id, name: r.name, description: `Imported from ${fp.vendor} ${r.language === 'ladder' ? 'ladder' : r.language.toUpperCase()} routine "${r.name}"` });
     for (const g of r.rungs) {
-      // Rung ids end in the original rung number (readers: `<routine>_<n>`).
-      const n = /_(\d+)(?:_\d+)?$/.exec(g.id)?.[1];
+      const n = r.rungNumbers?.[g.id];
       for (const x of [...g.branches.flat(), ...g.outputs]) if (x.type === 'RAW') notConverted.push({ where: r.name, text: `${n ? `Rung ${n}: ` : ''}${x.text}`, kept: true });
       let rid = `r_${g.id}`;
       while (usedIds.has(rid)) rid += '_';
       usedIds.add(rid);
+      if (n !== undefined) rungOrigin[rid] = n;
       outRungs.push({ id: rid, block: id, comment: g.comment, branches: g.branches.map((b) => b.map(trEl)), outputs: g.outputs.map(trOut) });
     }
   }
+  linkCounterResets(outRungs, tags, () => alloc('C'), rungOrigin);
   const program: LadderProgram = { rungs: outRungs, blocks, tags };
   const total = outRungs.length + notConverted.filter((n) => !n.kept).length;
   const converted = outRungs.filter((r) => ![...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW')).length;
   return {
-    source: { format: fp.format, vendor: fp.vendor, controller: fp.controller, projectName: fp.projectName, fileName },
-    program, io, names, blockOrigin,
+    source: { format: fp.format, vendor: fp.vendor, controller: fp.controller, projectName: fp.projectName, fileName, ...(fp.modules?.length ? { modules: fp.modules } : {}), ...(fp.axes?.length ? { axes: fp.axes } : {}) },
+    program, io, names, blockOrigin, rungOrigin,
     report: { rungs: total, converted, notConverted, notes: [...new Set(notes)], outside: fp.outside ?? [] },
   };
 }
 
 /** CLICK nickname for an original tag name: letters, digits and _, at most 24 characters (only for a CLICK target). */
-export const nickOf = (name: string): string => name.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24);
+export const nickOf = (name: string): string => {
+  const s = name.replace(/[^A-Za-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+  if (s.length <= 24) return s;
+  // Cut at a word ("_") so the nickname doesn't end mid-word, else at 24.
+  const cut = s.slice(0, 25).lastIndexOf('_');
+  return (cut >= 8 ? s.slice(0, cut) : s.slice(0, 24)).replace(/_+$/, '');
+};
 
 /** "Conv1_Start_PB" → "Conv1 Start PB". */
 export function pretty(name: string): string {
@@ -258,6 +271,93 @@ export function pretty(name: string): string {
  * The imported program for a chosen PLC: I/O points get that PLC's addresses (analog points their
  * analog channel register) and every "@IN:n" / "@OUT:n" in the program is replaced.
  */
+/**
+ * I/O list category of an imported point from its name and description (Start_PB → Operator/HMI, Box_PE → Product
+ * Detection). A point the words do not place is Station 1, never Spare (Spare means an unused terminal).
+ */
+export function importedCategory(text: string, analog: boolean, name = '', type: 'input' | 'output' | '' = ''): IOCategory {
+  const t = text.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_.:[\]]+/g, ' ');
+  // An input whose tag is only a command word (Start, Stop, Fault_Reset, Cycle_Start) is the operator's button,
+  // unless its comment says it comes from another machine (upstream, interlock, handshake). An output named Stop is not.
+  if (!analog && type !== 'output' && /^((cycle|fault|alarm)[ _-]?)?(start|stop|reset)$/i.test(name.trim())) {
+    return /\b(upstream|downstream|interlock|handshake|from line|other machine)\b/i.test(t) ? 'External Machine' : 'Operator/HMI';
+  }
+  // Whole words only: "Case stop" is not an E-stop and a clamp is not a lamp. A stop or start is an operator's
+  // only as a button (Stop_PB); a stop blade or a stop gate is a machine part.
+  const rules: [RegExp, IOCategory][] = [
+    [/\be[-\s]?stop\b|\bemergency\b|\bsafety\b|\blight curtain\b|\bguard\b|\bdoor\b|\binterlock\b|\bsafe torque\b|\bsto\b/i, 'Safety'],
+    [/\b(start|stop|reset|jog)\s+(pb|push ?button|button)\b|\bpush ?button\b|\bpb\b|\bselector\b|\bmode\b|\bauto\b|\bmanual\b|\blamps?\b|\blights?\b|\bhorn\b|\bbuzzer\b|\bbeacon\b|\bstack light\b|\bhmi\b|\bpanel\b/i, 'Operator/HMI'],
+    [/\bvacuum\b|\bsuction\b/i, 'Vacuum'],
+    [/\bservo\b|\baxis\b|\bencoder\b|\bvfd\b|\bdrive\b|\binverter\b/i, 'Servo/Axis'],
+    // A photo-eye on a conveyor detects product: before the conveyor rule.
+    [/\bphoto ?eye\b|\bphoto\b|\bpe\b/i, 'Product Detection'],
+    [/\bconveyor\b|\bbelt\b|\bconv\b/i, 'Conveyor'],
+    [/\bvalve\b|\bsv\b|\bsolenoid\b|\bcylinder\b|\bpusher\b|\bclamp\b|\bgate\b|\bair\b|\bpneumatic\b|\bextend\b|\bretract\b/i, 'Pneumatic'],
+    [/\beye\b|\bpresent\b|\bdetect|\bcount\b|\bprox\b|\bpx\b|\bsensor\b|\bls\b|\blimit\b/i, 'Product Detection'],
+    [/\bupstream\b|\bdownstream\b|\bexternal\b|\bhandshake\b|\binterface\b|\bfrom line\b|\bto line\b|\bready\b/i, 'External Machine'],
+  ];
+  // Analog/Process is for analog points only: a level or pressure switch is a digital point.
+  if (analog) return 'Analog/Process';
+  return rules.find(([re]) => re.test(t))?.[1] ?? 'Station 1';
+}
+
+/**
+ * Signal range of an imported analog point: as its description or tag comment says ("0-10 V", "4…20 mA", "0-20 mA",
+ * a thermocouple); an S7-1200 onboard input word (%IW64 / %IW66) is 0–10 V (the CPU's inputs take nothing else).
+ * Otherwise 4–20 mA, the usual transmitter signal, `assumed` (asked, and shown "to check" in the I/O list).
+ */
+export function importedRange(original: string, text = ''): { range: AnalogRange; assumed: boolean } {
+  const said: [RegExp, AnalogRange][] = [
+    [/\b4\s*(?:-|–|\.\.\.?|…|to)\s*20\s*mA\b/i, '4-20mA'],
+    [/\b0\s*(?:-|–|\.\.\.?|…|to)\s*20\s*mA\b/i, '0-20mA'],
+    [/(?:^|[^\d.])0\s*(?:-|–|\.\.\.?|…|to)\s*10\s*V(DC)?\b/i, '0-10V'],
+    [/(?:^|[^\d.])0\s*(?:-|–|\.\.\.?|…|to)\s*5\s*V(DC)?\b/i, '0-5V'],
+    [/thermocouple|\bT\/C\b|\btype [JKTENRSB]\b/i, 'thermocouple'],
+  ];
+  const hit = said.find(([re]) => re.test(text));
+  if (hit) return { range: hit[1], assumed: false };
+  if (/^%?IW6[46]$/i.test(original.trim())) return { range: '0-10V', assumed: false };
+  return { range: '4-20mA', assumed: true };
+}
+
+/** The app's address of an S7 bit or analog word as written in the original (%IX0.2, %I0.2, I0.2 → X003; %IW96 → its channel), or null. */
+function s7Terminal(original: string, cpu: CpuModel, modules: ModuleSlot[]): string | null {
+  // An analog word (%IW96): the channel at that address, on the CPU or a module.
+  const w = /^%?([IQ])W(\d+)$/i.exec(original.trim());
+  if (w) {
+    const want = `%${w[1].toUpperCase()}W${Number(w[2])}`;
+    return siemensAnalogChannels(cpu, modules).find((ch) => siemensAddress(ch.address, cpu, modules)?.address === want)?.address ?? null;
+  }
+  const m = /^%?([IQ])X?(\d+)\.([0-7])$/i.exec(original.trim());
+  if (!m) return null;
+  const want = `%${m[1].toUpperCase()}${Number(m[2])}.${m[3]}`;
+  const isIn = m[1].toUpperCase() === 'I';
+  const slots = [isIn ? cpu.builtInInputs : cpu.builtInOutputs, ...modules.map((x) => (isIn ? x.inputs : x.outputs))];
+  for (let slot = 0; slot < slots.length && slot < 10; slot++) {
+    for (let n = 1; n <= Math.min(slots[slot], 99); n++) {
+      const base = `${isIn ? 'X' : 'Y'}${slot}${String(n).padStart(2, '0')}`;
+      if (siemensAddress(base, cpu, modules)?.address === want) return base;
+    }
+  }
+  return null;
+}
+
+/** The app's address of a Logix module point as written in the original (Local:2:O.Data.5 → Y206, Local:3:I.Ch0Data → its channel), or null. */
+export function logixTerminal(original: string, cpu: CpuModel, modules: ModuleSlot[]): string | null {
+  const want = original.trim().toUpperCase();
+  if (!/^LOCAL:\d+:[IO]\./.test(want)) return null;
+  const isIn = /:I\./.test(want);
+  if (/\.CH\d+DATA$|\.CH\d+\.DATA$/.test(want)) return logixAnalogChannels(cpu, modules).find((ch) => logixIoTag(ch.address, modules, cpu.id)?.toUpperCase() === want)?.address ?? null;
+  const slots = [isIn ? cpu.builtInInputs : cpu.builtInOutputs, ...modules.map((x) => (isIn ? x.inputs : x.outputs))];
+  for (let slot = 0; slot < slots.length && slot < 10; slot++) {
+    for (let n = 1; n <= Math.min(slots[slot], 99); n++) {
+      const base = `${isIn ? 'X' : 'Y'}${slot}${String(n).padStart(2, '0')}`;
+      if (logixIoTag(base, modules, cpu.id)?.toUpperCase() === want) return base;
+    }
+  }
+  return null;
+}
+
 export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuModel, modules: ModuleSlot[] = []): { program: LadderProgram; io: IOPoint[]; names: Record<string, string> } {
   let i = 0, o = 0;
   // The imported program scales its own analog values: the app's channel scaling passes the raw counts through
@@ -265,8 +365,16 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
   const full = /logix|allen-bradley|rockwell/i.test(`${imp.source.vendor} ${imp.source.format}`) || /^l5[xk]$/.test(imp.source.format) ? 32767 : 27648;
   const points: IOPoint[] = imp.io.map((p) => ({
     id: p.type === 'input' ? `I${String(++i).padStart(3, '0')}` : `Q${String(++o).padStart(3, '0')}`,
-    description: p.description, type: p.type, category: 'Spare',
-    ...(p.analog ? { signal: 'analog' as const, analog: { range: '4-20mA' as const, min: 0, max: full, units: 'raw counts' } } : {}),
+    description: p.description, type: p.type, category: importedCategory(`${p.name} ${p.description}`, p.analog, p.name, p.type),
+    ...(p.analog ? (() => { const r = importedRange(p.original, p.description); return { signal: 'analog' as const, analog: { range: r.range, min: 0, max: full, units: 'raw counts', ...(r.assumed ? { assumed: true } : {}) } }; })() : {}),
+    // A CLICK program going back on a CLICK keeps its terminals (X001 stays X001, gaps included); an S7
+    // program keeps its %I / %Q bits (%Q0.2 stays %Q0.2).
+    ...(profile.id === 'click' && /^[XY]\d{3}$/i.test(p.original) && profile.parseAddress(p.original.toUpperCase()) ? { plcAddress: p.original.toUpperCase() } : {}),
+    ...(profile.id === 'siemens-s7' ? (() => { const a = s7Terminal(p.original, cpu, modules); return a ? { plcAddress: a } : {}; })() : {}),
+    // A Logix program keeps its module points (Local:2:O.Data.5 stays that bit, not the next free one).
+    ...(profile.id === 'logix' ? (() => { const a = logixTerminal(p.original, cpu, modules); return a ? { plcAddress: a } : {}; })() : {}),
+    // A program kept read only on its own PLC keeps its own I/O registers (IB00000 stays IB00000).
+    ...(profile.readOnly && profile.parseAddress(p.original)?.kind === p.type ? { plcAddress: p.original.trim().toUpperCase() } : {}),
   }));
   const addr = resolveAddresses(profile, cpu, points, modules);
   const ph = new Map<string, string>();
@@ -301,4 +409,47 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
   const names: Record<string, string> = {};
   for (const [k, v] of Object.entries(imp.names)) names[sub(k)] = v;
   return { program, io: points, names };
+}
+
+/**
+ * A counter reset in a rung of its own (Logix RES, Mitsubishi RST C0) becomes the counter's reset input,
+ * the form the app (and CLICK) uses: one plain contact is used as it is; any other condition drives a reset
+ * bit of its own (the conditions of all the reset rungs, OR'ed). Rungs left with no output are dropped.
+ */
+export function linkCounterResets(rungs: Rung[], tags: TagDefinition[], newBit: () => string, origin: Record<string, string> = {}): void {
+  // The reset rungs of each address, found once (a big program has thousands of counters).
+  const resets = new Map<string, Rung[]>();
+  for (const r of rungs) {
+    for (const a of new Set(r.outputs.flatMap((o) => (o.type === 'RST' ? [o.address.toUpperCase()] : [])))) {
+      const l = resets.get(a);
+      if (l) l.push(r); else resets.set(a, [r]);
+    }
+  }
+  for (const cnt of rungs.flatMap((r) => r.outputs).filter((o): o is Extract<LadderOutput, { type: 'CNT' }> => o.type === 'CNT')) {
+    if (cnt.resetAddress) continue;
+    const a = cnt.address.toUpperCase();
+    const rst = resets.get(a) ?? [];
+    resets.delete(a);
+    if (!rst.length) continue;
+    const single = rst.length === 1 && rst[0].branches.length === 1 && rst[0].branches[0].length === 1 && rst[0].branches[0][0].type === 'NO' ? rst[0].branches[0][0].address : null;
+    if (single) cnt.resetAddress = single;
+    else {
+      const bit = newBit();
+      const tag = tags.find((t) => t.address.toUpperCase() === a);
+      // Named after the counter, or its description when its name is only a device (C0).
+      const nick = tag?.nickname && !/^[A-Z]{1,3}\d+$/i.test(tag.nickname) ? tag.nickname : (tag?.comment.match(/[A-Za-z0-9]+/g) ?? []).slice(0, 3).join('_') || 'Counter';
+      tags.push({ address: bit, nickname: `${nick}_Reset`, comment: `Reset of ${nick} (from the original reset rung${rst.length > 1 ? 's' : ''})` });
+      const always = rst.some((r) => !r.branches.length);
+      const at = rungs.indexOf(rst[0]);
+      // It stands for the original reset rung (the patch export copies that rung while unchanged).
+      const id = `${rst[0].id}_rst`;
+      if (origin[rst[0].id] !== undefined) origin[id] = origin[rst[0].id];
+      rungs.splice(at, 0, { id, ...(rst[0].block ? { block: rst[0].block } : {}), comment: `Reset ${nick}`, branches: always ? [] : rst.flatMap((r) => r.branches), outputs: [{ type: 'OUT', address: bit }] });
+      cnt.resetAddress = bit;
+    }
+    for (const r of rst) r.outputs = r.outputs.filter((o) => !(o.type === 'RST' && o.address.toUpperCase() === a));
+  }
+  let kept = 0;
+  for (const r of rungs) if (r.outputs.length) rungs[kept++] = r;
+  rungs.length = kept;
 }

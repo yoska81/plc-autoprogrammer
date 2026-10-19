@@ -4,6 +4,7 @@
 // (screen images, HMI tag list bound to the PLC's tag names, how-to naming the maker's software).
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/hmi-brands.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const log = (...a) => console.log('•', ...a);
 const fails = [];
@@ -19,25 +20,30 @@ const CASES = [
   const browser = await chromium.launch();
   for (const c of CASES) {
     const page = await (await browser.newContext({ viewport: { width: 1366, height: 900 } })).newPage();
+    await useAppModules(page);
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('dialog', (d) => d.accept());
     await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
     await page.goto(BASE + '/spec');
-    await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+    await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
     await page.goto(BASE + '/spec');
     await page.locator('select[aria-label="Open project"]').selectOption('p_example');
 
     // Equipment: the CPU, then the maker's panel from the HMI table.
     if (c.viaUi) {
       await page.goto(BASE + '/equipment');
-      await page.locator(`input[aria-label="Choose ${c.cpu}"]`).locator('xpath=ancestor::tr').click();
+      // Other brands' CPUs are collapsed under "Show N CPUs of other brands".
+      const cpuRadio = page.locator(`input[aria-label="Choose ${c.cpu}"]`);
+      await page.locator('input[aria-label^="Choose C0-"]').first().waitFor();
+      if (!(await cpuRadio.count())) await page.getByRole('button', { name: /^Show \d+ CPUs of other brands$/ }).click();
+      await cpuRadio.locator('xpath=ancestor::tr').click();
     } else {
       // CompactLogix has no built-in I/O: apply it with the modules the platform suggests.
       await page.evaluate(async ({ cpu, platform }) => {
-        const { platformById, suggestModules } = await import('/src/plc/core/platforms.ts');
-        const { applyEquipment } = await import('/src/spec/equipment.ts');
+        const { platformById, suggestModules } = await appImport('/src/plc/core/platforms.ts');
+        const { applyEquipment } = await appImport('/src/spec/equipment.ts');
         const need = { digitalInputs: 6, digitalOutputs: 3, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null };
         applyEquipment({ cpuId: cpu, modules: suggestModules(platformById(platform), cpu, need), hmiPartNumber: null }, null);
       }, { cpu: c.cpu, platform: c.platform });
@@ -63,9 +69,9 @@ const CASES = [
     await row.click();
     await page.getByRole('button', { name: 'Use this selection' }).first().click();
     await page.waitForTimeout(500);
-    const applied = await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber);
+    const applied = await page.evaluate(async () => (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber);
     // The example's HMI, drawings and program were made for CLICK addresses: now out of date.
-    const stale = await page.evaluate(async () => { const s = (await import('/src/spec/useStages.ts')).stagesNow(); return ['electrical', 'hmi', 'program'].map((k) => s[k].reason ?? 'ready'); });
+    const stale = await page.evaluate(async () => { const s = (await appImport('/src/spec/useStages.ts')).stagesNow(); return ['electrical', 'hmi', 'program'].map((k) => s[k].reason ?? 'ready'); });
     log(`${c.name}: after the PLC change: ${stale.join(' | ')}`);
     check(stale.every((r) => /PLC or its I\/O addresses changed/.test(r)), `${c.name}: electrical, HMI and program out of date after the PLC change`);
     check(applied === c.panel, `${c.name}: panel applied (${applied})`);
@@ -89,14 +95,14 @@ const CASES = [
     await page.waitForTimeout(800);
     check(await page.getByRole('button', { name: 'HMI tag list (CSV)' }).count() === 1, `${c.name}: HMI tag list button`);
     const out = await page.evaluate(async () => {
-      const { collectProject } = await import('/src/deliverables/collect.ts');
-      const { hmiTagCsv, hmiReadme } = await import('/src/deliverables/hmiTags.ts');
-      const { buildHmiImages, programFiles } = await import('/src/deliverables/files.ts');
+      const { collectProject } = await appImport('/src/deliverables/collect.ts');
+      const { hmiTagCsv, hmiReadme } = await appImport('/src/deliverables/hmiTags.ts');
+      const { buildHmiImages, programFiles } = await appImport('/src/deliverables/files.ts');
       const snap = collectProject();
       const imgs = await buildHmiImages(snap);
       // A physical input as the project addresses it now (CLICK-era X001 does not exist on a CompactLogix).
       const firstIn = snap.io.find((x) => x.type === 'input');
-      return { csv: hmiTagCsv(snap), readme: hmiReadme(snap), images: imgs.length, files: programFiles(snap).map((f) => f.name), inAddr: snap.addresses.get(firstIn.id), inTag: (await import('/src/deliverables/plcTagNames.ts')).plcTagNameOf(snap)(snap.addresses.get(firstIn.id)).io };
+      return { csv: hmiTagCsv(snap), readme: hmiReadme(snap), images: imgs.length, files: programFiles(snap).map((f) => f.name), inAddr: snap.addresses.get(firstIn.id), inTag: (await appImport('/src/deliverables/plcTagNames.ts')).plcTagNameOf(snap)(snap.addresses.get(firstIn.id)).io };
     });
     const parseCsvLine = (l) => [...l.matchAll(/"((?:[^"]|"")*)"/g)].map((m) => m[1].replace(/""/g, '"'));
     const rows = out.csv.split('\r\n').slice(1).map(parseCsvLine);

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { appPersistStorage } from '../lib/appStorage';
 
 export type AIProvider = 'anthropic' | 'openai';
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -98,6 +99,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'plc-settings-store',
+      storage: appPersistStorage(),
       version: 4,
       // v1 stored retired model IDs and a token-budget thinking setting that
       // current Claude models reject. Keep the keys, reset the rest.

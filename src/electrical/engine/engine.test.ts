@@ -4,12 +4,13 @@
  * checks every generated design must pass. Run with:  npx tsx src/electrical/engine/engine.test.ts
  * Regenerate the goldens after an intended change:  UPDATE=1 npx tsx src/electrical/engine/engine.test.ts
  */
+import { missingOperatorIo } from '../../spec/operatorIo';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateDefaultDesign, type EngineResult } from './index';
-import { defaultMachineModel } from './machineModel';
+import { defaultMachineModel, drivesFromIo, type MachineModel } from './machineModel';
 import { CATALOG, getPart } from '../catalog';
 import { bomCsv, buildModel, cableSchedule, chooseEnclosure, designWarnings, doorDrilling, enclosureFitProblem, enclosureSize, enclosuresFor, layoutFits, panelLayout, plcRack, spareSpace, SPARE_RULE, vendorTerminal, withEnclosure, type DrawingContext } from '../derive';
 import { cabinetHeat } from '../thermal';
@@ -512,6 +513,90 @@ for (const s of SCENARIOS) {
   }
 }
 
+// NPN sensors put their input group's common on +24V (sourcing inputs): a pushbutton, limit switch or relay contact
+// in the same group must switch 0V into its input, or it can never turn ON. An input turns ON when its device
+// pulls it away from the common: to +24V on a 0V common, to 0V on a +24V common.
+{
+  const npn: Scenario = {
+    name: 'npn-mixed', supply: '480VAC-3PH',
+    points: [pt('Safety relay OK', 'input', { deviceType: 'safety-relay-output' }), pt('Start PB', 'input', { deviceType: 'pushbutton-no' }), pt('Stop PB', 'input', { deviceType: 'pushbutton-nc' }),
+      pt('Part present NPN', 'input', { deviceType: 'sensor-npn' }), pt('Guard closed limit switch', 'input', { deviceType: 'limit-switch' }),
+      pt('Conveyor run', 'output', { deviceType: 'contactor-coil' })],
+    motors: [motor('M1', 'Conveyor', 1, '480VAC-3PH')],
+  };
+  const { ctx } = run(npn);
+  const m = buildModel(ctx);
+  const g = m.groups.find((x) => x.type === 'input' && x.points.some((p) => p.deviceType === 'sensor-npn'))!;
+  assert.equal(g.commonTo, '24+', 'NPN group: common to +24V');
+  for (const p of g.points) {
+    if (p.deviceType === 'sensor-npn') continue;
+    assert.equal(p.supplyWire, '0V', `${p.address} ${p.description}: switches 0V`);
+    // the wire on the contact's feed terminal, as derive wired it (C, 23 on the safety relay, R1 on a drive)
+    assert.ok(p.feedTo, `${p.address} ${p.deviceTag}: has a feed terminal`);
+    const feed = m.wires.filter((w) => w.to === p.feedTo && w.wire !== p.address);
+    assert.ok(feed.length && feed.every((w) => w.wire === '0V' && w.color === 'WH/BU'), `${p.address} ${p.feedTo}: fed ${feed.map((w) => `${w.wire} ${w.color}`).join(', ') || 'nothing'} — must be 0V (WH/BU) to turn ON`);
+  }
+  // a PNP-only design keeps 0V commons and +24V-fed contacts
+  const pnp = buildModel(run({ ...npn, name: 'pnp-mixed', points: npn.points.map((p) => (p.deviceType === 'sensor-npn' ? { ...p, deviceType: 'sensor-pnp' as const } : p)) }).ctx);
+  assert.ok(pnp.groups.filter((x) => x.type === 'input').every((x) => x.commonTo === '0V' && x.points.every((p) => p.supplyWire === '24+')));
+}
+
+// An E-stop's PLC status input is read N.C. (ON = released): it is wired through the E-stop's own N.C. block — 31-32
+// (a third block) beside the safety relay's two channels on 11-12 / 21-22 — never the C / NO terminals of a button.
+for (const s of SCENARIOS) {
+  const { r, ctx } = run(s);
+  const m = buildModel(ctx);
+  for (const p of m.io.filter((q) => q.type === 'input' && q.deviceType === 'estop-contact')) {
+    const sig = m.wires.find((w) => w.wire === p.address && w.from.startsWith(`${p.deviceTag}:`));
+    assert.ok(sig && /:(12|22|32)$/.test(sig.from), `${s.name} ${p.address}: the PLC status from an N.C. block (${sig?.from})`);
+    if (m.safety.relay) assert.ok(r.design.components.some((c) => c.tag === `${p.deviceTag}D`), `${s.name}: ${p.deviceTag} has its third N.C. block`);
+  }
+}
+
+// One pin, one wire number, generator-wide: a series contact has its in and out on different pins (the over-
+// temperature limit feeding a safety contactor's coil once took 24+S and K1A1 on the same R1 pin, so the limit
+// never broke the coil). Strip terminals and bus bars ("TB1 24+", "GB1") and free-text ends are not device pins.
+const multiNet = (wires: { wire: string; from: string; to: string }[]) => {
+  const nets = new Map<string, Set<string>>();
+  for (const w of wires) for (const e of [w.from, w.to]) {
+    if (!/^[A-Z][A-Z0-9-]*:[^\s]+$/.test(e) || w.wire === 'PE') continue;
+    nets.set(e, new Set([...(nets.get(e) ?? []), w.wire]));
+  }
+  return [...nets].filter(([, ws]) => ws.size > 1).map(([pin, ws]) => `${pin} = ${[...ws].join(' / ')}`);
+};
+// the wire list and the cable schedule agree: a field wire leaving a strip terminal rides a cable core of the same
+// number from that terminal (SOL1's 0V from TB3-2 was routed on the sensors' 0V core from TB2-9)
+const offCable = (m: ReturnType<typeof buildModel>) => {
+  const strip = /^TB[A-Z0-9]*-\d+$/;
+  const cores = m.machine.cables.flatMap((c) => c.cores).filter((k) => strip.test(k.from) && k.wire !== 'PE');
+  const at = new Set(cores.map((k) => `${k.wire}@${k.from}`));
+  const field = (e: string) => /^JB\d/.test(e);
+  return m.wires.filter((w) => w.wire !== 'PE').flatMap((w) => [[w.from, w.to], [w.to, w.from]].filter(([t, o]) => strip.test(t) && field(o) && !at.has(`${w.wire}@${t}`)).map(([t, o]) => `${w.wire} ${t} → ${o}`));
+};
+for (const s of SCENARIOS) {
+  const { ctx } = run(s);
+  const m = buildModel(ctx);
+  assert.deepEqual(multiNet(m.wires), [], `${s.name}: a device pin carries two wire numbers`);
+  assert.deepEqual(offCable(m), [], `${s.name}: wire-list field wires with no cable core at their terminal`);
+}
+{
+  // the over-temperature limit breaks the heater contactor's coil: 24+S in on one side of its relay, the coil out on the other
+  const m = buildModel(run(SCENARIOS.find((x) => x.name === 'sealing-head')!).ctx);
+  const lim = m.rc.find((c) => c.part?.ratings.kind === 'limitAlarm')!;
+  const into = m.wires.find((w) => w.to.startsWith(`${lim.tag}:`) && w.wire === '24+S')!;
+  const out = m.wires.find((w) => w.from.startsWith(`${lim.tag}:`) && /A1$/.test(w.wire))!;
+  assert.ok(into && out && into.to !== out.from, `${lim.tag}: in ${into?.to}, out ${out?.from}`);
+  // a reversing starter on sourcing outputs: two PLC outputs never meet on the shared overload contact
+  const rev = SCENARIOS.find((x) => x.name === 'reversing240')!;
+  const src = buildModel(run({ ...rev, name: 'reversing240-sourcing', cpu: 'C0-10DD2E-D' }).ctx);
+  assert.deepEqual(multiNet(src.wires), [], 'sourcing reversing: one wire number per pin');
+  const coils = src.io.filter((q) => q.coilChain);
+  assert.ok(coils.every((q) => q.coilChain!.returnVia?.tag === 'OL1' && !q.coilChain!.devices.some((d) => d.kind === 'ol')), 'the shared overload is in the coil return');
+  assert.ok(src.wires.some((w) => w.from === 'OL1:96' && w.wire === '0V'));
+  // its interlocks use the second N.C. (71-72): the first N.C. is in the safety relay's feedback loop
+  assert.ok(coils.every((q) => q.coilChain!.devices.some((d) => d.kind === 'interlock' && d.terminals === '71-72')));
+}
+
 // Acceptance (pump skid): two 10 HP pumps on GS20 drives at 480 V heat a NEMA 12 cabinet far above 15 °C; the engine
 // fits a filter fan, its exhaust filter and a thermostat, and the review comes out without a heat finding.
 {
@@ -558,6 +643,78 @@ for (const s of SCENARIOS) {
   assert.equal(m.motors.length, 2);
   assert.ok(Math.abs(m.motors[0].hp - 10.06) < 0.1, 'kW converted to HP');
   assert.ok(m.assumptions.some((a) => /Pump.*assumed 1 HP/.test(a)));
+}
+
+// No touch panel: the operator devices the I/O list gets (src/spec/operatorIo.ts) are on the door — Start, Stop,
+// Reset, the Auto/Manual selector, the lamps and the E-stop — with no HMI on the door, in the BOM or on the network.
+{
+  const points: P[] = [pt('Part at end photo-eye', 'input', { deviceType: 'sensor-pnp' }), pt('Conveyor motor contactor', 'output', { deviceType: 'contactor-coil' }),
+    ...missingOperatorIo([]).map((g) => pt(g.description, g.type, { deviceType: g.deviceType, category: g.category }))];
+  const { r, ctx } = run({ name: 'no-panel', supply: '120VAC-1PH', hmi: null, points, motors: [motor('M1', 'Conveyor motor', 0.5, '120VAC-1PH')] });
+  const L = panelLayout(ctx);
+  assert.deepEqual(L.door.items.map((d) => `${d.kind} ${d.tag}`), ['pilot PL1', 'pilot PL2', 'selector SS1', 'pushbutton PB1', 'pushbutton PB2', 'pushbutton PB3', 'pushbutton PB4', 'estop ES1'], 'no-panel: the operator devices on the door, no HMI');
+  const look = (tag: string) => { const c = r.design.components.find((x) => x.tag === tag); return `${c?.function} | ${getPart(c?.partNumber ?? '')?.description}`; };
+  for (const [tag, re] of [['PB1', /^Start \| .*green.*N\.O\./], ['PB2', /^Stop \(NC\) \| .*red.*N\.C\./], ['PB3', /^Reset \| .*black.*N\.O\./], ['SS1', /^Auto\/Manual \(ON = Manual\) \| .*2-position/],
+    ['PL1', /^Running \(green\) \| .*green, 24/], ['PL2', /^Fault \(red\) \| .*red, 24/], ['PB4', /^Safety reset .*blue/]] as const) assert.match(look(tag), re, `no-panel: ${tag}`);
+  assert.equal(r.design.components.filter((c) => getPart(c.partNumber)?.category === 'hmi').length, 0, 'no-panel: no HMI in the BOM');
+  assert.equal(buildModel(ctx).hmi, undefined, 'no-panel: no HMI feed / link');
+  assert.deepEqual(r.design.ioWiring.filter((w) => /^(PB|SS|PL)/.test(w.deviceTag)).map((w) => `${w.address} ${w.deviceTag}`), ['X003 PB1', 'X004 PB2', 'X005 PB3', 'X006 SS1', 'Y002 PL1', 'Y003 PL2'], 'no-panel: wired to the PLC');
+}
+
+// The converted roll former: outputs that switch the servo drive U2's inputs (DI1 SON, DI7 CAM) and the VFD's MI1 are
+// signals to drives already on the machine — never a 1 HP motor on a drive of their own.
+{
+  const io = [
+    { ...pt('U2 DI1 SON servo enable', 'output'), deviceType: 'vfd-input' },
+    { ...pt('U2 DI7 CAM engage servo drive', 'output'), deviceType: 'vfd-input' },
+    { ...pt('VFD1 MI1 forward run drive', 'output'), deviceType: 'vfd-input' },
+    pt('Servo ready (U2 DO1 SRDY)', 'input'),
+  ].map((p, i) => ({ category: 'Process', ...p, id: `r${i}` })) as IOPoint[];
+  const base = { motors: [{ tag: 'M1', description: 'Main forming motor', hp: 7.5, start: 'vfd' as const }], safety: { estops: 0, guardDoors: [], lightCurtains: [] }, zones: ['Machine'], interfaces: [], assumptions: [] };
+  const m = drivesFromIo(base as MachineModel, io);
+  assert.deepEqual(m.motors.map((x) => x.tag), ['M1'], `drive inputs are not motors: ${m.motors.map((x) => x.description).join(', ')}`);
+  assert.ok(!m.assumptions.some((a) => /no motor in the motor list/.test(a)));
+  // a real drive run output with no matching motor still gets its motor
+  const run = drivesFromIo(base as MachineModel, [...([pt('Coiler VFD run', 'output'), pt('Unwinder VFD run', 'output')].map((p, i) => ({ category: 'Process', ...p, id: `c${i}` })) as IOPoint[]), ...io]);
+  assert.deepEqual(run.motors.map((x) => x.description), ['Main forming motor', 'Coiler motor', 'Unwinder motor'], 'drive run outputs still add their motors');
+}
+
+// The side manager's roll-former cases through the whole engine: drive inputs on drives the I/O list names (U1 MI3,
+// U2 DI7) never get a motor or a contactor, and each is wired to that drive's own terminal. (U2 DI1 SON is a servo
+// enable motion.ts reads as a servo axis — the drivesFromIo test above covers it here.)
+{
+  const points: P[] = [
+    pt('E-Stop OK (safety relay)', 'input'), pt('Start Button', 'input'),
+    pt('U2 DI7 CAM engage', 'output', { deviceType: 'vfd-input' }),
+    pt('U1 MI3 VFD jog speed', 'output', { deviceType: 'vfd-input' }),
+    pt('U1 MI1 VFD forward run', 'output', { deviceType: 'vfd-input' }),
+  ];
+  const { r, ctx } = run({ name: 'roll-former-drive-inputs', supply: '480VAC-3PH', points, motors: [motor('M1', 'Main forming motor', 7.5, '480VAC-3PH', 'vfd')] });
+  const by = (d: string) => r.design.ioWiring.find((w) => ctx.io.find((q) => q.address === w.address)?.description === d);
+  for (const [d, drive] of [['U2 DI7 CAM engage', 'U2'], ['U1 MI3 VFD jog speed', 'VFD1'], ['U1 MI1 VFD forward run', 'VFD1']] as const) {
+    assert.equal(by(d)?.deviceTag, drive, `${d}: on ${drive}`);
+  }
+  assert.ok(!r.design.components.some((c) => /^K\d/.test(c.tag)), `no contactor for a drive input: ${r.design.components.filter((c) => /^K\d/.test(c.tag)).map((c) => c.function).join(', ')}`);
+  assert.ok(!r.design.components.some((c) => /^VFD[2-9]/.test(c.tag)), 'no invented second drive');
+  assert.ok(!(r.design.askUser ?? []).some((q) => /not in the motor list|assumed/i.test(q) && /U[12]/.test(q)), 'no invented-load question');
+  const m = buildModel(ctx);
+  // U2 (the servo drive) on its DI7 — CN1-31, the SureServo2 pin of DI7 (servoWiring maps a named DI to its real
+  // pin); U1 is the design's one VFD (VFD1): jog on a preset DI, run on FWD/DI1
+  for (const t of ['U2:CN1-31', 'VFD1:DI3', 'VFD1:DI1']) assert.ok(m.wires.some((w) => w.to === t), `wired to ${t}`);
+}
+
+// Dev 4's probe: the converted roll former's own I/O and motors. The oil pump contactor output drives M2's contactor
+// (not the forming drive), the forming run output the drive, and no motor is invented.
+{
+  const { convertMachine } = await import('../../convert/convert');
+  const { ROLL_FORMER } = await import('../../convert/__fixtures__/rollFormer');
+  const conv = convertMachine(ROLL_FORMER);
+  const { r } = run({ name: 'roll-former-converted', supply: conv.supply, points: conv.io.map((p) => ({ description: p.description, type: p.type, category: p.category, deviceType: p.deviceType })) as P[], motors: conv.motors });
+  const dev = (re: RegExp) => r.design.ioWiring.find((w) => re.test(w.description))?.deviceTag;
+  const m2k = r.design.components.find((c) => c.motorTag === 'M2' && /contactor/i.test(getPart(c.partNumber)?.category ?? ''))?.tag;
+  assert.ok(m2k && dev(/Oil pump contactor/) === m2k, `oil pump output on M2's contactor ${m2k}, not ${dev(/Oil pump contactor/)}`);
+  assert.equal(dev(/Forming motor run/), 'VFD1');
+  assert.deepEqual(r.design.inputs.motors.map((x) => x.tag), conv.motors.map((x) => x.tag), 'no invented motor');
 }
 
 if (failures) { console.error(`${failures} scenario(s) failed`); process.exit(1); }

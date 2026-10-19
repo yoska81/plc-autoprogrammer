@@ -1,3 +1,4 @@
+import ProjectNameInput from '../components/ProjectNameInput';
 import { useState, type ReactNode } from 'react';
 import StartCleanBanner from '../components/StartCleanBanner';
 import RecoverWork from '../components/RecoverWork';
@@ -14,8 +15,8 @@ import { useDraft } from '../store/useDraftStore';
 import { issuedForConstruction } from '../standards/issue';
 
 const input = 'w-full border border-steel-300 rounded-sm px-2 py-1 bg-white focus:outline-none focus:border-brand-500';
-const th = 'text-left font-medium text-steel-500 px-3 py-1.5 border-b border-steel-200 bg-steel-50';
-const td = 'px-3 py-1.5 border-b border-steel-100';
+const th = 'text-left font-medium text-steel-500 px-2 sm:px-3 py-1.5 border-b border-steel-200 bg-steel-50';
+const td = 'px-2 sm:px-3 py-1.5 border-b border-steel-100';
 
 const PURPOSES = [
   'Issued for review',
@@ -67,8 +68,7 @@ function ProjectData() {
   const info = useProjectStore((s) => s.info);
   const opts = drawingOptions(info);
   const setInfo = useProjectStore((s) => s.setInfo);
-  const { projects, activeId, renameActive, openProject, deleteProject } = useProjectsStore();
-  const name = projects.find((p) => p.id === activeId)?.name ?? '';
+  const { projects, activeId, openProject, deleteProject } = useProjectsStore();
   const today = new Date().toISOString().slice(0, 10);
   const [draft, setDraft] = useDraft<Revision>('revision.draft', { rev: nextRev(info.revisions), date: today, description: PURPOSES[0], by: info.preparedBy });
   const cur = currentRevision(info);
@@ -84,7 +84,8 @@ function ProjectData() {
   const [guard, setGuard] = useState<Finding[] | null>(null);
   const issue = (override?: string) => {
     const rev = draft.rev.trim().toUpperCase();
-    if (!rev || !draft.description.trim()) return;
+    if (!rev) { notify('Enter the new revision letter or number first (e.g. ' + nextRev(info.revisions) + ').'); return; }
+    if (!draft.description.trim()) { notify(`Say what revision ${rev} is for (e.g. "${PURPOSES[1]}").`); return; }
     if (info.revisions.some((r) => r.rev.toUpperCase() === rev)) { notify(`Revision ${rev} already exists. Choose another letter or number.`); return; }
     if (/construction/i.test(draft.description) && !override) {
       const open = openCriticalFindings();
@@ -115,7 +116,7 @@ function ProjectData() {
         <div className="max-w-6xl grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
           <Section title="Project">
             <div className="p-3 grid grid-cols-2 gap-3">
-              <Field label="Project name"><input value={name} onChange={(e) => renameActive(e.target.value)} className={input} aria-label="Project name" /></Field>
+              <Field label="Project name"><ProjectNameInput className={input} /></Field>
               <Field label="Project / job number">{text('projectNumber')}</Field>
               <Field label="Customer">{text('customer')}</Field>
               <Field label="Site / location">{text('site')}</Field>

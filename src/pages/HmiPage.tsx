@@ -8,6 +8,7 @@ import { useFingerprints, useStages, hmiFingerprint } from '../spec/useStages';
 import { HMI_MODELS, MIN_DESIGN_PX, designable, getHmi, hmiCommsText, hmiMaker, hmiMakerOf, isCmore, HMI_DESIGN_GUIDELINES, type HmiModel } from '../hmi/hmiCatalog';
 import { catalogPanels } from '../hmi/panels';
 import { setProjectPanel } from '../hmi/retarget';
+import { hmiAddressProblem } from '../hmi/addressField';
 import { hmiFit, type Need } from '../plc/core/fit';
 import { generateHmiDesign, recreateScreenFromPicture } from '../lib/ai/hmiAI';
 import { generateRuleBasedHmi, projectHmiContent } from '../lib/ai/hmiContentAI';
@@ -23,12 +24,13 @@ import { withTagNames } from '../hmi/tagLabels';
 import { specToText } from '../spec/types';
 import HmiScreenView from '../hmi/HmiScreenView';
 import StageBanner from '../components/StageBanner';
+import ProgramOutOfStep from '../components/ProgramOutOfStep';
 import ResizablePane from '../components/ResizablePane';
 import { Spinner, ReasoningPanel } from '../components/common';
 import { type AccessLevel, type HmiAlarm, type HmiBackground, type HmiDesign, type HmiElement, type HmiElementKind, type HmiScreen, type HmiState, type HmiStyle, type HmiTag, type MachineSymbol } from '../hmi/types';
 import ScreenEditor from '../hmi/ScreenEditor';
 import HmiEditorBar from '../hmi/HmiEditorBar';
-import { addNavEntry, alignElements, createElement, createImageElement, deleteElements, distributeElements, duplicateElements, renameScreen, restack, setScreenLevel as setLevelOf, syncHandTags, type Align } from '../hmi/editor';
+import { addNavEntry, alignElements, createElement, freeSpot, createImageElement, deleteElements, distributeElements, duplicateElements, renameScreen, restack, setScreenLevel as setLevelOf, syncHandTags, type Align } from '../hmi/editor';
 import { backgroundAt, croppedBackground, loadPicture, panelImage, pictureRect, pictureSize } from '../hmi/background';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { notify } from '../store/useNoticeStore';
@@ -37,7 +39,8 @@ import { defaultLookFor, LEVEL_LABEL } from '../hmi/theme';
 import LookPicker from '../hmi/LookPicker';
 import AssumptionsUsed from '../components/questions/AssumptionsUsed';
 import { useQuestions } from '../components/questions/useQuestionStore';
-import { useDraft } from '../store/useDraftStore';
+import { useDraft, useDraftStore } from '../store/useDraftStore';
+import { projectUpgradeRoles } from '../plc/import/ui/applyUpgrade';
 import { useUi } from '../store/useUiStore';
 import { withAnalogScale } from '../hmi/analogScale';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
@@ -69,12 +72,15 @@ function textToStates(t: string): HmiState[] {
 }
 
 /** A neutral memory address with the PLC's tag for it (Allen-Bradley / Siemens), else just the address. */
-function AddressCell({ address, tag }: { address: string; tag?: string | null }) {
-  if (!tag || tag === address) return <>{address}</>;
-  return <span className="inline-flex flex-col leading-tight"><span>{tag}</span><span className="text-[10px] text-gray-400">{address}</span></span>;
+function AddressCell({ address, native }: { address: string; native?: { main: string; sub: string } | null }) {
+  if (!native || native.main === address) return <>{address}</>;
+  return <span className="inline-flex flex-col leading-tight"><span>{native.main}</span><span className="text-[10px] text-gray-500">{native.sub}</span></span>;
 }
 
-function ElementEditor({ el, screens, onChange, onDelete, tagName }: { el: HmiElement; screens: HmiScreen[]; onChange: (e: HmiElement) => void; onDelete: () => void; tagName?: ((a: string) => string | null) | null }) {
+function ElementEditor({ el, screens, onChange, onDelete, tagName, addressProblem }: { el: HmiElement; screens: HmiScreen[]; onChange: (e: HmiElement) => void; onDelete: () => void; tagName?: ((a: string) => string | null) | null; addressProblem?: (kind: HmiElement['kind'], address: string | null | undefined) => string | null }) {
+  const problem = addressProblem?.(el.kind, el.address) ?? null;
+  // The interlock is read as a bit, like a lamp.
+  const interlockProblem = el.kind === 'button' ? addressProblem?.('indicator', el.interlock) ?? null : null;
   const [statesText, setStatesText] = useState(() => statesToText(el.states));
   const [symbolsText, setSymbolsText] = useState(() => JSON.stringify(el.symbols ?? [], null, 1));
   const [symbolsError, setSymbolsError] = useState<string | null>(null);
@@ -105,8 +111,9 @@ function ElementEditor({ el, screens, onChange, onDelete, tagName }: { el: HmiEl
       </label>
       {READS.has(el.kind) && (
         <label className={fieldLabel}>{el.kind === 'header' ? 'Mode bit / register' : 'PLC address'}
-          <input value={el.address ?? ''} onChange={(e) => onChange({ ...el, address: e.target.value.toUpperCase().trim() || null })} className={`${input} w-full font-mono`} placeholder="e.g. C1001, DS1001" list="hmi-address-options" aria-label="PLC address" />
+          <input value={el.address ?? ''} onChange={(e) => onChange({ ...el, address: e.target.value.toUpperCase().trim() || null, lostIo: undefined })} className={`${input} w-full font-mono`} placeholder="e.g. C1001, DS1001" list="hmi-address-options" aria-label="PLC address" />
           {el.address && tagName?.(el.address) && <span className="block mt-0.5 text-[11px] font-mono text-gray-600 normal-case" data-testid="plc-tag">PLC tag: {tagName(el.address)}</span>}
+          <span aria-live="polite" className="block">{problem && <span className="block mt-0.5 text-[11px] text-red-700 normal-case" data-testid="address-problem">{problem}</span>}</span>
         </label>
       )}
       {el.kind === 'button' && (
@@ -117,7 +124,8 @@ function ElementEditor({ el, screens, onChange, onDelete, tagName }: { el: HmiEl
             </select>
           </label>
           <label className={fieldLabel}>Interlock bit
-            <input value={el.interlock ?? ''} onChange={(e) => onChange({ ...el, interlock: e.target.value.toUpperCase().trim() || null })} className={`${input} w-full font-mono`} placeholder="none" list="hmi-address-options" />
+            <input value={el.interlock ?? ''} onChange={(e) => onChange({ ...el, interlock: e.target.value.toUpperCase().trim() || null })} className={`${input} w-full font-mono`} placeholder="none" list="hmi-address-options" aria-label="Interlock bit" />
+            <span aria-live="polite" className="block">{interlockProblem && <span className="block mt-0.5 text-[11px] text-red-700 normal-case" data-testid="interlock-problem">{interlockProblem}</span>}</span>
           </label>
         </div>
       )}
@@ -207,7 +215,7 @@ function ScreenInfo({ screen, issues, onLevel, onRename, onDelete, onRebuild }: 
   );
 }
 
-function PanelSpecs({ model, design }: { model: HmiModel; design: HmiDesign }) {
+function PanelSpecs({ model, design, plcId, plcName }: { model: HmiModel; design: HmiDesign; plcId: string; plcName: string }) {
   const b = layoutBands(model.widthPx, model.heightPx);
   const gcd = (a: number, c: number): number => (c ? gcd(c, a % c) : a);
   const g = gcd(model.widthPx, model.heightPx);
@@ -218,7 +226,10 @@ function PanelSpecs({ model, design }: { model: HmiModel; design: HmiDesign }) {
     ['Bands', `header ${b.header.h} px · nav ${b.nav.h} px`],
     ['Screens', String(design.screens.length)],
     ['Tags / alarms', `${design.tags.length} / ${design.alarms.length}`],
-    ['PLC link', isCmore(model) ? (model.supportsClickEthernet ? 'CLICK Ethernet (Modbus TCP 502)' : 'Serial') : "Maker's PLC driver (Ethernet)"],
+    // What links this panel to the project's PLC (C-more panels are set up for CLICK only).
+    ['PLC link', isCmore(model)
+      ? (plcId !== 'click' ? `Not set up for the ${plcName}: C-more panels are set up for CLICK. Choose a panel for this PLC.` : model.supportsClickEthernet ? 'CLICK Ethernet (Modbus TCP 502)' : 'Serial')
+      : `${hmiMaker(model)} driver for the ${plcName}`],
     ...(model.software ? [['Software', model.software] as [string, string]] : []),
   ];
   return (
@@ -263,7 +274,12 @@ export default function HmiPage() {
   const hmi = useHmiStore();
   const settings = useSettingsStore();
   const showExperimental = !!settings.showExperimental;
-  const { profile, cpu, io, addresses } = usePlc();
+  const { profile, cpu, io, addresses, modules } = usePlc();
+  // Typed HMI addresses: this PLC's memory of the right kind, or an input / output of the I/O list.
+  const addressProblem = useMemo(() => {
+    const ioSet = new Set(io.map((p) => (addresses.get(p.id) ?? '').toUpperCase()).filter(Boolean));
+    return (kind: HmiElement['kind'], address: string | null | undefined) => hmiAddressProblem({ profile, cpu, modules }, ioSet, kind, address);
+  }, [profile, cpu, modules, io, addresses]);
   const fp = useFingerprints();
   const stages = useStages();
 
@@ -302,20 +318,35 @@ export default function HmiPage() {
   const hmiQuestionsRaw = useQuestions('hmi');
   // Allen-Bradley / Siemens: the exported program's tag of each neutral address (null on CLICK, where they are the same).
   const ladder = useProgramStore((s) => s.ladder);
-  const tagName = useMemo(() => {
+  const tagOf = useMemo(() => {
     if (profile.id === 'click') return null;
-    try {
-      const of = plcTagNameOf(collectProject());
-      return (a: string) => of(a).name || null;
-    } catch { return null; }
+    try { return plcTagNameOf(collectProject()); } catch { return null; }
     // collectProject reads the stores; recompute when what it names changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, ladder, design, io, addresses]);
+  }, [profile, ladder, design, io, addresses, modules, cpu]);
+  const tagName = useMemo(() => (tagOf ? (a: string) => tagOf(a).name || null : null), [tagOf]);
+  // The tag and alarm lists on a non-CLICK PLC: the PLC's own address first (%I0.0 / %Q0.0 for the project's real
+  // I/O points; the symbolic name for memory, e.g. "Machine_DB".HMI_Start, which in an optimized S7 block is its
+  // address), the app's below. A stale tag on an address that is no I/O point never borrows another point's name.
+  const nativeOf = useMemo(() => {
+    if (!tagOf) return null;
+    const ioSet = new Set([...addresses.values()].map((a) => a.toUpperCase()).filter(Boolean));
+    return (a: string) => {
+      const t = tagOf(a);
+      const io = ioSet.has(a.toUpperCase()) ? t.io : undefined;
+      return { main: io || t.name || a, sub: [io && t.name ? t.name : '', a].filter(Boolean).join(' · ') };
+    };
+  }, [tagOf, addresses]);
+  // The app's own descriptions of a tag ("… (X001)") in the PLC's addresses too.
+  const nativeText = (text: string) => (nativeOf ? text.replace(/\b(?:CTD|TD|CT|DS|DD|DF|DH|C|T|X|Y)\d{1,4}\b/g, (a) => nativeOf(a).main) : text);
   const tagged = (text: string) => withTagNames(text, tagName);
   const hmiQuestions = useMemo(() => hmiQuestionsRaw.map((q) => ({ ...q, text: withTagNames(q.text, tagName) })), [hmiQuestionsRaw, tagName]);
   const screen = design?.screens.find((s) => s.id === screenId) ?? design?.screens[0] ?? null;
   const selectedEl = screen?.elements.find((e) => e.id === selected) ?? null;
-  const issues = useMemo(() => (design && model ? checkDesign(design, model.widthPx, model.heightPx, { text: true }) : []), [design, model]);
+  const issues = useMemo(() => {
+    const ioSet = new Set(io.map((p) => (addresses.get(p.id) ?? '').toUpperCase()).filter(Boolean));
+    return design && model ? checkDesign(design, model.widthPx, model.heightPx, { text: true, io: ioSet }) : [];
+  }, [design, model, io, addresses]);
   const usedOn = useMemo(() => {
     const m = new Map<string, string[]>();
     for (const s of design?.screens ?? []) for (const e of s.elements) {
@@ -371,7 +402,8 @@ export default function HmiPage() {
   };
   const addElement = (kind: HmiElementKind) => {
     if (!screen) return;
-    const el = createElement(kind, idMaker()(), W / 2, H / 2, bounds, snapOn ? 8 : 1);
+    const at = freeSpot(kind, screen.elements, bounds, snapOn ? 8 : 1);
+    const el = createElement(kind, idMaker()(), at.cx, at.cy, bounds, snapOn ? 8 : 1);
     updateScreen({ ...screen, elements: [...screen.elements, el] });
     setSel([el.id]);
   };
@@ -531,6 +563,7 @@ export default function HmiPage() {
             io, addresses, spec: specToText(fp.spec), machineName: useProgramStore.getState().projectName,
             electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
             existingHmi: useHmiStore.getState().design, program: useProgramStore.getState().ladder,
+            upgradeRoles: projectUpgradeRoles(useDraftStore.getState().drafts, useProgramStore.getState().ladder),
           });
         } finally { useHmiStore.getState().setIsGenerating(false); }
       },
@@ -542,7 +575,7 @@ export default function HmiPage() {
         if (prev) setHist((x) => ({ ...x, past: [...x.past, prev].slice(-100), future: [] }));
         useHmiStore.getState().setDesign(look ? { ...merged, look } : merged, r.explanation);
         if (notes.length) notify(notes.join(' '));
-        useStageStore.getState().markGenerated('hmi', { ...snap, hmiFp: hmiFingerprint(merged) });
+        useStageStore.getState().markGenerated('hmi', { ...snap, hmiFp: hmiFingerprint(merged), panel: merged.hmiPartNumber });
       },
     });
   };
@@ -574,7 +607,13 @@ export default function HmiPage() {
   // Panels that can talk to this project's PLC (C-more for CLICK; other makers by their driver lists).
   const pickable = [...HMI_MODELS, ...catalogPanels().flatMap((o) => (o.model ? [o.model] : []))].filter(designable)
     .filter((m) => hmiFit(m, ANY_NEED, cpu.id).ok);
-  const picker = (
+  const picker = profile.readOnly ? (
+    // A program kept read only on the machine's own PLC: the panel is picked for the PLC it will talk to.
+    <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-2" data-testid="hmi-read-only">
+      <h3 className="text-sm font-semibold text-gray-800">Which HMI are you using?</h3>
+      <p className="text-sm text-gray-600">A touch panel is picked for the PLC it talks to. This project is on the machine's own {profile.vendor} controller ({cpu.id}), read only: <Link to="/upgrade" className="underline">choose the PLC to move it to</Link> first, then pick its panel here.</p>
+    </div>
+  ) : (
     <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3">
       <h3 className="text-sm font-semibold text-gray-800">Which HMI are you using?</h3>
       <p className="text-xs text-gray-500">Touch panels that can talk to the {profile.vendor} {cpu.label} (the maker's PLC driver list), {pickable.length} in all.</p>
@@ -596,22 +635,22 @@ export default function HmiPage() {
   const tags = (design?.tags ?? []).filter((t) => !tagFilter || `${t.address} ${t.name} ${t.description}`.toLowerCase().includes(tagFilter.toLowerCase()));
   const tabBtn = (t: Tab, label: string, count?: number) => (
     <button key={t} onClick={() => setTab(t)}
-      className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === t ? 'border-brand-600 text-gray-900 font-medium' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+      className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm border-b-2 -mb-px ${tab === t ? 'border-brand-600 text-gray-900 font-medium' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
       {label}{count !== undefined && <span className={`ml-1.5 text-[11px] px-1.5 rounded-full ${t === 'check' && count ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'}`}>{count}</span>}
     </button>
   );
 
   return (
     <>
-      <header className="px-4 py-2.5 bg-white border-b border-gray-200 flex items-center justify-between gap-4">
-        <div>
+      <header className="px-4 py-2.5 bg-white border-b border-gray-200 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0 flex-[1_1_16rem]">
           <h2 className="text-base font-semibold text-gray-800">5 · HMI design</h2>
           <p className="text-xs text-gray-400 mt-0.5">
             {noPanel ? 'No touch panel · the operator station (pushbuttons, selector, lamps) is wired to the PLC' : <>{model ? `${model.partNumber} · ${model.sizeIn}" · ${model.widthPx}×${model.heightPx}` : 'Choose your HMI'} · every button and lamp is linked to a PLC address the program implements</>}
           </p>
         </div>
         {design && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link to="/simulate" className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Try it live</Link>
             <button onClick={() => setChoosing((v) => !v)} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Change HMI</button>
             {genButton('Redesign screens')}
@@ -620,6 +659,7 @@ export default function HmiPage() {
         )}
       </header>
       <StageBanner info={stages.hmi} action={noPanel ? undefined : genButton('Update screens')} />
+      {!noPanel && <ProgramOutOfStep where="hmi" />}
 
       <div className="flex-1 overflow-auto bg-gray-50 p-5 space-y-4">
         {noPanel && !choosing && (
@@ -667,7 +707,8 @@ export default function HmiPage() {
         {design && model && screen && (
           <>
             {hmi.explanation && <p className="text-sm text-gray-700 max-w-4xl"><SpeakButton text={hmi.explanation} label="Read aloud" size="xs" className="mr-1 align-middle" />{tagged(hmi.explanation)}</p>}
-            <div className="flex gap-4 items-start">
+            {/* Screen list, screen and properties side by side; on a phone they wrap under each other. */}
+            <div className="flex flex-wrap gap-4 items-start">
               {/* Screen list */}
               <ResizablePane id="hmi.screens" defaultSize={200} min={140} max={420} handle="right">
               <nav aria-label="Screens" className="flex flex-col gap-2 pr-1">
@@ -698,7 +739,7 @@ export default function HmiPage() {
               </ResizablePane>
 
               {/* Screen */}
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-[18rem]">
                 <div className="flex items-baseline justify-between gap-3 mb-2">
                   <div className="min-w-0">
                     <h3 className="text-sm font-semibold text-gray-800">{screen.name}{screen.level ? <span className="ml-2 text-xs font-normal text-gray-500">· {LEVEL_LABEL[screen.level]} password</span> : null}</h3>
@@ -757,7 +798,7 @@ export default function HmiPage() {
                 <section className="bg-white rounded-lg border border-gray-200 p-4">
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{selectedEl ? 'Element properties' : sel.length > 1 ? `${sel.length} elements selected` : 'Screen'}</h3>
                   {selectedEl ? (
-                    <ElementEditor key={selectedEl.id} el={selectedEl} screens={design.screens} tagName={tagName}
+                    <ElementEditor key={selectedEl.id} el={selectedEl} screens={design.screens} tagName={tagName} addressProblem={addressProblem}
                       onChange={(e) => updateScreen({ ...screen, elements: screen.elements.map((x) => (x.id === e.id ? withAnalogScale(x, e, io, addresses) : x)) })}
                       onDelete={() => { updateScreen(deleteElements(screen, [selectedEl.id])); setSelected(null); }} />
                   ) : sel.length > 1 ? (
@@ -775,14 +816,14 @@ export default function HmiPage() {
                     <LookPicker value={design.look} makerLook={defaultLookFor(design.hmiPartNumber)} makerName={hmiMakerOf(design.hmiPartNumber)}
                       onChange={(look) => commit({ ...design, look })} />
                   </div>
-                  <PanelSpecs model={model} design={design} />
+                  <PanelSpecs model={model} design={design} plcId={profile.id} plcName={`${profile.name} (${cpu.id})`} />
                 </section>
               </aside>
               </ResizablePane>
             </div>
 
             <section className="bg-white rounded-lg border border-gray-200">
-              <div className="flex gap-1 px-3 border-b border-gray-200">
+              <div className="flex gap-1 px-3 border-b border-gray-200 overflow-x-auto">
                 {tabBtn('tags', 'Tags', design.tags.length)}
                 {tabBtn('alarms', 'Alarms', design.alarms.length)}
                 {tabBtn('check', 'Layout check', issues.length)}
@@ -793,23 +834,23 @@ export default function HmiPage() {
                   <>
                     <div className="flex items-center justify-between gap-3 mb-2">
                       <p className="text-xs text-gray-500">{tagName
-                        ? `The PLC program implements these under the tag names shown (the exported ${profile.vendor} program uses them; the grey memory address is what the simulator runs).`
+                        ? `The PLC program implements these at the ${profile.vendor} addresses shown (inputs and outputs by their I/O address, memory by its tag in the exported program); the small grey address is what the simulator runs.`
                         : 'The PLC program implements these. HMI commands C1001–C1100, setpoints DS1001–DS1100, status words DS1101–DS1200, alarms C1101–C1200, status bits C1201–C1300.'}</p>
                       <input value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} placeholder="Filter tags" className={`${input} w-48`} />
                     </div>
                     <table className="w-full text-sm">
                       <thead className="text-[11px] text-gray-500 uppercase tracking-wide border-b border-gray-200">
-                        <tr>{[tagName ? 'PLC tag (memory)' : 'Address', 'Name', 'Type', 'Access', 'Used on', 'What the PLC does'].map((h) => <th key={h} className="text-left py-1.5 pr-3 font-medium">{h}</th>)}</tr>
+                        <tr>{[nativeOf ? `${profile.vendor} address` : 'Address', 'Name', 'Type', 'Access', 'Used on', 'What the PLC does'].map((h) => <th key={h} className="text-left py-1.5 pr-3 font-medium">{h}</th>)}</tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {tags.map((t) => (
                           <tr key={t.address + t.name} className="align-top">
-                            <td className="py-1.5 pr-3 font-mono whitespace-nowrap"><AddressCell address={t.address} tag={tagName?.(t.address)} /></td>
+                            <td className="py-1.5 pr-3 font-mono whitespace-nowrap"><AddressCell address={t.address} native={nativeOf?.(t.address)} /></td>
                             <td className="pr-3 py-1.5 font-mono text-xs whitespace-nowrap">{t.name}</td>
                             <td className="pr-3 py-1.5 text-xs">{t.dataType}</td>
                             <td className="pr-3 py-1.5 text-xs whitespace-nowrap">{t.access}</td>
                             <td className="pr-3 py-1.5 text-xs text-gray-500">{(usedOn.get(t.address.toUpperCase()) ?? []).join(', ') || '—'}</td>
-                            <td className="py-1.5 text-gray-600">{t.description}</td>
+                            <td className="py-1.5 text-gray-600">{nativeText(t.description)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -819,12 +860,12 @@ export default function HmiPage() {
                 {tab === 'alarms' && (
                   <table className="w-full text-sm">
                     <thead className="text-[11px] text-gray-500 uppercase tracking-wide border-b border-gray-200">
-                      <tr>{[tagName ? 'PLC tag (memory)' : 'Bit', 'Severity', 'Message', 'Shown on'].map((h) => <th key={h} className="text-left py-1.5 pr-3 font-medium">{h}</th>)}</tr>
+                      <tr>{[nativeOf ? `${profile.vendor} address` : 'Bit', 'Severity', 'Message', 'Shown on'].map((h) => <th key={h} className="text-left py-1.5 pr-3 font-medium">{h}</th>)}</tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {design.alarms.map((a) => (
                         <tr key={a.address}>
-                          <td className="py-1.5 pr-3 font-mono"><AddressCell address={a.address} tag={tagName?.(a.address)} /></td>
+                          <td className="py-1.5 pr-3 font-mono"><AddressCell address={a.address} native={nativeOf?.(a.address)} /></td>
                           <td className="pr-3"><span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${a.severity === 'alarm' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>{a.severity === 'alarm' ? 'Alarm' : 'Warning'}</span></td>
                           <td className="pr-3 text-gray-800"><AlarmText alarm={a} /></td>
                           <td className="text-xs text-gray-500">Header counter, alarm table{usedOn.get(a.address.toUpperCase())?.length ? `, ${usedOn.get(a.address.toUpperCase())!.join(', ')}` : ''}</td>
@@ -872,8 +913,8 @@ function OperatorStationList() {
   return (
     <table className="text-xs" data-testid="operator-station">
       <tbody>
-        {devices.map((d) => (
-          <tr key={d.tag}>
+        {devices.map((d, i) => (
+          <tr key={`${d.tag}:${d.address}:${i}`}>
             <td className="pr-3 font-mono font-medium">{d.tag}</td>
             <td className="pr-3 text-steel-600">{d.kind}</td>
             <td className="pr-3">{d.description}</td>

@@ -129,12 +129,14 @@ export default function SourcingPage() {
               <button onClick={() => setLast(null)} className="text-xs underline">Close</button>
             </div>
             {last.impact.length ? (
+              <div className="overflow-x-auto">
               <table className="mt-2 w-full text-[13px]">
                 <thead className="text-[11px] uppercase text-steel-500"><tr><th className={th}>What changed</th><th className={th}>Before</th><th className={th}>After</th></tr></thead>
                 <tbody>{last.impact.map((i, k) => (
                   <tr key={k} className={i.level === 'bad' ? 'text-red-700' : i.level === 'good' ? 'text-emerald-700' : ''}><td className="pr-3 py-0.5">{i.what}</td><td className="pr-3">{i.before}</td><td>{i.after}</td></tr>
                 ))}</tbody>
               </table>
+              </div>
             ) : <p className="mt-1 text-steel-600">Nothing else changes (same SCCR, fit, heat and wiring).</p>}
           </section>
         )}
@@ -149,6 +151,7 @@ export default function SourcingPage() {
             {groups.map((g) => (
               <section key={g.title} className="rounded border border-steel-200 bg-white">
                 <h3 className="border-b border-steel-200 bg-steel-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-steel-600">{g.title}</h3>
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-[11px] uppercase text-steel-500"><tr className="border-b border-steel-100">
                     {['Qty', 'Part', 'Price', 'Availability', 'Lifecycle', 'Checked on', 'Live check', ''].map((h) => <th key={h} className={`${th} px-3`}>{h}</th>)}
@@ -197,6 +200,7 @@ export default function SourcingPage() {
                     })}
                   </tbody>
                 </table>
+                </div>
               </section>
             ))}
             {liveSources.length > 0 && (
@@ -222,6 +226,7 @@ export default function SourcingPage() {
               </div>
             </section>
             {proposals.length === 0 ? <p className="text-sm text-steel-600">No change scores better for these goals: the current parts are the best choice the catalog knows (alternatives without a known price or lead time are not proposed on those grounds).</p> : (
+              <div className="overflow-x-auto">
               <table className="w-full rounded border border-steel-200 bg-white text-sm" data-testid="optimise-proposals">
                 <thead className="text-[11px] uppercase text-steel-500"><tr className="border-b border-steel-200">{['Part', 'Replacement', 'Saving', 'Lead time', 'Risks', ''].map((h) => <th key={h} className={`${th} px-3`}>{h}</th>)}</tr></thead>
                 <tbody className="divide-y divide-steel-100">{proposals.map((p) => (
@@ -235,6 +240,7 @@ export default function SourcingPage() {
                   </tr>
                 ))}</tbody>
               </table>
+              </div>
             )}
           </>
         )}

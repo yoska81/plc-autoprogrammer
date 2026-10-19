@@ -5,17 +5,21 @@
  *
  * Line references use the "sheet.line" notation ("5.04" = sheet 5, line 4).
  */
+import { ioLabel } from '../ioNames';
 import {
-  billOfMaterials, buildModel, designWarnings, drawingPrefix, naturalCompare, panelLayout, plcRack, revisionState,
+  limitRelayPins,
+  billOfMaterials, nativeModel, designWarnings, drawingPrefix, naturalCompare, panelLayout, plcRack, revisionState,
   backPanelDrilling, doorDrilling, dualDim, dualSize, type DrillingPlan, type PlcRackSlot, type RevisionState,
   type AuxBranch, type Cable, type CableCore, type JbTerminal, type JunctionBoxPlan, type MachineDevice, type BomLine, type DrawingContext, type ElectricalModel, type IoGroup, type IoPoint,
   type MotorModel, type PanelLayout, type XfmrBranch, type PsBranch, type Terminal, type TerminalStrip,
 } from '../derive';
 import { enclosureFaceDrilling } from '../enclosureFaces';
+import type { CatalogCategory } from '../types';
 import { getHmi, hmiMaker } from '../../hmi/hmiCatalog';
 import { lineNo } from './geometry';
 import { powerText } from '../../standards/regions';
 import { stripTag } from '../../standards/designations';
+import { relayLadder, type LadderRung } from '../relayLogic';
 
 export type RungEnd = { kind: 'rail' } | { kind: 'node'; label: string } | { kind: 'xref'; label: string };
 export type RungEl =
@@ -51,6 +55,7 @@ export type SheetSpec =
   | { kind: 'power'; branches: PowerBranchPlan[]; contIdx: number; groundIdx: number }
   | { kind: 'motors'; items: { m: MotorModel; idx: number }[]; busEnd: number; continues: boolean; first: boolean }
   | { kind: 'control'; rungs: Rung[] }
+  | { kind: 'ladder'; rails: [string, string]; rungs: { r: LadderRung; idx: number }[] }
   | { kind: 'io'; group: IoGroup; rows: IoRow[]; points: IoPoint[]; first: boolean; last: boolean; rack?: PlcRackSlot; page: number; pages: number }
   | { kind: 'panel' }
   | { kind: 'door' }
@@ -65,7 +70,43 @@ export type SheetSpec =
   | { kind: 'drill'; drill: DrillingPlan; rows: DrillRow[]; drawing: boolean; page: number; pages: number }
   | { kind: 'analog'; from: number; page: number; pages: number }
   | { kind: 'drive'; index: number }
-  | { kind: 'servo'; index: number };
+  | { kind: 'servo'; index: number }
+  | { kind: 'asbuilt'; nets: AsBuiltNet[]; single: { wire: string; at: string }[]; page: number; pages: number };
+
+/** A wire traced from cabinet photos, drawn as a bus with a drop to every terminal it was read at. */
+export interface AsBuiltNet { wire: string; cls: 'ac' | 'pe' | 'dc' | 'branch'; ends: { tag: string; terminal: string; what: string }[] }
+export const ASBUILT_NETS = 9;
+
+/** Supply class of a wire by its number: L1/N (AC), PE, 24+/0V (DC), anything else a branch circuit. */
+export function wireClass(wire: string): AsBuiltNet['cls'] {
+  const w = wire.trim().toUpperCase().replace(/\s+/g, '');
+  if (/^(PE|GND|GNYE)$/.test(w)) return 'pe';
+  if (/^(L\d|N|L\d?-?\d{0,3}V?AC)$/.test(w)) return 'ac';
+  if (/^(\+?24\+?|\+?24V(DC)?\+?|24\+S?|0V|0VDC|M|\+V|-V|\d+V(DC)?[+-]?)$/.test(w)) return 'dc';
+  return 'branch';
+}
+
+/**
+ * The as-built power distribution from the photos: every traced wire except the PLC's I/O (those are
+ * on the I/O sheets), supply wires first (L1…, N, 24+, 0V, PE), then the branch circuits.
+ */
+export function asBuiltNets(ctx: DrawingContext, model: { rc: { tag: string; category: CatalogCategory; partNumber: string }[] }): AsBuiltNet[] {
+  const byTag = new Map(model.rc.map((c) => [c.tag, c]));
+  const plcIo = (tag: string, terminal: string) => {
+    const c = byTag.get(tag);
+    return Boolean(c && (c.category === 'plc' || c.category === 'plcModule') && /^%?(IX|QX|DI|DO|[XYIQ])\s*\d+(\.\d+)?$|^\d{1,2}$/i.test(terminal.trim()));
+  };
+  const order: AsBuiltNet['cls'][] = ['ac', 'dc', 'pe', 'branch'];
+  return (ctx.design.asBuilt?.wires ?? [])
+    .map((w) => ({ wire: w.wire, cls: wireClass(w.wire), ends: w.ends.map((e) => {
+      const i = e.lastIndexOf(':');
+      const tag = i < 0 ? e : e.slice(0, i), terminal = i < 0 ? '' : e.slice(i + 1);
+      const c = byTag.get(tag);
+      return { tag, terminal, what: c ? `${c.category.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()} ${c.partNumber}`.trim() : /^(TB|X)\d/i.test(tag) ? 'terminal strip' : '' };
+    }) }))
+    .filter((n) => !n.ends.some((e) => plcIo(e.tag, e.terminal)))
+    .sort((a, b) => order.indexOf(a.cls) - order.indexOf(b.cls) || a.wire.localeCompare(b.wire, undefined, { numeric: true }));
+}
 
 export type DrillRow = { id: string; tag: string; x: number; y: number; size: string; verified: boolean };
 export const DRILL_ROWS_FIRST = 44;
@@ -139,7 +180,9 @@ export const MOTOR_PITCH = 7.5;
 export const CONTROL_PITCH = 15;
 export const IO_PITCH = 12;
 export const MOTOR_LINES = 27;
-export const CONTROL_RUNGS = 14;
+/** Rungs per control / relay ladder sheet. A rung's contact cross-references (and a ladder rung's node name) sit
+ * below its line: a 14th row's would land on the title block. */
+export const CONTROL_RUNGS = 13;
 export const IO_PER_SHEET = 16;
 export const TERM_ROWS = 40;
 export const BOM_ROWS = 31;
@@ -196,7 +239,8 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
           // The relay terminals are named at the start (the right rail may run past the rung's end).
           ? { start: { kind: 'node', label: `${t} IN1/IN2` }, end: { kind: 'node', label: '' }, els: [{ t: 'box', tag: d, left: 'BTN1', right: 'BTN2', label: '' }], wires: [`${t}-1`, `${t}-2`],
             desc: [`TWO-HAND STATION ${d}: BOTH BUTTONS (N.O. + N.C. EACH)`, `WIRES ${t}-1 / ${t}-2, 0.5 S, ISO 13851 TYPE IIIC`] }
-          : { start: { kind: 'node', label: `${t} S12/S22` }, end: { kind: 'node', label: '' }, els: [{ t: 'box', tag: d, left: 'OSSD1', right: 'OSSD2', label: '' }], wires: ['OSSD1', 'OSSD2'],
+          // no light curtain found for the relay: its box is drawn, but no wire numbers the wire list does not have
+          : { start: { kind: 'node', label: `${t} S12/S22` }, end: { kind: 'node', label: '' }, els: [{ t: 'box', tag: d, left: 'OSSD1', right: 'OSSD2', label: '' }], wires: d === '?' ? ['', ''] : ['OSSD1', 'OSSD2'],
             desc: [`LIGHT CURTAIN ${d}: OSSD1 / OSSD2`, 'TYPE 4, SELF-TESTING (IEC 61496)'] });
       }
     }
@@ -229,7 +273,7 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
   const limit = model.rc.find((c) => c.part?.ratings.kind === 'limitAlarm');
   for (const k of model.rc.filter((c) => c.category === 'contactor' && !c.comp.motorTag && !ioTags.has(c.tag) && /safety contactor/i.test(c.comp.function))) {
     out.push({ start: { kind: 'node', label: s.outputSupply }, end: rail,
-      els: [...(limit ? [{ t: 'contact' as const, nc: false, tag: limit.tag, term: 'R1', dev: 'relay' as const }] : []), { t: 'coil', tag: k.tag }],
+      els: [...(limit ? [{ t: 'contact' as const, nc: false, tag: limit.tag, term: limitRelayPins(limit.part).join('-'), dev: 'relay' as const }] : []), { t: 'coil', tag: k.tag }],
       wires: [s.outputSupply, ...(limit ? [`${k.tag}A1`] : []), '0V'],
       desc: [`${k.tag} ${k.comp.function.split(' — ')[0].toUpperCase()}`, limit ? `OVER-TEMPERATURE LIMIT ${limit.tag} (LATCHED) AND 24+S DROP IT` : 'DROPS WITH 24+S'], key: `coil:${k.tag}` });
   }
@@ -253,10 +297,12 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
     const ch = p.coilChain!;
     // sourcing output: output → chain → coil → 0V; sinking output: output supply → chain → coil → output
     out.push({
-      start: ch.sink ? { kind: 'node', label: s.outputSupply } : { kind: 'xref', label: `${p.address} FROM {=io:${p.address}}` },
-      end: ch.sink ? { kind: 'xref', label: `${p.address} TO {=io:${p.address}}` } : rail,
-      els: [...ch.devices.map((d) => ({ t: 'contact' as const, nc: d.nc, tag: d.tag, term: d.terminals, dev: d.kind === 'ol' ? 'ol' as const : 'relay' as const })), { t: 'coil', tag: p.deviceTag || '?' }],
-      wires: [...ch.wires, ch.sink ? p.address : '0V'],
+      start: ch.sink ? { kind: 'node', label: s.outputSupply } : { kind: 'xref', label: `${ioLabel(model.ioNames, p.address)} FROM {=io:${p.address}}` },
+      end: ch.sink ? { kind: 'xref', label: `${ioLabel(model.ioNames, p.address)} TO {=io:${p.address}}` } : rail,
+      // a reversing starter's shared overload on sourcing outputs sits in the coil's return, after the coil
+      els: [...ch.devices.map((d) => ({ t: 'contact' as const, nc: d.nc, tag: d.tag, term: d.terminals, dev: d.kind === 'ol' ? 'ol' as const : 'relay' as const })), { t: 'coil', tag: p.deviceTag || '?' },
+        ...(ch.returnVia ? [{ t: 'contact' as const, nc: true, tag: ch.returnVia.tag, term: ch.returnVia.terminals, dev: 'ol' as const }] : [])],
+      wires: [...ch.wires, ...(ch.returnVia ? [ch.returnVia.wire] : []), ch.sink ? p.address : '0V'],
       desc: [p.description.toUpperCase(), `${p.deviceTag} CONTACTS: {c:${p.deviceTag}}`], key: `coil:${p.deviceTag}`,
     });
   }
@@ -294,7 +340,7 @@ function ioBlocks(ctx: DrawingContext, model: ElectricalModel): { group: IoGroup
 }
 
 export function planDrawings(ctx: DrawingContext): DrawingPlan {
-  const model = buildModel(ctx);
+  const model = nativeModel(ctx);
   const layout = panelLayout(ctx);
   const specs: { title: string; spec: SheetSpec }[] = [];
 
@@ -311,6 +357,13 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
   for (const b of model.auxBranches) { branches.push({ type: 'aux', b, idx }); idx += 4; }
   const contIdx = model.motors.length ? idx : idx - 1;
   specs.push({ title: 'POWER DISTRIBUTION', spec: { kind: 'power', branches, contIdx, groundIdx: Math.max(contIdx + 3, 20) } });
+  // As-built from cabinet photos: the wires traced by their numbers, as photographed.
+  if (ctx.design.asBuilt?.wires?.length || ctx.design.asBuilt?.single?.length) {
+    const nets = asBuiltNets(ctx, model);
+    const single = (ctx.design.asBuilt.single ?? []).filter((s) => !nets.some((n) => n.wire === s.wire));
+    const pages = Math.max(1, Math.ceil(nets.length / ASBUILT_NETS));
+    for (let i = 0; i < pages; i++) specs.push({ title: `AS-BUILT POWER DISTRIBUTION (FROM PHOTOS)${pages > 1 ? ` (${i + 1} OF ${pages})` : ''}`, spec: { kind: 'asbuilt', nets: nets.slice(i * ASBUILT_NETS, (i + 1) * ASBUILT_NETS), single: i === pages - 1 ? single : [], page: i + 1, pages } });
+  }
 
   // motors
   if (model.motors.length) {
@@ -343,13 +396,34 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     }
   }
 
+  // relay logic kept from a converted machine (DesignInputs.relayLogic): NFPA 79 ladder sheets, rungs never split
+  const logic = ctx.design.inputs.relayLogic;
+  if (logic?.rungs.length) {
+    const lad = model.ladder ?? relayLadder(logic);
+    const pages: { r: LadderRung; idx: number }[][] = [];
+    let cur: { r: LadderRung; idx: number }[] = [];
+    let row = 1;
+    for (const r of lad.rungs) {
+      if (cur.length && row + r.rows - 1 > CONTROL_RUNGS) { pages.push(cur); cur = []; row = 1; }
+      cur.push({ r, idx: row });
+      row += r.rows;
+    }
+    if (cur.length) pages.push(cur);
+    const volts = logic.supply === '120VAC' ? '120VAC' : '24VDC';
+    pages.forEach((rungs, i) => specs.push({
+      title: `RELAY CONTROL CIRCUIT ${volts} — RUNGS ${rungs[0].r.n}–${rungs[rungs.length - 1].r.n}${pages.length > 1 ? ` (${i + 1} OF ${pages.length})` : ''}`,
+      spec: { kind: 'ladder', rails: lad.rails, rungs },
+    }));
+  }
+
   // IO: one block per CPU / module, inputs then outputs, spares included
   for (const blk of ioBlocks(ctx, model)) {
     const g = blk.group;
     const pages = Math.max(1, Math.ceil(blk.rows.length / IO_PER_SHEET));
     for (let i = 0; i < Math.max(1, blk.rows.length); i += IO_PER_SHEET) {
       const rows = blk.rows.slice(i, i + IO_PER_SHEET);
-      const range = rows.length > 1 ? `${rows[0].address}–${rows[rows.length - 1].address}` : rows[0]?.address ?? '';
+      const nm = (a: string) => ioLabel(model.ioNames, a);
+      const range = rows.length > 1 ? `${nm(rows[0].address)}–${nm(rows[rows.length - 1].address)}` : rows[0] ? nm(rows[0].address) : '';
       specs.push({
         title: `PLC ${g.type === 'input' ? 'INPUTS' : 'OUTPUTS'} — ${g.devTag} ${g.label} (${range})`,
         spec: { kind: 'io', group: g, rows, points: rows.flatMap((r) => (r.point ? [r.point] : [])), first: i === 0, last: i + IO_PER_SHEET >= blk.rows.length, rack: blk.rack, page: i / IO_PER_SHEET + 1, pages },
@@ -360,7 +434,10 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
   // Analog loops (electrical/analog.ts): six per sheet.
   const nAnalog = model.analog.circuits.length;
   for (let i = 0, pages = Math.ceil(nAnalog / 6); i < nAnalog; i += 6) {
-    specs.push({ title: `ANALOG I/O — 4–20 mA / 0–10 V LOOPS${pages > 1 ? ` (${i / 6 + 1} OF ${pages})` : ''}`, spec: { kind: 'analog', from: i, page: i / 6 + 1, pages } });
+    // the title names the signals on this page (a thermocouple page is not "4–20 mA / 0–10 V")
+    const on = model.analog.circuits.slice(i, i + 6);
+    const kinds = [...new Set(on.map((c) => (c.loop === 'thermocouple' ? 'THERMOCOUPLE' : c.row.range.replace('-', '–').replace(/(mA|V)$/, ' $1'))))].join(' / ');
+    specs.push({ title: `ANALOG I/O — ${kinds} ${on.some((c) => c.loop !== 'thermocouple') ? 'LOOPS' : 'INPUTS'}${pages > 1 ? ` (${i / 6 + 1} OF ${pages})` : ''}`, spec: { kind: 'analog', from: i, page: i / 6 + 1, pages } });
   }
 
   // VFD control wiring + parameters (electrical/vfd.ts): one sheet per drive.
@@ -520,6 +597,18 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
         if (r.key) xref.set(r.key, l);
         for (const e of r.els) if (e.t === 'contact' && e.dev !== 'pb' && e.dev !== 'estop' && e.dev !== 'guard') addContact({ tag: e.tag, term: e.term, nc: e.nc, line: l });
       }
+    } else if (sp.kind === 'ladder') {
+      for (const { r, idx } of sp.rungs) {
+        const l = lineNo(sh.n, idx);
+        xref.set(`rung:${r.rung.id}`, l);
+        for (const c of r.cols) for (const e of c.kind === 'el' ? [c.e] : c.paths.flat()) {
+          const el = lineNo(sh.n, idx + e.row);
+          // the line a net is first drawn on: a later rung that starts at that node names it
+          if (e.wOut && !xref.has(`net:${e.wOut}`)) xref.set(`net:${e.wOut}`, `${e.wOut} /${el}`);
+          if (e.el.t === 'coil' && e.el.kind !== 'drive-input') xref.set(`coil:${e.el.tag}`, el);
+          else if (e.el.t === 'contact' && e.el.kind && ['relay', 'timer', 'ol', 'safety'].includes(e.el.kind) && !e.pins.includes('?')) addContact({ tag: e.el.tag, term: e.pins.join('-'), nc: e.el.nc, line: el });
+        }
+      }
     } else if (sp.kind === 'io') {
       sp.rows.forEach((r, i) => {
         const l = lineNo(sh.n, i + 1);
@@ -551,6 +640,9 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
         break;
       case 'control':
         for (const r of sp.rungs) for (const e of r.els) mark(e.tag, n);
+        break;
+      case 'ladder':
+        for (const { r } of sp.rungs) for (const c of r.cols) for (const e of c.kind === 'el' ? [c.e] : c.paths.flat()) if (e.el.tag !== '?') mark(e.el.tag, n);
         break;
       case 'io':
         mark(sp.group.devTag, n);

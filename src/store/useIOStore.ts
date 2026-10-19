@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AnalogSpec, IOPoint, IOCategory, TemplatePoint } from '../types/io';
+import { withAnalogRange, type AnalogSpec, type IOPoint, type IOCategory, type TemplatePoint } from '../types/io';
 import { useEditsStore } from '../edits/useEditsStore';
+import { appPersistStorage } from '../lib/appStorage';
 
 interface IOStore {
   projectIO: IOPoint[];
@@ -19,6 +20,18 @@ interface IOStore {
   importPoints: (points: Omit<IOPoint, 'id'>[], replace: boolean) => void;
   /** Apply a reviewed AI I/O update: update kept points, add new ones, remove dropped ones. */
   applyIOUpdate: (kept: Pick<IOPoint, 'id' | 'category' | 'deviceType' | 'signal' | 'analog'>[], added: Omit<IOPoint, 'id'>[], removedIds: string[]) => void;
+}
+
+/**
+ * Told after an edit that can move PLC addresses (delete, an I/O update, a manual address, analog on / off, an
+ * import added to the list): src/plc/core/ioChange.ts remaps the program and the HMI through it. Replacing the
+ * whole list, loading a project and Undo do not notify: their program / HMI come with them.
+ */
+export type IoChangeListener = (prev: IOPoint[], next: IOPoint[]) => void;
+const ioListeners = new Set<IoChangeListener>();
+export function onIoChange(f: IoChangeListener): () => void {
+  ioListeners.add(f);
+  return () => { ioListeners.delete(f); };
 }
 
 function nextInputId(existing: IOPoint[]): string {
@@ -43,7 +56,15 @@ function nextOutputId(existing: IOPoint[]): string {
 
 export const useIOStore = create<IOStore>()(
   persist(
-    (set, get) => ({
+    (set, get) => {
+    // The actions below that can move addresses tell the listeners, with the list before and after.
+    const changed = (f: () => void) => {
+      const prev = get().projectIO;
+      f();
+      const next = get().projectIO;
+      if (next !== prev) for (const l of ioListeners) l(prev, next);
+    };
+    return {
       projectIO: [],
 
       addBlankInput: () => {
@@ -97,38 +118,47 @@ export const useIOStore = create<IOStore>()(
         }));
       },
 
-      setAnalog: (id, analog) => set((s) => ({
+      setAnalog: (id, analog) => changed(() => set((s) => ({
         projectIO: s.projectIO.map((p) => {
           if (p.id !== id) return p;
           if (!analog) { const { analog: _a, signal: _s, ...rest } = p; void _a; void _s; return rest; }
           return { ...p, signal: 'analog' as const, analog, plcAddress: p.plcAddress?.toUpperCase().startsWith('DF') ? p.plcAddress : undefined };
         }),
-      })),
+      }))),
 
       setPlcAddress: (id: string, address: string) => {
         const plcAddress = address.trim().toUpperCase();
-        set((s) => ({
-          projectIO: s.projectIO.map((p) => (p.id === id ? { ...p, plcAddress } : p)),
-        }));
+        changed(() => set((s) => ({
+          // The user's own address: the app's note on why it fixed one no longer applies.
+          projectIO: s.projectIO.map((p) => { if (p.id !== id) return p; const next = { ...p, plcAddress }; delete next.addressNote; return next; }),
+        })));
       },
 
       importPoints: (points, replace) => {
         // A new list: description edits of the old points no longer apply.
         if (replace) useEditsStore.getState().clearTexts('io:');
-        set((s) => {
-          let current = replace ? [] : [...s.projectIO];
+        const add = () => set((s) => {
+          const current = replace ? [] : [...s.projectIO];
+          // The lowest free number each time, as nextInputId / nextOutputId give (found once: a big program has thousands).
+          const used = { input: new Set<number>(), output: new Set<number>() };
+          for (const p of current) { const n = parseInt(p.id.slice(1), 10); if (!isNaN(n)) used[p.type].add(n); }
+          const next = { input: 1, output: 1 };
           for (const p of points) {
-            const id = p.type === 'input' ? nextInputId(current) : nextOutputId(current);
-            current = [...current, { ...p, id }];
+            while (used[p.type].has(next[p.type])) next[p.type]++;
+            used[p.type].add(next[p.type]);
+            const id = `${p.type === 'input' ? 'I' : 'Q'}${String(next[p.type]).padStart(3, '0')}`;
+            current.push({ ...p, ...(p.analog ? { analog: withAnalogRange(p.description, p.analog) } : {}), id });
           }
           return { projectIO: current };
         });
+        // A new list re-uses the point ids (I001 …): nothing to remap, its program is generated from it.
+        if (replace) add(); else changed(add);
       },
 
       applyIOUpdate: (kept, added, removedIds) => {
         // Kept points keep their (hand-edited) descriptions; dropped points drop their edits.
         for (const id of removedIds) useEditsStore.getState().resetText(`io:${id}`);
-        set((s) => {
+        changed(() => set((s) => {
           const keptById = new Map(kept.map((k) => [k.id, k]));
           const removed = new Set(removedIds);
           let current = s.projectIO
@@ -139,14 +169,15 @@ export const useIOStore = create<IOStore>()(
             current = [...current, { ...p, id }];
           }
           return { projectIO: current };
-        });
+        }));
       },
 
       deletePoint: (id: string) => {
         useEditsStore.getState().resetText(`io:${id}`);
-        set((s) => ({ projectIO: s.projectIO.filter((p) => p.id !== id) }));
+        changed(() => set((s) => ({ projectIO: s.projectIO.filter((p) => p.id !== id) })));
       },
-    }),
-    { name: 'plc-io-store' }
+    };
+    },
+    { name: 'plc-io-store', storage: appPersistStorage() }
   )
 );

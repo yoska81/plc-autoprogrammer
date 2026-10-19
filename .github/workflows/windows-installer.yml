@@ -65,6 +65,11 @@ jobs:
       - name: Install
         run: npm ci
 
+      # GNU LibreDWG's dwg2dxf (opens DWG drawings): the official win64 build, pinned SHA-256, shipped as a
+      # separate program in the installer. Before the tests: src/convert/dwgReader.test.ts runs the real one.
+      - name: Fetch LibreDWG
+        run: node scripts/fetch-libredwg.cjs
+
       - name: Lint and unit tests
         shell: bash
         run: |

@@ -1,3 +1,4 @@
+import type { LadderProgram } from '../plc/core/ladder';
 import { bindProgress, finishProgress } from '../lib/ai/progress';
 import { useSpecStore } from '../store/useSpecStore';
 import { useIOStore } from '../store/useIOStore';
@@ -7,7 +8,7 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useHmiStore } from '../store/useHmiStore';
 import { useProgramStore } from '../store/useProgramStore';
 import { useProjectStore } from '../store/useProjectStore';
-import { getCpu, getProfile } from '../plc/core/profiles';
+import { getCpu, getProfile, PLC_PROFILES } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
 import { validateProgram } from '../plc/core/validate';
@@ -15,22 +16,30 @@ import { fingerprint, specToText, changedSections } from './types';
 import { ioFingerprint, hmiFingerprint } from './useStages';
 import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge } from '../lib/ai/ioAI';
 import { recommendEquipment } from '../lib/ai/equipmentAI';
+import { brandNote as brandStepNote, plcPreference, requestedProfiles } from './brand';
 import { applyEquipment, recommendedChoice } from './equipment';
-import { cpuFit, findCpu, modulesToFit, type Need } from '../plc/core/fit';
+import { analogRangesOf, cpuFit, findCpu, hmiFit, modulesToFit, type Need } from '../plc/core/fit';
+import type { AnalogRange } from '../types/io';
 import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
 import { analogSetup } from '../plc/core/analog';
 import { getPart } from '../electrical/catalog';
 import { vendorPreference } from '../store/useProjectStore';
+import { nearestPanel } from '../hmi/nearestPanel';
+import { hasBuiltInPanel } from '../hmi/panels';
 import { generateRuleBasedHmi } from '../lib/ai/hmiContentAI';
+import { useDraftStore } from '../store/useDraftStore';
+import { projectUpgradeRoles } from '../plc/import/ui/applyUpgrade';
 import { mergeRegenerated } from '../hmi/engine/regenerate';
-import { reviseLadder } from '../plc/ai/ladderAI';
+import { changeScope, reviseLadder } from '../plc/ai/ladderAI';
+import { markLegacyMotors } from '../electrical/engine/machineModel';
 import { generateRuleBasedProgram } from '../plc/ai/cycleAI';
 import { getHmi } from '../hmi/hmiCatalog';
 import { rulesEquipment } from './equipmentRules';
 import { stagesNow } from './useStages';
+import { missingOperatorIo } from './operatorIo';
 import { aiNow } from '../lib/ai/timing';
 import type { AIConfig, PlcContext } from '../plc/ai/ladderAI';
-import { activeHmiDesign, noTouchPanelNow } from '../hmi/projectPanel';
+import { activeHmiDesign, noTouchPanelNow, projectPanelPartNow } from '../hmi/projectPanel';
 
 
 export { UPDATE_GROUPS, type StepResult, type UpdateStep } from './updateSteps';
@@ -66,6 +75,21 @@ interface RunCtx {
  * answered from the cache. I/O, electrical and HMI are applied; a change to an existing PLC program is
  * left as a proposal. A failed stage stops the stages after it.
  */
+/**
+ * The panel to apply with a CPU: the one picked when it talks to the CPU; else the closest listed panel that can;
+ * else one is kept (the current one if it talks to the CPU, else the one picked), never none: no panel would make
+ * the project "no touch panel" and add the door pushbuttons and lamps to the I/O list. `say` is what the step tells.
+ */
+export function panelForCpu(picked: string | null, current: string | null, cpuId: string, need: Need, nearest: typeof nearestPanel = nearestPanel): { panel: string | null; say: string } {
+  const model = picked && !hasBuiltInPanel(getPart(picked)) ? getHmi(picked) : undefined;
+  if (!model || hmiFit(model, need, cpuId).ok) return { panel: picked, say: '' };
+  const swap = nearest(cpuId, need, { w: model.widthPx, h: model.heightPx }, vendorPreference().hmi);
+  if (swap) return { panel: swap.partNumber, say: ` The ${picked} panel cannot talk to the ${cpuId}: ${swap.partNumber} (${swap.sizeIn}") instead; change it on the Equipment page.` };
+  const cur = current && !hasBuiltInPanel(getPart(current)) ? getHmi(current) : undefined;
+  if (cur && current !== picked && hmiFit(cur, need, cpuId).ok) return { panel: current, say: ` The ${picked} panel cannot talk to the ${cpuId}: kept your ${current}.` };
+  return { panel: picked, say: ` The ${picked} panel cannot talk to the ${cpuId} and no listed panel can: it is kept for now (no door pushbuttons added); choose a panel that can on the Equipment page.` };
+}
+
 export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) => void, opts: { signal?: AbortSignal; shouldStop?: () => boolean } = {}): Promise<void> {
   const { signal, shouldStop = () => false } = opts;
   const running = new Map<UpdateStep, Promise<boolean>>();
@@ -127,16 +151,37 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
   try {
     if (step === 'equipment') {
       const before = equipmentNow();
+      // A PLC brand the description names (or the Brand preference sets): the current PLC is kept only when it is
+      // that brand; otherwise the equipment is chosen again, from that brand.
+      const asked = requestedProfiles(specToText(spec), plcPreference());
+      const otherBrand = (plcId: string) => asked.length > 0 && !asked.some((p) => p.id === plcId);
+      // The PLC used is never a silent fallback: a brand this tool cannot program yet (Mitsubishi, Omron…), or a maker
+      // mentioned without naming the PLC, is said first in the step message.
+      const brandNote = (cpuId: string) => {
+        const prof = PLC_PROFILES.find((p) => p.cpuModels.some((c) => c.id === cpuId));
+        const n = brandStepNote(specToText(spec), prof ? `${prof.vendor} ${prof.name} (${cpuId})` : cpuId);
+        return n ? `${n} ` : '';
+      };
       if (stageMode('equipment') === 'quick') {
         // Rules from the I/O counts: needs the I/O list of this run.
         if (!(await ctx.after('io'))) return false;
-        const cur = useProjectStore.getState();
-        const curHmi = useHmiStore.getState().hmiPartNumber || null;
-        const choice = rulesEquipment(ioNow(), { plcId: cur.plcId, cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: curHmi });
+        const state = useProjectStore.getState();
+        const cur = otherBrand(state.plcId) ? { plcId: asked[0].id, cpuId: '', modules: [] as string[], recommendation: state.recommendation } : state;
+        const hmiNow = useHmiStore.getState().hmiPartNumber || null;
+        const choice = rulesEquipment(ioNow(), { plcId: cur.plcId, cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: hmiNow });
+        // A panel that cannot talk to the new brand's PLC is swapped for the closest panel that can (said in the
+        // step message). Never dropped: no panel would add the door pushbuttons and lamps to the I/O list.
+        const hmiModel = choice && hmiNow ? getHmi(hmiNow) : undefined;
+        const talks = (h: NonNullable<typeof hmiModel>, cpuId: string) => hmiFit(h, { digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null }, cpuId).ok;
+        const swap = choice && hmiModel && otherBrand(state.plcId) && !talks(hmiModel, choice.cpuId)
+          // The Equipment page's pick (Dev 5's nearestPanel): closest resolution, preferred makers first.
+          ? nearestPanel(choice.cpuId, { digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null }, { w: hmiModel.widthPx, h: hmiModel.heightPx }, vendorPreference().hmi)
+          : undefined;
+        if (choice && swap) choice.hmiPartNumber = swap.partNumber;
         if (!choice) { onStep({ step, status: 'failed', message: `No ${getProfile(cur.plcId).name} CPU covers the ${ioNow().length} I/O points even with modules: choose a bigger PLC on the Equipment page.` }); return false; }
-        applyEquipment(choice, cur.recommendation ?? null);
+        const warn = applyEquipment(choice, cur.recommendation ?? null);
         if (equipmentNow() !== before) ctx.changed.add('equipment');
-        onStep({ step, status: 'done', message: `${choice.kept ? `Kept your ${choice.cpuId}` : choice.cpuId}${choice.modules.length ? ` + ${choice.modules.length} module(s)` : ''}: covers the I/O list with about 20 % spare (rules).` });
+        onStep({ step, status: 'done', message: `${brandNote(choice.cpuId)}${choice.kept ? `Kept your ${choice.cpuId}` : choice.cpuId}${choice.modules.length ? ` + ${choice.modules.length} module(s)` : ''}: covers the I/O list with about 20 % spare (rules).${swap ? ` The ${hmiNow} panel cannot talk to this PLC: ${swap.partNumber} (${swap.sizeIn}") instead; change it on the Equipment page.` : swap === null ? ` The ${hmiNow} panel cannot talk to this PLC and no listed panel can: choose one on the Equipment page.` : ''}${warn ? ` ${warn}` : ''}` });
         return true;
       }
       const { rec } = await recommendEquipment({ ...ai, spec });
@@ -145,17 +190,26 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       const curCpu = findCpu(cur.cpuId);
       const need = { ...rec.estimatedIO, ethernetHmi: Boolean(rec.hmi || curHmi), minHmiSizeIn: null };
       // Keep the engineer's own choice while it still covers the machine; otherwise take the recommendation.
-      if (curCpu && cur.recommendation && cpuFit(curCpu, cur.modules, need).ok) {
-        applyEquipment({ cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: curHmi }, rec);
-        onStep({ step, status: 'done', message: `Kept your ${cur.cpuId}${cur.modules.length ? ` + ${cur.modules.length} module(s)` : ''}: it still covers the I/O.` });
+      if (curCpu && cur.recommendation && !otherBrand(cur.plcId) && cpuFit(curCpu, cur.modules, need).ok) {
+        const warn = applyEquipment({ cpuId: cur.cpuId, modules: cur.modules, hmiPartNumber: curHmi }, rec);
+        onStep({ step, status: 'done', message: `${brandNote(cur.cpuId)}Kept your ${cur.cpuId}${cur.modules.length ? ` + ${cur.modules.length} module(s)` : ''}: it still covers the I/O.${warn ? ` ${warn}` : ''}` });
       } else {
         const choice = recommendedChoice(rec);
         // The AI's CPU + modules must cover its own I/O estimate: add the modules it is short of, or stop.
         const mods = modulesToFit(choice.cpuId, choice.modules, need);
         if (!mods) { onStep({ step, status: 'failed', message: `${choice.cpuId} cannot cover ${need.digitalInputs} inputs / ${need.digitalOutputs} outputs even with modules: choose a bigger CPU on the Equipment page.` }); return false; }
-        applyEquipment({ ...choice, modules: mods }, rec);
+        // The panel the AI picked must talk to its CPU: else the closest one that can (said).
+        const { panel: applied, say: panelSay } = panelForCpu(choice.hmiPartNumber, curHmi, choice.cpuId, { ...need, ethernetHmi: true });
+        choice.hmiPartNumber = applied;
+        const panelOk = !panelSay;
+        // The stored recommendation names the panel applied, so later sizing (minHmiSizeIn) and its suggestion agree.
+        const stored = choice.hmiPartNumber === (rec.hmi?.partNumber ?? null) || !choice.hmiPartNumber ? rec
+          : { ...rec, hmi: { partNumber: choice.hmiPartNumber, why: `${rec.hmi?.partNumber ?? 'The suggested panel'} cannot talk to the ${choice.cpuId}.` } };
+        const warn = applyEquipment({ ...choice, modules: mods }, stored);
         const added = mods.length - choice.modules.length;
-        onStep({ step, status: 'done', message: `${rec.plc.cpuId}${cur.cpuId && cur.cpuId !== rec.plc.cpuId ? ` (was ${cur.cpuId}, no longer enough)` : ''}, ${mods.length} module(s)${added ? ` (${added} added to cover the I/O)` : ''}${rec.hmi ? `, HMI ${rec.hmi.partNumber}` : ''}.` });
+        const fitsNow = curCpu ? cpuFit(curCpu, cur.modules, need).ok : false;
+        const was = !cur.cpuId || cur.cpuId === rec.plc.cpuId ? '' : otherBrand(cur.plcId) ? ` (was ${cur.cpuId}, another brand)` : fitsNow ? ` (was ${cur.cpuId})` : ` (was ${cur.cpuId}, no longer enough)`;
+        onStep({ step, status: 'done', message: `${brandNote(rec.plc.cpuId)}${rec.plc.cpuId}${was}, ${mods.length} module(s)${added ? ` (${added} added to cover the I/O)` : ''}${choice.hmiPartNumber && panelOk ? `, HMI ${choice.hmiPartNumber}` : ''}.${panelSay}${warn ? ` ${warn}` : ''}` });
       }
       if (equipmentNow() !== before) ctx.changed.add('equipment');
       return true;
@@ -163,16 +217,19 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
 
     if (step === 'io') {
       const { profile, cpu } = plc();
-      const r = await generateIOFromSpec({ ...ai, spec, existing: ioNow(), profile, cpu, lean: pipelining });
+      const r = await generateIOFromSpec({ ...ai, spec, existing: ioNow(), profile, cpu, lean: pipelining, noPanel: noTouchPanelNow() });
       // Applied once the equipment step (running alongside) has chosen the CPU and modules.
       if (stageMode('equipment') !== 'quick' && !(await ctx.after('equipment'))) return false;
       const before = ioFingerprint(ioNow());
-      const plan = planIOMerge(ioNow(), r.points);
+      // No touch panel: the door pushbuttons, selector and lamps the AI left out (matched by description, so kept ones keep their wiring).
+      const plan = planIOMerge(ioNow(), noTouchPanelNow() ? [...r.points, ...missingOperatorIo(r.points)] : r.points);
       useIOStore.getState().applyIOUpdate(
         plan.kept.map(({ point, next }) => keptUpdate(point, next)),
         plan.added.map(generatedToPoint),
         plan.removed.map((p) => p.id),
       );
+      // What the reading left open goes to the one question list (Machine description page, src/components/questions/qa.ts).
+      useDraftStore.getState().setDraft('io.updateQuestions', r.questions.map((text) => ({ text })));
       if (ioFingerprint(ioNow()) !== before) ctx.changed.add('io');
       mark('io', { specFp, spec, ioFp: ioFingerprint(ioNow()) });
       // The real I/O list may need more than the equipment step's estimate: add modules, or stop with a clear error.
@@ -194,11 +251,10 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       // AI reads the machine model, the rule-based engine designs the panel (src/electrical/engine).
       // Both versions start from the same inputs (the rules' version must not become the AI's "designer's motor list").
       const proj = useProjectStore.getState();
-      const hmiState = useHmiStore.getState();
       const input = {
-        spec: specToText(spec), io, addresses: resolveAddresses(profile, cpu, io, slots), inputs: el.inputs, region: proj.info.region,
+        spec: specToText(spec), io, addresses: resolveAddresses(profile, cpu, io, slots), inputs: markLegacyMotors(el.inputs, el.design, el.source), region: proj.info.region,
         pref: vendorPreference(), getPart, modules: proj.modules, analog: analogSetup(profile, cpu, slots, io),
-        hmiPartNumber: hmiState.design?.hmiPartNumber || hmiState.hmiPartNumber || null, projectName: useProgramStore.getState().projectName,
+        hmiPartNumber: projectPanelPartNow(), projectName: useProgramStore.getState().projectName,
         plc: { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label },
       };
       const apply = (r: Awaited<ReturnType<typeof generateRuleBasedDesign>>) => {
@@ -238,6 +294,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         io, addresses: resolveAddresses(profile, cpu, io, slots), spec: specToText(spec), machineName: useProgramStore.getState().projectName,
         electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
         existingHmi: existing, program: useProgramStore.getState().ladder,
+        upgradeRoles: projectUpgradeRoles(useDraftStore.getState().drafts, useProgramStore.getState().ladder),
       };
       const before = hmiFingerprint(existing);
       const apply = (r: Awaited<ReturnType<typeof generateRuleBasedHmi>>) => {
@@ -245,7 +302,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         // Screens edited by hand are kept (re-bound to the new tags).
         const merged = mergeRegenerated(existing, r.design).design;
         useHmiStore.getState().setDesign(existing?.look ? { ...merged, look: existing.look } : merged, r.explanation);
-        mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(merged) });
+        mark('hmi', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(merged), panel: merged.hmiPartNumber });
         if (hmiFingerprint(merged) !== before) ctx.changed.add('hmi');
       };
       const mode = stageMode('hmi');
@@ -272,34 +329,68 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       const ctxP: PlcContext = { profile, cpu, io, addresses, wiring, hmi };
       const aiCfg: AIConfig = { ...ai, provider: settings.provider };
       const mode = stageMode('program');
-      const rulesProgram = (withAi: boolean) => generateRuleBasedProgram({ ai: withAi && aiCfg.apiKey ? aiCfg : undefined, ctx: ctxP, spec: specToText(spec), electrical: useElectricalStore.getState().design, hmi: hmi ?? null });
+      const rulesProgram = (withAi: boolean, keepSequence?: LadderProgram['sequence']) => generateRuleBasedProgram({ ai: withAi && aiCfg.apiKey ? aiCfg : undefined, ctx: ctxP, spec: specToText(spec), electrical: useElectricalStore.getState().design, hmi: hmi ?? null, noPanel: noTouchPanelNow(), ...(keepSequence ? { keepSequence } : {}) });
       const markProgram = () => mark('program', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(hmi ?? null) });
-      if (!prog.ladder.rungs.length) {
+      // A program the app generated and nobody changed since is rebuilt for the new design (the previous one is kept as
+      // a version), so every HMI tag stays implemented; one edited by hand, imported or restored only gets a proposal.
+      const rebuild = prog.ladder.rungs.length > 0 && prog.ladderOrigin === 'app';
+      const kept = rebuild ? ' The previous program is kept as a version.' : '';
+      if (!prog.ladder.rungs.length || rebuild) {
         // Standard blocks from the rules (every HMI tag implemented); the AI writes only the cycle block.
         if (mode !== 'ai' || !aiCfg.apiKey) {
-          const q = await rulesProgram(false);
+          // Rules only: a rebuilt program keeps the cycle it had (the AI's steps); the AI, when asked below, writes a new one.
+          const final = mode === 'quick' || !aiCfg.apiKey;
+          const seq = final && rebuild ? prog.ladder.sequence : undefined;
+          const q = await rulesProgram(false, seq);
           prog.setGeneratedLadder(q.program, q.explanation, q.reasoning);
           markProgram();
-          if (mode === 'quick' || !aiCfg.apiKey) { onStep({ step, status: 'done', message: `${q.program.rungs.length} rungs written (rules, default cycle, ${secs(aiNow() - t0)}).` }); return true; }
+          if (final) { onStep({ step, status: 'done', message: `${q.program.rungs.length} rungs written (rules, ${seq ? 'the cycle kept' : 'default cycle'}, ${secs(aiNow() - t0)}).${kept}` }); return true; }
           onStep({ step, status: 'done', provisional: true, message: `Rules program ready (${q.program.rungs.length} rungs, default cycle, ${secs(aiNow() - t0)}): the AI is writing the cycle steps…` });
         }
+        // The program as it is while the AI writes the cycle: edited by hand meanwhile (the editor stays open), the
+        // AI's program is only proposed, never written over the edit.
+        const written = useProgramStore.getState().ladder;
         const r = await rulesProgram(true);
+        if (useProgramStore.getState().ladder !== written) {
+          useProgramStore.getState().setProposal({ program: r.program, explanation: r.explanation, reasoning: r.reasoning, specUpdate: true });
+          onStep({ step, status: 'proposal', message: `The program was changed while the AI wrote the cycle: its program (${r.program.rungs.length} rungs) is waiting for your approval on the PLC Program page.` });
+          return true;
+        }
         useProgramStore.getState().setGeneratedLadder(r.program, r.explanation, r.reasoning);
         markProgram();
-        onStep({ step, status: 'done', message: `${r.program.rungs.length} rungs written.` });
+        onStep({ step, status: 'done', message: `${r.program.rungs.length} rungs written.${kept}` });
         return true;
       }
-      if (mode === 'quick') {
-        // Quick on an existing program: the rules' program becomes a proposal (nothing written by hand is lost).
+      // The rules' program for an existing one goes in as a proposal (nothing written by hand is lost); `why` says
+      // why the AI did not write it, and a proposal still waiting is named as replaced.
+      const rulesProposal = async (why: string | null) => {
         const q = await rulesProgram(false);
-        prog.setProposal({ program: q.program, explanation: q.explanation, reasoning: null, specUpdate: true });
-        onStep({ step, status: 'proposal', message: `A rules program (${q.program.rungs.length} rungs, default cycle) is waiting for your approval on the PLC Program page.` });
+        const replaced = useProgramStore.getState().proposal ? ' It replaces the proposal that was waiting.' : '';
+        const note = [why ? `${why}: the rules' program (default cycle) for the current spec, I/O and HMI.` : '', replaced.trim()].filter(Boolean).join(' ');
+        prog.setProposal({ program: q.program, explanation: `${note ? `${note} ` : ''}${q.explanation}`, reasoning: null, specUpdate: true, ...(note ? { note } : {}) });
+        onStep({ step, status: 'proposal', message: `${why ? `${why}: a` : 'A'} rules program (${q.program.rungs.length} rungs, default cycle) is waiting for your approval on the PLC Program page.${replaced}` });
+        return true;
+      };
+      // A program too big for the AI to write back whole (a big imported one) is not replaced by the rules' program.
+      const scope = changeScope(prog.ladder, ctxP, null, '');
+      if ('tooBig' in scope) {
+        onStep({ step, status: 'skipped', message: `The program (${prog.ladder.rungs.length} rungs) is too big to update in one go: on the PLC Program page, choose a block and ask for the change there.` });
         return true;
       }
+      if (mode === 'quick') return rulesProposal(null);
+      if (!aiCfg.apiKey) return rulesProposal('No API key — built from rules');
       const changed = changedSections(useStageStore.getState().sources.program?.spec ?? null, spec);
       const request = `The machine specification, I/O list and/or HMI changed${changed.length ? ` (spec sections: ${changed.join(', ')})` : ''}. Update the program to match, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specToText(spec)}`;
       const ioSet = new Set([...addresses.values()].filter(Boolean));
-      const r = await reviseLadder(aiCfg, ctxP, prog.ladder, validateProgram(prog.ladder, profile, ioSet), [{ role: 'user', content: `Machine specification:\n${specToText(spec)}` }], request);
+      let r: Awaited<ReturnType<typeof reviseLadder>>;
+      try {
+        r = await reviseLadder(aiCfg, ctxP, prog.ladder, validateProgram(prog.ladder, profile, ioSet, undefined, { noPanel: noTouchPanelNow() }), [{ role: 'user', content: `Machine specification:\n${specToText(spec)}` }], request);
+      } catch (err) {
+        // Cancel stops the stage; any other AI failure falls back to the rules, as the electrical and HMI stages
+        // do: the rules' program becomes a proposal (the program written by hand stays until it is approved).
+        if (signal?.aborted) throw err;
+        return rulesProposal(`The AI could not update the program (${err instanceof Error ? err.message : String(err)})`);
+      }
       prog.addChat({ role: 'user', text: 'Update the program for the latest spec, I/O and HMI changes.' });
       if (r.program) {
         prog.addChat({ role: 'assistant', text: r.explanation });
@@ -328,7 +419,7 @@ function prefetchCycle(ctx: RunCtx, signal?: AbortSignal): void {
   if (!pipelining || !ctx.steps.includes('program') || stageMode('program') === 'quick') return;
   const settings = useSettingsStore.getState();
   if (!settings.anthropicApiKey || settings.provider !== 'anthropic') return;
-  if (useProgramStore.getState().ladder.rungs.length) return; // an existing program is revised, not rebuilt
+  { const pr = useProgramStore.getState(); if (pr.ladder.rungs.length && pr.ladderOrigin !== 'app') return; } // a program changed by hand is revised, not rebuilt
   const { plcId, cpuId, modules } = useProjectStore.getState();
   const profile = getProfile(plcId);
   if (profile.language !== 'ladder') return;
@@ -337,20 +428,20 @@ function prefetchCycle(ctx: RunCtx, signal?: AbortSignal): void {
   const addresses = resolveAddresses(profile, cpu, io, moduleSlots(modules));
   const wiring = new Map((useElectricalStore.getState().design?.ioWiring ?? []).map((w) => [w.address, { deviceTag: w.deviceTag, deviceType: w.deviceType }]));
   const ai: AIConfig = { apiKey: settings.anthropicApiKey, model: settings.anthropicModel, effort: settings.effort, provider: 'anthropic', signal, cache: true };
-  void generateRuleBasedProgram({ ai, ctx: { profile, cpu, io, addresses, wiring }, spec: specToText(useSpecStore.getState().sections), electrical: useElectricalStore.getState().design, hmi: null }).catch(() => { /* the program stage asks again */ });
+  void generateRuleBasedProgram({ ai, ctx: { profile, cpu, io, addresses, wiring }, spec: specToText(useSpecStore.getState().sections), electrical: useElectricalStore.getState().design, hmi: null, noPanel: noTouchPanelNow() }).catch(() => { /* the program stage asks again */ });
 }
 
 /** After the I/O step: the CPU + modules must hold every point; missing modules are added (and become required parts). */
-function ensureIoFits(io: { type: string; signal?: string }[]): { note?: string; error?: string } | null {
+function ensureIoFits(io: { type: string; signal?: string; analog?: { range: AnalogRange } }[]): { note?: string; error?: string } | null {
   const { cpuId, modules, recommendation } = useProjectStore.getState();
   const cpu = findCpu(cpuId);
   if (!cpu) return null;
   const n = (type: string, analog: boolean) => io.filter((p) => p.type === type && (p.signal === 'analog') === analog).length;
-  const need: Need = { digitalInputs: n('input', false), digitalOutputs: n('output', false), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi: Boolean(useHmiStore.getState().hmiPartNumber), minHmiSizeIn: null };
+  const need: Need = { digitalInputs: n('input', false), digitalOutputs: n('output', false), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi: Boolean(useHmiStore.getState().hmiPartNumber), minHmiSizeIn: null, analogRanges: analogRangesOf(io) };
   if (cpuFit(cpu, modules, need).ok) return null;
   const mods = modulesToFit(cpuId, modules, need);
   if (!mods) return { error: `${cpuId} with ${modules.length} module(s) cannot hold the ${need.digitalInputs} inputs / ${need.digitalOutputs} outputs of the I/O list, even with more modules: choose a bigger CPU on the Equipment page.` };
-  applyEquipment({ cpuId, modules: mods, hmiPartNumber: useHmiStore.getState().hmiPartNumber || null }, recommendation);
-  return { note: `Added ${mods.slice(modules.length).join(', ')} so the I/O list fits ${cpuId}.` };
+  const warn = applyEquipment({ cpuId, modules: mods, hmiPartNumber: useHmiStore.getState().hmiPartNumber || null }, recommendation);
+  return { note: `Added ${mods.slice(modules.length).join(', ')} so the I/O list fits ${cpuId}.${warn ? ` ${warn}` : ''}` };
 }
 

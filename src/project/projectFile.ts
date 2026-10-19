@@ -5,7 +5,7 @@
  *   manifest.json  – { format: 'isa-auto-programmer-project', formatVersion, appVersion, savedAt, name, sourceId }
  *   project.json   – every project store (spec, I/O, PLC, program, electrical, HMI, stages, review)
  *                    plus the per-project data kept in shared stores (machine layout, questions & answers,
- *                    I/O check-out, label setup).
+ *                    I/O check-out, label setup, fault log).
  * Settings and API keys are never written to the file.
  * Opening a file always adds it as a NEW project; nothing already in the app is overwritten.
  */
@@ -15,8 +15,10 @@ import { useLayoutStore } from '../electrical/layout/useLayoutStore';
 import { useQuestionStore } from '../components/questions/useQuestionStore';
 import { useCheckoutStore } from '../online/useCheckoutStore';
 import { useCommissioningStore } from '../commissioning/useCommissioningStore';
+import { cleanRecord } from '../commissioning/checklist';
 import { useRedlineStore } from '../redlines/useRedlineStore';
 import { useLabelSetupStore } from '../electrical/labels/setup';
+import { useFaultLogStore } from '../troubleshoot/useFaultLogStore';
 
 export const PROJECT_EXT = 'isap';
 export const PROJECT_FORMAT = 'isa-auto-programmer-project';
@@ -33,7 +35,7 @@ export interface ProjectManifest {
 
 interface ProjectFileBody {
   stores: Record<string, unknown>;
-  perProject: { layout?: unknown; questions?: unknown; checkout?: unknown; labels?: unknown; commissioning?: unknown; redlines?: unknown };
+  perProject: { layout?: unknown; questions?: unknown; checkout?: unknown; labels?: unknown; commissioning?: unknown; redlines?: unknown; faultLog?: unknown };
 }
 
 const fileSafe = (s: string) => s.replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'project';
@@ -50,6 +52,7 @@ export async function buildProjectFile(): Promise<{ name: string; blob: Blob }> 
       checkout: useCheckoutStore.getState().byProject[k],
       commissioning: useCommissioningStore.getState().byProject[k],
       redlines: useRedlineStore.getState().byProject[k],
+      faultLog: useFaultLogStore.getState().byProject[k],
       labels: id ? useLabelSetupStore.getState().byProject[id] : undefined,
     },
   };
@@ -95,8 +98,9 @@ export async function openProjectFile(file: Blob): Promise<{ id: string; name: s
   if (pp.layout) useLayoutStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.layout as never } }));
   if (pp.questions) useQuestionStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.questions as never } }));
   if (pp.checkout) useCheckoutStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.checkout as never } }));
-  if (pp.commissioning) useCommissioningStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.commissioning as never } }));
+  if (pp.commissioning) useCommissioningStore.setState((s) => ({ byProject: { ...s.byProject, [id]: cleanRecord(pp.commissioning) } }));
   if (pp.redlines) useRedlineStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.redlines as never } }));
+  if (pp.faultLog) useFaultLogStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.faultLog as never } }));
   if (pp.labels) useLabelSetupStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.labels as never } }));
   return { id, name };
 }

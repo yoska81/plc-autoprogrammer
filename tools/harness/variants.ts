@@ -32,9 +32,10 @@ import { alarmRows, programInfo } from '../../src/deliverables/docs/program';
 import { getHmi } from '../../src/hmi/hmiCatalog';
 import { ALLOWED_RISE_C, cabinetHeat } from '../../src/electrical/thermal';
 import { coolingCover } from '../../src/electrical/cooling';
+import { coilMatchesRail, relayLadder } from '../../src/electrical/relayLogic';
 import { runCodeRules } from '../../src/review/codeRules';
 import { sccrTable } from '../../src/deliverables/docs/electrical';
-import type { DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, MotorSpec } from '../../src/electrical/types';
+import type { DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, MotorSpec, RelayLogic } from '../../src/electrical/types';
 import type { AnalogSpec, IOCategory } from '../../src/types/io';
 import { generateRuleBasedDesign } from '../../src/lib/ai/machineModelAI';
 import { getPart } from '../../src/electrical/catalog';
@@ -43,6 +44,10 @@ import { specToText } from '../../src/spec/types';
 import { buildHmi } from '../../src/hmi/engine';
 import { projectHmiContent } from '../../src/lib/ai/hmiContentAI';
 import { programWithCycle } from '../../src/plc/engine/sequence';
+import { missingOperatorIo } from '../../src/spec/operatorIo';
+import { generatedToPoint } from '../../src/lib/ai/ioAI';
+import { useStageStore } from '../../src/store/useStageStore';
+import { fingerprint } from '../../src/spec/types';
 
 type Point = { description: string; type: 'input' | 'output'; category: IOCategory; tag: string; deviceType: FieldDeviceType; location: string; part?: string; signal?: 'analog'; analog?: AnalogSpec };
 
@@ -276,7 +281,7 @@ const SERVO_SPEC = 'Cup filler: a servo axis (axis 1) indexes the cup carrier by
 
 async function setupRules(v: string) {
   setupVariant(v === 'rules-big' || v === 'rules-floor' ? 'big' : 'us480');
-  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress' || v === 'rules-sealing-4x') {
+  if (v === 'rules-sealing' || v === 'rules-sealing-long' || v === 'rules-stress' || v === 'rules-sealing-4x' || v === 'rules-sealing-thm' || v === 'rules-sealing-npn') {
     // Only the sealing head's own description: the example's other sections (its conveyor) must not leak in.
     const sections = useSpecStore.getState().sections;
     useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC });
@@ -297,6 +302,38 @@ async function setupRules(v: string) {
     useProjectStore.setState({ plcId: 'click', cpuId: 'C0-10DD1E-D', modules });
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, enclosureRating: 'NEMA 4X', motors: [], requiredParts: [{ partNumber: 'C0-10DD2E-D', quantity: 1 }, ...modules.map((partNumber) => ({ partNumber, quantity: 1 }))] });
   }
+  // "rules-nopanel": the sealing head with no touch panel — the I/O list gets the door pushbuttons, the Auto/Manual
+  // selector and the lamps it lacks; no HMI design; the program runs from the door devices alone.
+  const noPanel = v === 'rules-nopanel';
+  if (noPanel) {
+    const sections = useSpecStore.getState().sections;
+    const spec = { ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC.replace(/CLICK PLC with a C-more 7" touch panel;[^.]*\./, 'CLICK PLC, no touch panel: pushbuttons, a selector and lamps on the cabinet door; the seal temperature and time are set in the program.') };
+    useSpecStore.getState().setSections(spec);
+    const io = SEALING_IO.map(([description, type, category, deviceType, analog], i) => ({ id: `seal${i + 1}`, description, type, category, deviceType, ...(analog ? { signal: 'analog' as const, analog } : {}) }));
+    useIOStore.setState({ projectIO: [...io, ...missingOperatorIo(io).map((g, i) => ({ id: `op${i + 1}`, ...generatedToPoint(g) }))] });
+    useProjectStore.setState({ plcId: 'click', cpuId: 'C0-12DD1E-D', modules: ['C0-16ND3', 'C0-08TD1'] });
+    useHmiStore.getState().setHmiPartNumber('');
+    useHmiStore.getState().setDesign(null, null);
+    useStageStore.getState().markGenerated('equipment', { specFp: fingerprint(spec), spec });
+    useProgramStore.setState({ ladder: { rungs: [], tags: [] } });
+    useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [{ partNumber: 'C0-12DD1E-D', quantity: 1 }, { partNumber: 'C0-16ND3', quantity: 1 }, { partNumber: 'C0-08TD1', quantity: 1 }] });
+  }
+  // "rules-sealing-npn": the sealing head with NPN sensors — their input commons go to +24V, so the buttons, limit /
+  // pressure switches and relay contacts on the same modules must switch 0V (check_consistency: every input can turn ON).
+  // It also reads the door E-stop's status (N.C., ON = released) on that +24V common: through the E-stop's own N.C.
+  // block, switching 0V.
+  if (v === 'rules-sealing-npn') useIOStore.setState({ projectIO: [...useIOStore.getState().projectIO.map((p) => (p.deviceType === 'sensor-pnp' ? { ...p, deviceType: 'sensor-npn' as const } : p)), { id: 'seal-es', description: 'E-stop released (status)', type: 'input' as const, category: 'Safety' as const, deviceType: 'estop-contact' as const }] });
+  // "rules-sealing-thm": the user's Sealing Head as built — C0-11DD2E-D + C0-08ND3 + C0-04THM, NEMA 4X, the seal bar's
+  // type J thermocouple read straight by the THM (no transmitter, no analog output). The point comes in through the
+  // store's import at the list's 4-20 mA default: the import must make it a 'thermocouple' range, or it gets no channel.
+  if (v === 'rules-sealing-thm') {
+    const io = SEALING_IO.filter(([, type, , , a]) => !(type === 'output' && a))
+      .map(([description, type, category, deviceType, a]) => (a ? ['Seal bar temperature (type J thermocouple)', type, category, deviceType, { range: '4-20mA' as const, min: 0, max: 300, units: '°C' }] as const : [description, type, category, deviceType, a] as const));
+    useIOStore.getState().importPoints(io.map(([description, type, category, deviceType, analog]) => ({ description, type, category, deviceType, ...(analog ? { signal: 'analog' as const, analog } : {}) })), true);
+    const modules = ['C0-08ND3', 'C0-04THM'];
+    useProjectStore.setState({ plcId: 'click', cpuId: 'C0-11DD2E-D', modules });
+    useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, enclosureRating: 'NEMA 4X', motors: [], requiredParts: ['C0-11DD2E-D', ...modules].map((partNumber) => ({ partNumber, quantity: 1 })) });
+  }
   // "rules-servo": motion — one SureServo2 axis (pulse/direction, STO), a line encoder on the high-speed inputs and a
   // 4-20 mA ultrasonic level sensor on a 240 V machine (src/electrical/motion.fixture.ts).
   if (v === 'rules-servo') {
@@ -311,20 +348,30 @@ async function setupRules(v: string) {
   }
   // Unitronics all-in-ones (the screen is the PLC's own): the sealing head on a Vision V700 + snap-in (VisiLogic) or a
   // UniStream US10 + Uni-I/O (UniLogic); the rules build the HMI and the program too, so the exporters run.
-  const uni = v === 'rules-unitronics' ? { plcId: 'unitronics-vision', cpu: 'V700-T20BJ', modules: ['V200-18-E3XB'] }
-    : v === 'rules-unistream' ? { plcId: 'unitronics-unistream', cpu: 'US10-B10-TR22', modules: ['UID-1600', 'UIA-0402N'] } : null;
+  // "rules-siemens": the same machine on an S7-1200 (CPU 1214C + SM 1221 + SM 1231, KTP700 panel): the drawings, wire
+  // list and wire markers use the PLC's own I/O names (%I0.0 on the PLC rows, I0.0 / Q0.0 as wire numbers).
+  const uni = v === 'rules-unitronics' ? { plcId: 'unitronics-vision', cpu: 'V700-T20BJ', modules: ['V200-18-E3XB'], hmi: 'V700-T20BJ' }
+    : v === 'rules-unistream' ? { plcId: 'unitronics-unistream', cpu: 'US10-B10-TR22', modules: ['UID-1600', 'UIA-0402N'], hmi: 'US10-B10-TR22' }
+    : v === 'rules-siemens' ? { plcId: 'siemens-s7', cpu: '6ES7214-1AG40-0XB0', modules: ['6ES7221-1BH32-0XB0', '6ES7231-4HD32-0XB0', '6ES7232-4HB32-0XB0'], hmi: '6AV2123-2GB03-0AX0' } : null;
   if (uni) {
     const sections = useSpecStore.getState().sections;
-    useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC.replace('CLICK PLC with a C-more 7" touch panel', `Unitronics ${uni.cpu} PLC with its built-in touch screen`) });
+    useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC.replace('CLICK PLC with a C-more 7" touch panel', uni.plcId === 'siemens-s7' ? `Siemens S7-1200 ${uni.cpu} PLC with a KTP700 touch panel` : `Unitronics ${uni.cpu} PLC with its built-in touch screen`) });
     useIOStore.setState({ projectIO: SEALING_IO.map(([description, type, category, deviceType, analog], i) => ({ id: `seal${i + 1}`, description, type, category, deviceType, ...(analog ? { signal: 'analog' as const, analog } : {}) })) });
     useProjectStore.setState({ plcId: uni.plcId, cpuId: uni.cpu, modules: uni.modules });
-    useHmiStore.getState().setHmiPartNumber(uni.cpu);
+    useHmiStore.getState().setHmiPartNumber(uni.hmi);
     useHmiStore.getState().setDesign(null, null);
     useProgramStore.setState({ ladder: { rungs: [], tags: [] } });
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [uni.cpu, ...uni.modules].map((partNumber) => ({ partNumber, quantity: 1 })) });
   }
   const el = useElectricalStore.getState();
-  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || v === 'rules-servo' || uni ? el.inputs : el.design?.inputs ?? el.inputs;
+  let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || v === 'rules-sealing-thm' || v === 'rules-sealing-npn' || v === 'rules-servo' || uni || noPanel ? el.inputs : el.design?.inputs ?? el.inputs;
+  // "rules-relay": the example plus the relay logic the converter kept from a Chinese roll former (22 circuits, the
+  // converter's fixture): the engine adds its devices as parts and draws the NFPA 79 ladder sheets.
+  if (v === 'rules-relay') {
+    const res = await fetch('/e2e/fixtures/convert/cn-rollformer-01.relayLogic.json');
+    if (!res.ok) throw new Error('rules-relay: e2e/fixtures/convert/cn-rollformer-01.relayLogic.json not served');
+    inputs = { ...inputs, relayLogic: (await res.json()) as RelayLogic };
+  }
   if (v === 'rules-eu' || v === 'rules-stress') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };
@@ -354,6 +401,11 @@ async function setupRules(v: string) {
     useHmiStore.getState().setDesign(hmi, 'rules');
     const prog = programWithCycle({ content, hmiTags: hmi.tags, hmiScreens: hmi.screens, hmiAlarms: hmi.alarms, spec: specToText(q.spec) });
     useProgramStore.setState({ ladder: prog.program });
+  }
+  if (noPanel) {
+    const q = collectProject();
+    const content = projectHmiContent({ io: q.io, addresses: q.addresses, machineName: 'Sealing Head', spec: specToText(q.spec), electrical: design, panel: { partNumber: '', widthPx: 800, heightPx: 480 } });
+    useProgramStore.setState({ ladder: programWithCycle({ content, spec: specToText(q.spec), panel: false }).program });
   }
 }
 
@@ -409,7 +461,8 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
     region: p.info.region,
     supply: ctx.design.inputs.supply,
     revision: revisionState(ctx.doc),
-    io: p.io.map((x) => ({ id: x.id, address: p.addresses.get(x.id) ?? '', type: x.type, description: x.description })),
+    // native: the PLC's own name of the address (%I0.0 on an S7), as the drawings show it; absent for CLICK
+    io: p.io.map((x) => { const a = p.addresses.get(x.id) ?? ''; const n = m.ioNames.native.get(a); return { id: x.id, address: a, type: x.type, description: x.description, ...(n ? { native: n, wire: m.ioNames.wire.get(a) } : {}) }; }),
     bom: billOfMaterials(ctx),
     wires: wireNumbers(ctx),
     terminals: terminalPlan(ctx),
@@ -431,6 +484,26 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
         parts: m.rc.filter((c) => ['filter fan', 'exhaust filter', 'thermostat', 'heat exchanger', 'air conditioner'].includes(String(c.part?.ratings.kind ?? ''))).map((c) => ({ tag: c.tag, partNumber: c.partNumber, kind: c.part?.ratings.kind })),
         fan: m.fan ?? null, cover: h.ventilation ? coolingCover(ctx.design.components, getPart, h.ventilation, ALLOWED_RISE_C) : null };
     })(),
+    // relay logic (check_consistency: one terminal = one wire number; every coil rated for its rung's rail)
+    relay: ctx.design.inputs.relayLogic ? (() => {
+      const logic = ctx.design.inputs.relayLogic!;
+      const lad = relayLadder(logic);
+      const coils = [...new Set(lad.rungs.flatMap((r) => r.cols).flatMap((c) => (c.kind === 'el' ? [c.e] : c.paths.flat())).filter((e) => e.el.t === 'coil' && e.el.kind !== 'drive-input').map((e) => e.el.tag))];
+      return {
+        supply: logic.supply, wires: lad.wires, questions: lad.questions,
+        coils: coils.map((tag) => { const c = ctx.design.components.find((x) => x.tag === tag); const pt = c ? getPart(c.partNumber) : undefined; return { tag, partNumber: c?.partNumber ?? null, rating: String(pt?.ratings.coilVoltage ?? pt?.ratings.volts ?? ''), ok: pt ? coilMatchesRail(logic.supply, String(pt.ratings.coilVoltage ?? pt.ratings.volts ?? '')) : null }; }),
+      };
+    })() : null,
+    // input commons (check_consistency: every input can turn ON — on a +24V common (NPN) a dry contact is fed 0V)
+    inputCommons: m.groups.filter((g) => g.type === 'input').map((g) => ({
+      group: g.label, commonTo: g.commonTo,
+      points: g.points.map((q) => {
+        // the wire landing on the input's feed terminal as derive wired it (C, 23, R1, BN…): every input is checked
+        const feed = q.feedTo ? m.wires.filter((w) => w.to === q.feedTo && w.wire !== q.address).map((w) => w.wire) : [];
+        const sig = m.wires.find((w) => w.wire === q.address && w.from.startsWith(`${q.deviceTag}:`));
+        return { address: q.address, tag: q.deviceTag, deviceType: q.deviceType, feedTo: q.feedTo ?? null, feed: [...new Set(feed)], signalFrom: sig?.from ?? null };
+      }),
+    })),
     drives: m.motors.filter((x) => x.vfd).map((x) => ({ motor: x.motor.tag, tag: x.vfd!.tag, partNumber: x.vfd!.partNumber, fuseClass: x.vfd!.part?.ratings.fuseClass ?? null, fusePart: x.vfd!.part?.ratings.fusePart ?? null,
       protection: x.protection ? { tag: x.protection.tag, partNumber: x.protection.partNumber, category: x.protection.category, fuseClass: x.protection.fuse?.ratings.fuseClass ?? null, fuse: x.protection.fuse?.partNumber ?? null } : null })),
     nameplate: panelNameplate(ctx),

@@ -23,6 +23,8 @@ export interface IOPoint {
   templateId?: string;
   /** Manual PLC address override (e.g. "X103"); empty = assigned automatically. */
   plcAddress?: string;
+  /** Why the app fixed plcAddress itself (shown on the I/O list), e.g. "kept on its wired terminal (migration)"; cleared when the user sets an address. */
+  addressNote?: string;
   /** Field device type when known (from the spec or the electrical design), e.g. "sensor-pnp". */
   deviceType?: string;
   /** "analog" = 4-20 mA / 0-10 V signal on an analog channel (CLICK: a DF register); missing = discrete on/off. */
@@ -42,9 +44,30 @@ export interface AnalogSpec {
   min: number;
   max: number;
   units: string;
+  /** The range was assumed (an imported program did not say it): shown as "to check" until someone sets it. */
+  assumed?: boolean;
 }
 
 export const isAnalog = (p: Pick<IOPoint, 'signal'>) => p.signal === 'analog';
+
+const BARE_TC_RE = /thermocouple|\bT\/C\b|\btype [JKTENRSB]\b/i;
+const LOOP_RE = /transmitter|transducer|\bmA\b|\d\s*-\s*\d+\s*(m?A|V)\b/i;
+
+/**
+ * The range an analog point is given when it is generated, imported or first made analog: a bare thermocouple
+ * ("Seal bar temperature (thermocouple)", "type J") becomes 'thermocouple' instead of the 4-20 mA default, so it
+ * lands on a thermocouple input (only a 'thermocouple' range may). A transmitter / mA / V description, or any range
+ * other than the 4-20 mA default, is kept as it is.
+ */
+export function analogRangeFor(description: string, range: AnalogRange): AnalogRange {
+  return range === '4-20mA' && BARE_TC_RE.test(description) && !LOOP_RE.test(description) ? 'thermocouple' : range;
+}
+
+/** An analog spec with its range set by analogRangeFor. */
+export const withAnalogRange = (description: string, a: AnalogSpec): AnalogSpec => {
+  const range = analogRangeFor(description, a.range);
+  return range === a.range ? a : { ...a, range, ...(range === 'thermocouple' && a.units === '%' ? { units: '°C' } : {}) };
+};
 
 export interface TemplatePoint {
   templateId: string;

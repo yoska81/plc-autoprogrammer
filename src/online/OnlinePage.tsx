@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useActiveHmiDesign } from '../hmi/projectPanel';
 import { useProgramStore } from '../store/useProgramStore';
 import { usePlc } from '../plc/core/usePlc';
@@ -14,14 +15,23 @@ import LoadIntoPlc from '../plc/ui/LoadIntoPlc';
 import { clickModbus, isWritable, modbus984 } from './clickModbus';
 import { rungPowerFromValues } from './power';
 import { connectPlc, disconnectPlc, modbusBridge, refsFor, useOnlineStore, writePlc } from './useOnline';
-import { programCheck, testConnection, type CheckLine } from './programCheck';
+import { firstScanRanges, programCheck, testConnection, type CheckLine } from './programCheck';
+import { wordValueError } from './poll';
 import { useCheckoutStore, type CheckoutEntry } from './useCheckoutStore';
 import { buildCheckoutPdf, checkoutRows, checkoutSummary } from './checkoutPdf';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
 
-type Tab = 'monitor' | 'ladder' | 'hmi' | 'checkout';
+import TroubleshootPanel from '../troubleshoot/TroubleshootPanel';
+
+/** The brand's own software for watching the PLC online. */
+const ONLINE_SOFTWARE: Record<string, string> = {
+  'siemens-s7': 'TIA Portal (Go online, Monitor all)', logix: 'Studio 5000 Logix Designer (Go Online)', micro800: 'Connected Components Workbench (Connect)',
+  'unitronics-unistream': 'UniLogic (Online)', 'unitronics-vision': 'VisiLogic (Online test mode)',
+};
+
+type Tab = 'monitor' | 'ladder' | 'hmi' | 'checkout' | 'troubleshoot';
 
 const input = 'border border-steel-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 bg-white hover:bg-steel-50 disabled:opacity-40';
@@ -37,7 +47,13 @@ export default function OnlinePage() {
   const projectId = useProjectsStore((s) => s.activeId);
   const checkout = useCheckoutStore((s) => s.byProject[projectId ?? 'default']) ?? NO_CHECKS;
   const { tech, setTech, set: setCheck } = useCheckoutStore();
-  const [tab, setTab] = useUi<Tab>('online.tab', 'monitor');
+  const [savedTab, setTab] = useUi<Tab>('online.tab', 'monitor');
+  // A link can open a tab directly (the navigation's "Fault finding" opens ?tab=troubleshoot).
+  const [params] = useSearchParams();
+  const linked = params.get('tab');
+  useEffect(() => {
+    if (linked === 'monitor' || linked === 'ladder' || linked === 'hmi' || linked === 'checkout' || linked === 'troubleshoot') setTab(linked);
+  }, [linked, setTab]);
   const [filter, setFilter] = useUi('online.filter', '');
   const [screenId, setScreenId] = useUi<string | null>('online.screen', null);
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
@@ -46,6 +62,8 @@ export default function OnlinePage() {
   const [checks, setChecks] = useState<{ title: string; lines: CheckLine[] } | null>(null);
   const [checking, setChecking] = useState<string | null>(null);
   const isClick = profile.id === 'click';
+  // The Modbus monitor is CLICK's: another brand opens on the I/O check-out.
+  const tab: Tab = savedTab === 'monitor' && !isClick ? 'checkout' : savedTab;
 
   // Every address the project uses: I/O, program, HMI.
   const names = useMemo(() => {
@@ -82,9 +100,24 @@ export default function OnlinePage() {
     return bl.length > 1 ? bl.map((b) => ({ id: b.id, name: b.name, description: b.description, rungIds: b.rungIds })) : undefined;
   }, [ladder]);
 
+  // Ranges the project declares for its registers: HMI entries' min / max and the program's first-scan limits.
+  const declared = useMemo(() => {
+    const m = new Map<string, { min: number | null; max: number | null }>();
+    const put = (a: string, min: number | null, max: number | null) => {
+      const k = a.toUpperCase(), cur = m.get(k) ?? { min: null, max: null };
+      m.set(k, { min: min === null ? cur.min : cur.min === null ? min : Math.max(cur.min, min), max: max === null ? cur.max : cur.max === null ? max : Math.min(cur.max, max) });
+    };
+    for (const sc of hmi?.screens ?? []) for (const e of sc.elements) if (e.address && (e.min !== null || e.max !== null)) put(e.address, e.min, e.max);
+    for (const f of firstScanRanges(ladder)) put(f.address, f.min, f.max);
+    return m;
+  }, [hmi, ladder]);
   const write = async (address: string, v: boolean | number) => {
+    // A value the register cannot hold, or outside its declared range, is refused before anything is asked or sent.
+    const r = clickModbus(address);
+    const bad = typeof v === 'number' && r && r.table !== 'coil' ? wordValueError(address.toUpperCase(), v, r.type, declared.get(address.toUpperCase())) : null;
+    if (bad) { setMsg({ text: bad, error: true }); return; }
     if (!confirm(`Write ${typeof v === 'boolean' ? (v ? 'ON' : 'OFF') : v} to ${address}${names.get(address) ? ` (${names.get(address)})` : ''} in the running PLC?\n\nThe machine may move. Make sure the area is clear.`)) return;
-    try { await writePlc(address, v); setMsg({ text: `${address} written.` }); } catch (e) { setMsg({ text: e instanceof Error ? e.message : String(e), error: true }); }
+    try { await writePlc(address, v, modbusBridge(), declared.get(address.toUpperCase())); setMsg({ text: `${address} written.` }); } catch (e) { setMsg({ text: e instanceof Error ? e.message : String(e), error: true }); }
   };
   const allowWrites = (on: boolean) => {
     if (on && !confirm('Allow writes to the PLC?\n\nWrites change values in a running machine (C bits and DS registers only; X inputs and Y outputs are never written). Only do this when you are at the machine and it is safe.')) return;
@@ -111,22 +144,32 @@ export default function OnlinePage() {
   const model = hmi ? getHmi(hmi.hmiPartNumber) : undefined;
   const screen = hmi?.screens.find((s) => s.id === screenId) ?? hmi?.screens[0];
   const tabBtn = (t: Tab, label: string) => (
-    <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === t ? 'border-brand-600 text-steel-900' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>{label}</button>
+    <button key={t} onClick={() => setTab(t)} className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 ${tab === t ? 'border-brand-600 text-steel-900' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>{label}</button>
+  );
+
+  // Live values come over CLICK's Modbus TCP map only: another brand gets a plain sentence in place of the
+  // connection bar and the address table (its own software monitors it online); check-out and fault finding stay.
+  const notHere = (
+    <p className="max-w-2xl rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="online-not-here">
+      Online monitoring here connects to AutomationDirect CLICK PLCs only. To watch the {profile.vendor} {cpu.id} running, go online in {ONLINE_SOFTWARE[profile.id] ?? `${profile.vendor}'s own programming software`}. The I/O check-out and Fault finding tabs work here without a connection.
+    </p>
   );
 
   return (
     <>
-      <header className="px-6 pt-4 bg-white border-b border-steel-200">
-        <div className="flex items-start gap-3">
-          <h2 className="flex-1 text-base font-semibold text-steel-800">Online — connect to the PLC</h2>
+      <header className="px-4 sm:px-6 pt-4 bg-white border-b border-steel-200">
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+          <h2 className="min-w-0 flex-[1_1_16rem] text-base font-semibold text-steel-800">Online — connect to the PLC</h2>
           <LoadIntoPlc />
         </div>
-        <p className="text-xs text-steel-500 mt-0.5">Live values from the real {profile.name} {cpu.id} over Ethernet (Modbus TCP). Read-only unless you switch on writes. Use it at the machine during commissioning: watch the ladder, the HMI and every I/O point, and tick the I/O check-out.</p>
-        <div className="flex mt-2">{tabBtn('monitor', 'Monitor')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}</div>
+        {isClick
+          ? <p className="text-xs text-steel-500 mt-0.5">Live values from the real {profile.name} {cpu.id} over Ethernet (Modbus TCP). Read-only unless you switch on writes. Use it at the machine during commissioning: watch the ladder, the HMI and every I/O point, and tick the I/O check-out.</p>
+          : <p className="text-xs text-steel-500 mt-0.5">The I/O check-out and fault finding for the {profile.name} {cpu.id}.</p>}
+        <div className="flex mt-2 overflow-x-auto">{isClick && tabBtn('monitor', 'Monitor')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}{tabBtn('troubleshoot', 'Fault finding')}</div>
       </header>
 
-      {/* Connection bar */}
-      <div className="px-6 py-2 bg-white border-b border-steel-200 flex flex-wrap items-end gap-3 text-sm">
+      {/* Connection bar (CLICK only) */}
+      {isClick ? <div className="px-4 sm:px-6 py-2 bg-white border-b border-steel-200 flex flex-wrap items-end gap-3 text-sm">
         <label className="text-xs text-steel-600">PLC IP address<br />
           <input aria-label="PLC IP address" value={st.settings.host} onChange={(e) => st.setSettings({ host: e.target.value })} disabled={connected} className={`${input} w-36 font-mono`} /></label>
         <label className="text-xs text-steel-600">Port<br />
@@ -135,8 +178,8 @@ export default function OnlinePage() {
           <input aria-label="Unit id" type="number" min={0} max={255} value={st.settings.unitId} onChange={(e) => st.setSettings({ unitId: Math.max(0, Math.min(255, Number(e.target.value) || 0)) })} disabled={connected} className={`${input} w-16`} /></label>
         {connected || st.status === 'connecting'
           ? <button className={btn} onClick={() => void disconnectPlc()}>Disconnect</button>
-          : <button className="px-4 py-1.5 text-sm rounded bg-brand-600 text-white font-medium hover:bg-brand-700 disabled:opacity-40" disabled={!desktop || !isClick} onClick={() => void connectPlc(all)}>Connect</button>}
-        <button className={btn} disabled={!desktop || !isClick || Boolean(checking) || st.status === 'connecting'} onClick={() => void runTest()}
+          : <button className="px-4 py-1.5 text-sm rounded bg-brand-600 text-white font-medium hover:bg-brand-700 disabled:opacity-40" disabled={!desktop} onClick={() => void connectPlc(all)}>Connect</button>}
+        <button className={btn} disabled={!desktop || Boolean(checking) || st.status === 'connecting'} onClick={() => void runTest()}
           title="Does the PLC answer on Modbus TCP, is it in RUN, any PLC error?">{checking === 'test' ? 'Testing…' : 'Test connection'}</button>
         <button className={btn} disabled={!connected || Boolean(checking)} onClick={() => void runProgramCheck()}
           title="Read every address of the project and the first-scan setpoints: is the program you typed in running?">{checking === 'program' ? 'Checking…' : 'Program check'}</button>
@@ -150,16 +193,15 @@ export default function OnlinePage() {
         <label className={`flex items-center gap-2 text-xs font-semibold ${st.allowWrites ? 'text-red-700' : 'text-steel-600'}`}>
           <input type="checkbox" aria-label="Allow writes" checked={st.allowWrites} disabled={!connected} onChange={(e) => allowWrites(e.target.checked)} /> Allow writes
         </label>
-      </div>
+      </div> : <div className="px-4 sm:px-6 py-2 bg-white border-b border-steel-200">{notHere}</div>}
       {st.allowWrites && connected && (
         <div role="alert" className="px-6 py-2 bg-red-600 text-white text-sm font-semibold">WRITES ENABLED — values you set go to the running machine. Only C bits and DS registers can be written; X inputs and Y outputs never.</div>
       )}
-      {!desktop && (
+      {!desktop && isClick && (
         <div className="mx-6 mt-3 bg-brand-50 border border-brand-200 rounded p-3 text-sm text-steel-800">
           Connecting to a real PLC needs the <b>ISA Auto Programmer desktop app</b> for Windows (a web browser cannot open a connection to the PLC). Here you can still see the Modbus address of every point and fill in the I/O check-out by hand.
         </div>
       )}
-      {!isClick && <div className="mx-6 mt-3 bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900">Online monitoring is available for AutomationDirect CLICK PLCs.</div>}
       {st.error && <div role="alert" className="mx-6 mt-3 bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{st.error}</div>}
       {checks && (
         <div className="mx-6 mt-3 rounded border border-steel-200 bg-white p-3 text-sm" data-testid="online-checks">
@@ -237,6 +279,8 @@ export default function OnlinePage() {
             </div>
           ) : <p className="text-sm text-steel-500">No HMI design yet.</p>
         )}
+
+        {tab === 'troubleshoot' && <TroubleshootPanel />}
 
         {tab === 'checkout' && (
           <div className="bg-white border border-steel-200 rounded-sm">

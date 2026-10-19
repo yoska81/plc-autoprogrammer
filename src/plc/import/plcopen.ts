@@ -200,6 +200,27 @@ function ldBody(body: XNode, untranslated: string[], vendor = 'iec'): Driven[] {
   return driven;
 }
 
+/**
+ * The PLC hardware the file states: the CPU and module order numbers from the TIA Portal addData
+ * (<Hardware Cpu="CPU 1214C DC/DC/DC" OrderNumber="6ES7 214-1AG40-0XB0">), the content header's comment
+ * ("… SM 1231 AI4 6ES7231-4HD32-0XB0"), else the resource name when it names a CPU (CPU_1214C). '' = not stated.
+ */
+function hardwareOf(src: string, project: XNode): string {
+  const orders: string[] = [];
+  const names: string[] = [];
+  for (const m of src.matchAll(/<(?:\w+:)?(?:Hardware|Module|Device|Cpu)\b[^>]*>/gi)) {
+    const on = /\bOrderNumber="([^"]+)"/i.exec(m[0])?.[1];
+    if (on) orders.push(on.replace(/\s+/g, ''));
+    const cpu = /\bCpu="([^"]+)"/i.exec(m[0])?.[1];
+    if (cpu) names.push(cpu);
+  }
+  const header = kid(project, 'contentHeader');
+  const note = [header?.attrs.comment ?? '', textOf(kid(header, 'Comment'))].join(' ');
+  for (const m of note.matchAll(/\b6ES7\s?\d{3}-\w{5}-\w{4}\b/gi)) orders.push(m[0].replace(/\s+/g, ''));
+  const resource = all(kid(project, 'instances'), 'resource').map((r) => r.attrs.name ?? '').find((n) => /CPU|\b1[25]\d\d[A-Z]*\b/i.test(n))?.replace(/_/g, ' ') ?? '';
+  return [...new Set([...names, ...orders])].join('; ') || resource;
+}
+
 export function readPlcopen(src: string): ForeignProgram {
   const doc = parseXml(src);
   const project = doc.children.find((c) => local(c) === 'project');
@@ -212,10 +233,9 @@ export function readPlcopen(src: string): ForeignProgram {
   const routines: ForeignRoutine[] = [];
   const notes: string[] = [];
   const pous = all(kid(project, 'types'), 'pou');
+  const seen = new Set(tags.map((t) => t.name.toLowerCase()));
   for (const pou of pous) {
-    const iface = kid(pou, 'interface');
-    const local_ = variables(iface);
-    for (const v of local_) if (!tags.some((t) => t.name.toLowerCase() === v.name.toLowerCase())) tags.push(v);
+    for (const v of variables(kid(pou, 'interface'))) if (!seen.has(v.name.toLowerCase())) { seen.add(v.name.toLowerCase()); tags.push(v); }
   }
   const types = new Map(tags.map((t) => [t.name.toLowerCase(), t.rawType || t.dataType]));
   const siemens = /siemens|tia portal/i.test(`${header?.attrs.companyName ?? ''} ${header?.attrs.productName ?? ''}`);
@@ -225,7 +245,7 @@ export function readPlcopen(src: string): ForeignProgram {
     const type = pou.attrs.pouType ?? 'program';
     const body = kid(pou, 'body');
     const lang = body?.children[0];
-    const routine: ForeignRoutine = { name, language: 'other', rungs: [], untranslated: [] };
+    const routine: ForeignRoutine = { name, language: 'other', rungs: [], untranslated: [], origin: { program: '', routine: name } };
     if (type === 'function') notes.push(`Function ${name}: kept as written (the ladder has no functions); its calls are kept in place.`);
     if (!lang) { routines.push({ ...routine, untranslated: ['Empty body'] }); continue; }
     switch (local(lang)) {
@@ -259,7 +279,8 @@ export function readPlcopen(src: string): ForeignProgram {
   }
   return {
     format: 'plcopen', vendor: [header?.attrs.companyName, header?.attrs.productName].filter(Boolean).join(' ') || 'IEC 61131-3',
-    controller: header?.attrs.productName ?? '', projectName: content?.attrs.name ?? header?.attrs.contentDescription ?? 'Imported project',
+    // The product name (TIA Portal) is the vendor's tool, not a controller: never repeated as one.
+    controller: hardwareOf(src, project), projectName: content?.attrs.name ?? header?.attrs.contentDescription ?? 'Imported project',
     tags, routines, notes,
   };
 }

@@ -1,4 +1,5 @@
 /** Power distribution, motor circuits and 24VDC control/safety ladder sheets. */
+import { ioLabel } from '../../ioNames';
 import { powerText, isIec } from '../../../standards/regions';
 import { isFusedDisconnect, ratingText, upstreamOcpd, supplyText, type AuxBranch, type MotorModel, type ResolvedComponent, type XfmrBranch } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW_THIN, lineNo } from '../geometry';
@@ -104,6 +105,11 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   const mbX = 84;
   const lastTap = Math.max(...sp.branches.map((b) => b.idx + b.b.feedWires.length - 1), 2 + nPh - 1);
   const busEnd = m.motors.length ? sp.contIdx + 1 : lastTap;
+  // each bus phase runs down to its own last tap (all of them on to the motor sheets): a phase line running past its
+  // last tap ends on another phase's branch feed and reads as a connection (1L3 ending on a 2-pole tap's L2 feed)
+  const phaseEnd = (k: number) => (m.motors.length ? busEnd : Math.max(2 + k, ...sp.branches.filter((b) => !(b.type === 'ps' && b.b.fromXfmr) && b.b.feedWires.length > k).map((b) => b.idx + k)));
+  // a phase nothing taps (no motors, only 2-pole taps on a 3-phase bus) ends at the disconnect as an unnumbered spare stub
+  const tapped = (k: number) => m.motors.length > 0 || sp.branches.some((b) => !(b.type === 'ps' && b.b.fromXfmr) && b.b.feedWires.length > k);
   const gy = y(sp.groundIdx);
   const pe = m.groundBar?.tag ?? 'PE BAR';
   const grounds = [
@@ -125,7 +131,7 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
             <TermPt x={30} y={yy} />
             <Line x1={30.7} y1={yy} x2={isN ? BX[k] : dsX - 5} y2={yy} />
             <WireNo x={44} y={yy} n={w} />
-            {isN && <Line x1={BX[k]} y1={yy} x2={BX[k]} y2={y(busEnd)} />}
+            {isN && <Line x1={BX[k]} y1={yy} x2={BX[k]} y2={y(phaseEnd(k))} />}
           </g>
         );
       })}
@@ -139,13 +145,24 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
       {m.incoming.map((w, k) => {
         if (w === 'N') return null;
         const yy = y(2 + k);
+        if (!tapped(k)) {
+          const x0 = m.mainBreaker ? mbX + 5 : dsX + 5;
+          return (
+            <g key={`b${k}`}>
+              {m.mainBreaker && <BreakerPole x={mbX} y={yy} />}
+              {m.mainBreaker && <Line x1={dsX + 5} y1={yy} x2={mbX - 5} y2={yy} />}
+              <Line x1={x0} y1={yy} x2={x0 + 6} y2={yy} />
+              <Txt x={x0 + 7.5} y={yy + 0.8} size={2.3}>SPARE</Txt>
+            </g>
+          );
+        }
         return (
           <g key={`b${k}`}>
             {m.mainBreaker && <BreakerPole x={mbX} y={yy} />}
             <Line x1={dsX + 5} y1={yy} x2={m.mainBreaker ? mbX - 5 : BX[k]} y2={yy} />
             {m.mainBreaker && <Line x1={mbX + 5} y1={yy} x2={BX[k]} y2={yy} />}
             <WireNo x={m.mainBreaker ? (mbX + 5 + BX[k]) / 2 : (dsX + 5 + BX[0]) / 2} y={yy} n={m.bus[k]} />
-            <Line x1={BX[k]} y1={yy} x2={BX[k]} y2={y(busEnd)} />
+            <Line x1={BX[k]} y1={yy} x2={BX[k]} y2={y(phaseEnd(k))} />
           </g>
         );
       })}
@@ -217,9 +234,10 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
         <Line x1={30.7} y1={y(2 + nPh)} x2={36} y2={y(2 + nPh)} />
         <Line x1={36} y1={y(2 + nPh)} x2={36} y2={gy} />
         <Line x1={36} y1={gy} x2={44} y2={gy} />
-        <rect x={44} y={gy - 1.6} width={260} height={3.2} strokeWidth={0.5} fill="#fff" />
-        <Txt x={44} y={gy - 3.2} size={2.8} mono bold>{pe}</Txt>
-        <Txt x={44 + 14} y={gy - 3.2} size={2.5}>MAIN PROTECTIVE EARTH (PE) BAR — BONDED TO ENCLOSURE AND BACK PANEL</Txt>
+        <rect x={44} y={gy - 1.6} width={260} height={3.2} strokeWidth={0.5} fill="#fff" data-bar="PE" />
+        {/* the bar's name sits clear above it (2 mm between the descenders and the bar) */}
+        <Txt x={44} y={gy - 4.8} size={2.8} mono bold>{pe}</Txt>
+        <Txt x={44 + 14} y={gy - 4.8} size={2.5}>MAIN PROTECTIVE EARTH (PE) BAR — BONDED TO ENCLOSURE AND BACK PANEL</Txt>
         <Ground x={300} y={gy + 1.6} />
         {grounds.map((g, i) => {
           const x = 52 + i * gStep;
@@ -390,7 +408,7 @@ function MotorBranch({ plan, m, idx, y, BX }: { plan: DrawingPlan; m: MotorModel
           {ys.map((yy, k) => <Txt key={`o${k}`} x={203} y={yy + 0.9} size={2.2} mono anchor="end">{`T${k + 1}`}</Txt>)}
           <Txt x={165} y={ys[0] + 1} size={2.8} mono bold anchor="middle">{m.vfd.tag}</Txt>
           <Txt x={165} y={ys[1] + 0.9} size={2.3} anchor="middle">{`AC DRIVE ${ratingText(m.vfd)}`}</Txt>
-          {ph > 2 && <Txt x={165} y={ys[2] + 0.9} size={2.2} anchor="middle" maxW={60}>{ioRun ? `RUN: ${ioRun.address} /${plan.xref.get(`io:${ioRun.address}`) ?? ''}` : 'RUN CMD: SEE I/O'}</Txt>}
+          {ph > 2 && <Txt x={165} y={ys[2] + 0.9} size={2.2} anchor="middle" maxW={60}>{ioRun ? `RUN: ${ioLabel(plan.model.ioNames, ioRun.address)} /${plan.xref.get(`io:${ioRun.address}`) ?? ''}` : 'RUN CMD: SEE I/O'}</Txt>}
           <Txt x={165} y={ys[ph - 1] + 9} size={2.2} anchor="middle">STO/ENABLE PER DRIVE MANUAL</Txt>
         </g>
       ) : (
@@ -600,7 +618,7 @@ function coilOf(plan: DrawingPlan, tag: string): string | undefined {
 }
 
 /** Contact mirror under a coil: every contact of the device with its line ("NO 13-14  5.06"). */
-function ContactMirror({ plan, tag, x, y }: { plan: DrawingPlan; tag: string; x: number; y: number }) {
+export function ContactMirror({ plan, tag, x, y }: { plan: DrawingPlan; tag: string; x: number; y: number }) {
   const list = plan.contacts.get(tag) ?? [];
   if (!list.length) return null;
   const items = list.map((c) => (c.main ? `MAIN ${c.line}` : `${c.nc ? 'NC' : 'NO'} ${c.term} ${c.line}`));

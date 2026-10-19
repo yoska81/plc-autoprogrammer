@@ -1,3 +1,4 @@
+import { noTouchPanelNow } from '../hmi/projectPanel';
 import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useIOStore } from '../store/useIOStore';
@@ -5,13 +6,14 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useStageStore } from '../store/useStageStore';
 import { usePlc } from '../plc/core/usePlc';
 import { useFingerprints, useStages, ioFingerprint } from '../spec/useStages';
+import { missingOperatorIo } from '../spec/operatorIo';
 import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge, type IOMergePlan } from '../lib/ai/ioAI';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 import StageBanner from './StageBanner';
 import { Spinner } from './common';
 import AssumptionsUsed from './questions/AssumptionsUsed';
 import { useQuestions } from './questions/useQuestionStore';
-import { useDraft } from '../store/useDraftStore';
+import { useDraft, useDraftStore } from '../store/useDraftStore';
 
 /** Generate / update the I/O list from the spec, with a review step before applying. */
 export default function IOFromSpec({ children }: { children: (generateButton: ReactNode) => ReactNode }) {
@@ -38,11 +40,13 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
     const spec = fp.spec, existing = projectIO;
     void startAiJob({
       kind: 'io', label: 'I/O list from the spec', keepResult: true,
-      run: (h) => generateIOFromSpec({ apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal, spec, existing, profile, cpu }),
+      run: (h) => generateIOFromSpec({ apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal, spec, existing, profile, cpu, noPanel: noTouchPanelNow() }),
     });
   };
   useTakeResult<Awaited<ReturnType<typeof generateIOFromSpec>>>('io', (r) => {
-    setPlan({ ...planIOMerge(useIOStore.getState().projectIO, r.points), explanation: r.explanation, questions: r.questions });
+    setPlan({ ...planIOMerge(useIOStore.getState().projectIO, noTouchPanelNow() ? [...r.points, ...missingOperatorIo(r.points)] : r.points), explanation: r.explanation, questions: r.questions });
+    // this page's own reading replaces the questions an earlier Update all left (src/spec/updateAll.ts)
+    useDraftStore.getState().setDraft('io.updateQuestions', null);
   });
 
   const apply = () => {

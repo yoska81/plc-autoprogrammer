@@ -18,6 +18,8 @@ export interface Reading {
   at: string;
   /** What it was read from: file names, or e.g. "PLC program Line3.L5X". */
   files: string[];
+  /** What reading the files could not do (e.g. what the DWG converter skipped), shown with the reading. */
+  notes?: string[];
   /** Which tab read it. */
   from?: 'drawings' | 'program' | 'photos';
 }

@@ -8,6 +8,7 @@ import { useHmiStore } from '../store/useHmiStore';
 import { getCpu, getProfile } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
+import { ptoPointsFor } from '../electrical/highSpeedIo';
 import { analogSetup } from '../plc/core/analog';
 import { validateProgram } from '../plc/core/validate';
 import { getPart } from '../electrical/catalog';
@@ -30,7 +31,9 @@ export function collectProject() {
   const hmiState = useHmiStore.getState();
   // No touch panel: screens left from an earlier panel are ignored everywhere (src/hmi/projectPanel.ts).
   const noHmi = noTouchPanelNow();
-  const hmi = noHmi ? { ...hmiState, design: null } : hmiState;
+  // An older design saved without its panel part number is the project's panel (else no images / PDF are made).
+  const hmi = noHmi ? { ...hmiState, design: null }
+    : hmiState.design && !hmiState.design.hmiPartNumber?.trim() && hmiState.hmiPartNumber ? { ...hmiState, design: { ...hmiState.design, hmiPartNumber: hmiState.hmiPartNumber } } : hmiState;
   const hmiPart = noHmi ? null : hmi.design?.hmiPartNumber || hmi.hmiPartNumber || null;
 
   const profile = getProfile(plcId);
@@ -64,10 +67,11 @@ export function collectProject() {
     ladder: program.ladder,
     stCode: program.generatedCode,
     // The neutral ladder is checked against the selected PLC (every vendor exports from it) and the project's HMI.
-    issues: program.ladder.rungs.length ? validateProgram(program.ladder, profile, ioAddressSet, hmi.design ?? undefined) : [],
+    issues: program.ladder.rungs.length ? validateProgram(program.ladder, profile, ioAddressSet, hmi.design ?? undefined, { noPanel: noHmi, ...(profile.id === 'click' ? { pulseOutputs: ptoPointsFor(cpu.id, modules) } : {}) }) : [],
     electrical: electrical.design,
     drawingCtx,
-    hmi: hmi.design,
+    // the panel part number the project uses, also when the HMI design was made without one
+    hmi: hmi.design && !hmi.design.hmiPartNumber && hmiPart ? { ...hmi.design, hmiPartNumber: hmiPart } : hmi.design,
     /** Built without a touch panel: the operator uses pushbuttons, a selector and lamps (the operator station). */
     noHmi,
     info,

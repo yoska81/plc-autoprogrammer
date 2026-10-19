@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LabelContent, LabelKind } from '../labels';
 import { supplyByPart } from './printers';
+import { appPersistStorage } from '../../lib/appStorage';
 
 /**
  * Label stock and print setup. Sizes are in millimetres. A "tape" preset is
@@ -98,6 +99,7 @@ export const useLabelSetupStore = create<SetupStore>()(
     }),
     {
       name: 'isa-label-setup',
+      storage: appPersistStorage(),
       version: 1,
       // Version 0 stored a single { setup }.
       migrate: (old, v) => (v === 0 ? { byProject: {}, last: { ...DEFAULT_SETUP, ...((old as { setup?: Partial<LabelSetup> })?.setup ?? {}) } } : old) as SetupStore,

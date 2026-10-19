@@ -140,10 +140,23 @@ def check(vdir: Path):
     missing = sorted(w for w in wires_csv if not re.search(r'(?<![\w-])' + re.escape(w) + r'(?:(?![\w-])|(?=-?[A-Z]{1,4}\d))', drw_all))
     if missing:
         report('FAIL', v, f'{len(missing)} wire numbers from the wire list never appear on the drawings: {missing[:12]}')
+    # a "?" terminal the design asks about (relay logic read from an old machine: "Terminal numbers not read for PB4 …",
+    # "CR7 … coil was not read") is a known open question, noted once; any other unassigned end is a WARN
+    rel_q = (data.get('relay') or {}).get('questions', [])
+    asked = {t for q in rel_q for t in re.findall(r'\b[A-Z]+\d+[A-Z]?\b', q)}
+    source_asked = any('coil was not read' in q for q in rel_q)
+    noted = []
     for r in wl:
         for k in ('From', 'To'):
             if re.search(r'\?|undefined|null', r[k]):
-                report('WARN', v, f'wire {r["Wire"]} {k} = "{r[k]}" (unassigned device)')
+                tag = r[k].split(':')[0].strip()
+                if ('?' in r[k] and not re.search(r'undefined|null', r[k])
+                        and (tag in asked or (tag.startswith('?') and source_asked))):
+                    noted.append(f'{r["Wire"]} {r[k]}')
+                else:
+                    report('WARN', v, f'wire {r["Wire"]} {k} = "{r[k]}" (unassigned device)')
+    if noted:
+        report('NOTE', v, f'{len(noted)} wire ends at a terminal the design asks about ("?" on the ladder): {", ".join(sorted(set(noted))[:10])}{" …" if len(set(noted)) > 10 else ""}')
     # marker copies = 2 per conductor
     per = {}
     for r in wl:
@@ -180,31 +193,35 @@ def check(vdir: Path):
     # CLICK analog channels (DF registers) are not BIT rows: they go in the analog setup CSV instead.
     ana = next(z.glob('plc/*_analog_setup.csv'), None)
     ana_txt = ana.read_text(encoding='utf-8-sig') if ana else ''
+    # a PLC that names its I/O differently (S7 %I0.0): the drawings show that name (data.json io[].native)
+    native = {x['address']: x['native'] for x in data['io'] if x.get('native')}
     for a, desc in io_a:
         if not a:
             report('FAIL', v, f'I/O "{desc}" has no PLC address')
             continue
-        if not re.search(r'(?<!\w)' + a + r'(?!\w)', drw_all):
-            report('FAIL', v, f'I/O address {a} not on the drawings')
-        if a not in eng_all:
-            report('FAIL', v, f'I/O address {a} not in the engineering package')
+        shown = native.get(a, a)
+        if not re.search(r'(?<![\w%])' + re.escape(shown) + r'(?![\w.])', drw_all):
+            report('FAIL', v, f'I/O address {shown} not on the drawings')
+        elif a in native and re.search(r'(?<!\w)' + a + r'(?!\w)', drw_all):
+            report('FAIL', v, f'I/O address {a} on the drawings of a PLC that names it {native[a]}')
+        if shown not in eng_all:
+            report('FAIL', v, f'I/O address {shown} not in the engineering package')
         if re.fullmatch(r'DF\d+', a):
             if not re.search(r'(?<!\w)' + a + r'(?!\w)', ana_txt):
                 report('FAIL', v, f'analog I/O address {a} not in the analog setup CSV')
         elif nick and a not in nick_txt:
             report('FAIL', v, f'I/O address {a} not in the nickname CSV')
 
-    # an analog channel takes only its own signal family: no voltage / current signal (a transmitter, mA, V) on a
-    # thermocouple-only module, no bare thermocouple on a voltage / current input
+    # an analog channel takes only its own signal family: a thermocouple module only 'thermocouple' ranges, a voltage /
+    # current input never a thermocouple
     if ana_txt:
         for r in csv.DictReader(io.StringIO(ana_txt)):
-            pn, desc = r.get('Part number', ''), r.get('Description', '')
-            electrical = re.search(r'\d\s*-\s*\d+\s*(m?A|V)\b|\bmA\b|transmitter|transducer', desc, re.I)
+            pn, rng = r.get('Part number', ''), r.get('Signal range', '')
             thm = re.search(r'THM', pn)
-            if thm and electrical:
-                report('FAIL', v, f'analog {r.get("Data register")} "{desc}": a voltage / current signal on thermocouple module {pn}')
-            elif pn and not thm and not electrical and re.search(r'thermocouple|\bT/C\b', desc, re.I):
-                report('FAIL', v, f'analog {r.get("Data register")} "{desc}": a thermocouple on {pn}, not a thermocouple input')
+            if thm and rng != 'thermocouple':
+                report('FAIL', v, f'analog {r.get("Data register")} "{r.get("Description")}": {rng} on thermocouple module {pn}')
+            elif pn and not thm and rng == 'thermocouple':
+                report('FAIL', v, f'analog {r.get("Data register")} "{r.get("Description")}": a thermocouple on {pn}, not a thermocouple input')
 
     # ---- Alarms
     hmi_al = [r for r in sheet_rows(wb, 'HMI Alarms')] if 'HMI Alarms' in wb.sheetnames else []
@@ -252,6 +269,80 @@ def check(vdir: Path):
         fan = co.get('fan') or {}
         if fan.get('dc') and fan.get('thermostat') and fan['tag'] not in {w['wire'] for w in data['wires']}:
             report('FAIL', v, f'24 VDC fan {fan["tag"]}: no wire {fan["tag"]} from thermostat {fan["thermostat"]} in the wire list')
+    # ---- Input commons: every input can turn ON. A 0V common (sinking inputs) needs +24V from the device (PNP
+    # sensor, contact fed 24+); a +24V common (NPN sensors) needs 0V (NPN sensor, contact fed 0V). PNP and NPN on one
+    # common, or a dry contact fed the common's own potential, can never switch.
+    for g in data.get('inputCommons', []):
+        npn = g['commonTo'] == '24+'
+        for q in g['points']:
+            t = q['deviceType']
+            # the program reads an E-stop / N.C. button input as N.C. (ON = released): its signal must come off an
+            # N.C. contact (12, 22, 32, NC), or the machine never starts (E-stop) / the stop never stops (button)
+            sf = q.get('signalFrom') or ''
+            if t in ('estop-contact', 'pushbutton-nc') and sf and not re.search(r':(1|2|3|4)2$|:NC$', sf):
+                report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is read N.C. by the program but wired from {sf} — use an N.C. contact')
+            if t in ('sensor-pnp', 'sensor-npn'):
+                if (t == 'sensor-npn') != npn:
+                    report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is {t} on a common to {g["commonTo"]} — it can never turn ON')
+                continue
+            if not q['feed']:
+                if q.get('feedTo'):
+                    report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} has no wire on its feed terminal {q["feedTo"]} — it can never turn ON')
+                continue  # no feed terminal: the signal comes from the device itself (drive output, analog)
+            want = '0V' if npn else '24+'
+            bad = [w for w in q['feed'] if w in ('0V', '24+') and w != want]
+            if bad:
+                report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is fed {bad[0]} on a common to {g["commonTo"]} — it can never turn ON')
+    # ---- One device pin, one net, generator-wide: a pin with two different wire numbers is a short on paper, or a
+    # series contact whose in and out land on the same pin (the over-temperature limit then never breaks the heater
+    # contactor's coil). A bridge or jumper is one net with one number, so it passes.
+    pins = {}
+    for w in data['wires']:
+        if w['wire'] == 'PE':
+            continue
+        for e in (w['from'], w['to']):
+            if re.fullmatch(r'[A-Z][A-Z0-9-]*:[^\s?]+', e):
+                pins.setdefault(e, set()).add(w['wire'])
+    for pin, ws in sorted(pins.items()):
+        if len(ws) > 1:
+            report('FAIL', v, f'pin {pin} carries wire numbers {", ".join(sorted(ws))} — one pin is one net')
+
+    # ---- Wire list vs cable schedule: every field wire leaving a strip terminal rides a cable core with the same
+    # number at that terminal, and every core landing on a strip terminal is a wire-list wire there (a 0V the wire
+    # list returns via TB3-2 while the cable routes it on another core to other JB terminals is a wiring error).
+    cs = read_csv(z / 'electrical' / 'cable_schedule.csv')
+    strip = re.compile(r'TB[A-Z0-9]*-\d+')
+    tag = lambda e: re.split(r'[:\s]', e.strip(), maxsplit=1)[0]  # noqa: E731
+    cores = [c for c in cs if c['Wire'] and c['Wire'] != 'PE' and strip.fullmatch(c['Core From'].strip())]
+    field = {tag(c['Core To']) for c in cs if c['Core To']} | {tag(c['To']) for c in cs if c['To']}
+    at = {(c['Wire'], c['Core From'].strip()) for c in cores}
+    for c in cores:
+        if not any(r['Wire'] == c['Wire'] and c['Core From'].strip() in (r['From'], r['To']) for r in wl):
+            report('FAIL', v, f'cable {c["Cable"]} core {c["Core"]} carries {c["Wire"]} at {c["Core From"]}, but the wire list has no {c["Wire"]} on {c["Core From"]}')
+    for r in wl:
+        if not r['Wire'] or r['Wire'] == 'PE':
+            continue
+        for t, o in ((r['From'], r['To']), (r['To'], r['From'])):
+            if strip.fullmatch(t) and not strip.fullmatch(o) and tag(o) in field and (r['Wire'], t) not in at:
+                report('FAIL', v, f'wire {r["Wire"]} {t} → {o} (wire list) rides no cable core at {t}')
+    # ---- Relay logic (ladder sheets): one device terminal = one net = one wire number; every coil is rated for the
+    # voltage of its rung's rail (a 120 VAC contactor on the 24 VDC ladder never pulls in)
+    rel = data.get('relay')
+    if rel:
+        nets = {}
+        for w in rel['wires']:
+            for e in (w['from'], w['to']):
+                if '?' in e or e.startswith('TB1 '):
+                    continue
+                nets.setdefault(e, set()).add(w['wire'])
+        for t, ws in nets.items():
+            if len(ws) > 1:
+                report('FAIL', v, f'relay logic: terminal {t} carries wire numbers {", ".join(sorted(ws))} — one terminal is one net')
+        for c in rel['coils']:
+            if c['ok'] is False:
+                report('FAIL', v, f'relay logic: coil {c["tag"]} {c["partNumber"]} rated {c["rating"]} on the {rel["supply"]} rail')
+            if c['partNumber'] and not any(w.startswith(f'Relay logic: {c["tag"]} ') for w in data['warnings']) and c['ok'] is None:
+                report('WARN', v, f'relay logic: coil {c["tag"]} has no rating to check against the {rel["supply"]} rail')
     # ---- Drive branches: the drive's listed Class T fuses (its SCCR condition), or the review says why not
     iec = str(data.get('region', '')) not in ('US', 'Canada', '')
     for dr in data.get('drives', []):
@@ -290,7 +381,9 @@ def main():
     for lvl, where, msg in results:
         print(f'{lvl:4} {where}: {msg}')
     fails = [r for r in results if r[0] == 'FAIL']
-    print(f'CONSISTENCY: {len(fails)} FAIL, {len(results) - len(fails)} WARN')
+    warns = [r for r in results if r[0] == 'WARN']
+    notes = [r for r in results if r[0] == 'NOTE']
+    print(f'CONSISTENCY: {len(fails)} FAIL, {len(warns)} WARN' + (f', {len(notes)} NOTE' if notes else ''))
     sys.exit(1 if fails else 0)
 
 

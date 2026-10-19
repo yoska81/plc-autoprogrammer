@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useCallback, useRef } from 'react';
 import { useProjectsStore } from './useProjectsStore';
+import { appPersistStorage } from '../lib/appStorage';
 
 /**
  * Where the user was on each page (selected tab, sheet, screen, block, zoom, filters), per
@@ -25,7 +26,7 @@ export const useUiStore = create<UiStore>()(
         return { byProject: { ...s.byProject, [project]: p } };
       }),
     }),
-    { name: 'plc-ui-store' },
+    { name: 'plc-ui-store', storage: appPersistStorage() },
   ),
 );
 

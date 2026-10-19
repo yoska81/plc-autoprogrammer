@@ -11,7 +11,7 @@ import { getCpu, PLC_PROFILES } from '../../plc/core/profiles';
 import { resolveAddresses } from '../../plc/core/profile';
 import { moduleSlots } from '../../plc/core/modules';
 import { analogSetup } from '../../plc/core/analog';
-import { modulesToFit, type Need } from '../../plc/core/fit';
+import { analogRangesOf, modulesToFit, type Need } from '../../plc/core/fit';
 import { regionSpec, SUPPLY_INFO } from '../../standards/regions';
 import type { CatalogCategory, EnclosureRating, SupplyVoltage } from '../types';
 import { designFacts, type DesignFacts } from './facts';
@@ -48,7 +48,7 @@ const PANEL_CATS: CatalogCategory[] = ['contactor', 'breaker', 'powerSupply'];
 
 export function needOf(base: BaseInput): Need {
   const n = (type: string, analog: boolean) => base.io.filter((p) => p.type === type && (p.signal === 'analog') === analog).length;
-  return { digitalInputs: n('input', false), digitalOutputs: n('output', false), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi: Boolean(base.hmiPartNumber), minHmiSizeIn: null };
+  return { digitalInputs: n('input', false), digitalOutputs: n('output', false), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi: Boolean(base.hmiPartNumber), minHmiSizeIn: null, analogRanges: analogRangesOf(base.io) };
 }
 
 /** Options worth comparing for this project (each differs from it in one thing). */

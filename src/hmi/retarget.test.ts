@@ -23,4 +23,16 @@ const small = retargetDesign(d, B, { w: 480, h: 272 }, 'Y');
 const [sb, sn] = small.screens[0].elements;
 assert.ok(sb.w >= 60 && sb.h >= 48 && sn.w >= 60 && sn.h >= 48, 'touch targets keep the minimum size');
 assert.ok(small.screens[0].elements.every((e) => e.x >= 0 && e.y >= 0 && e.x + e.w <= 480 && e.y + e.h <= 272), 'everything stays on the smaller screen');
+// 7" → 4.3" → 7": the 7" screens come back exactly (scaled from the screens before the first switch).
+const back = retargetDesign(small, { w: 480, h: 272 }, B, 'CM5-T7W');
+assert.deepEqual(back.screens, d.screens, 'back to the first panel: the original layout');
+assert.equal(back.layoutBase, undefined);
+// 7" → 4.3" → 10": scaled from the 7" screens, not from the 4.3" copy.
+const via = retargetDesign(small, { w: 480, h: 272 }, { w: 1280, h: 800 }, 'X');
+assert.deepEqual(via.screens, big.screens, 'a second switch scales from the original');
+// Edited after the switch: the edit wins, scaling starts from the edited screens.
+const edited = { ...small, screens: small.screens.map((s) => ({ ...s, elements: s.elements.map((e) => (e.id === btn.id ? { ...e, label: 'Go' } : e)) })) };
+const afterEdit = retargetDesign(edited, { w: 480, h: 272 }, B, 'CM5-T7W');
+assert.equal(afterEdit.screens[0].elements.find((e) => e.id === btn.id)?.label, 'Go', 'the edit is kept');
+
 console.log('retarget tests passed');

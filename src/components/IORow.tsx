@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { TrashIcon } from '@heroicons/react/24/outline';
 import type { IOPoint, IOCategory } from '../types/io';
 import { useIOStore } from '../store/useIOStore';
@@ -6,6 +7,9 @@ import { useEditsStore } from '../edits/useEditsStore';
 import { EditedMark } from '../edits/EditedMark';
 import MicButton from '../voice/MicButton';
 import { FIELD_DEVICE_LABEL, type FieldDeviceType } from '../electrical/types';
+import { deletePointWithUndo, ioUsesOf, undoIoDelete } from '../plc/core/ioChange';
+import { notify } from '../store/useNoticeStore';
+import { checkIOAddress, nativeName, type Rack } from '../plc/core/addressCheck';
 
 const ALL_CATEGORIES: IOCategory[] = [
   'Safety', 'Operator/HMI', 'External Machine', 'Product Detection',
@@ -25,11 +29,33 @@ interface IORowProps {
   duplicate: boolean;
   /** The field device wired to this address in the electrical design, e.g. "PB1 · pushbutton (NO)". */
   device?: string;
+  /** PLC, CPU and modules: a typed address is checked against them (checkIOAddress). */
+  rack: Rack;
 }
 
-export function IORow({ point, address, duplicate, device }: IORowProps) {
-  const { updateDescription, updateCategory, deletePoint, setPlcAddress } = useIOStore();
+export function IORow({ point, address, duplicate, device, rack }: IORowProps) {
+  const { updateDescription, updateCategory, setPlcAddress } = useIOStore();
+  // Delete asks first, listing what in the program and the HMI uses the point; then it can be undone.
+  const [confirmUses, setConfirmUses] = useState<string[] | null>(null);
+  const remove = () => {
+    const changes = deletePointWithUndo(point.id);
+    setConfirmUses(null);
+    notify(`Deleted ${point.id}${point.description ? ` ${point.description}` : ''}.${changes.length ? ` ${changes.join(' ')}` : ''}`, { label: 'Undo', run: () => { undoIoDelete(); } });
+  };
   const isManual = Boolean(point.plcAddress);
+  // A typed address the PLC does not have stays in the field with the reason; it is not saved.
+  const rackKey = `${rack.profile.id}|${rack.cpu.id}|${rack.modules.map((m) => m.partNumber).join(',')}`;
+  const [refused, setBad] = useState<{ text: string; reason: string; rackKey: string } | null>(null);
+  // Checked again when the PLC, CPU or modules change (the module it needed may be there now; never saved by itself).
+  const bad = refused && refused.rackKey !== rackKey
+    ? (() => { const r = checkIOAddress(rack, point, refused.text); return r.ok ? null : { ...refused, reason: r.reason }; })()
+    : refused;
+  const typedAddress = (text: string) => {
+    const r = checkIOAddress(rack, point, text);
+    if (!r.ok) { setBad({ text, reason: r.reason, rackKey }); return; }
+    setBad(null);
+    if (r.address !== (point.plcAddress ?? '')) setPlcAddress(point.id, r.address);
+  };
   // A generated description the user rewrote: marked, with a way back (kept by I/O id).
   const key = `io:${point.id}`;
   const edit = useEditsStore((s) => s.texts[key]);
@@ -46,21 +72,25 @@ export function IORow({ point, address, duplicate, device }: IORowProps) {
   return (
     <tr className="hover:bg-brand-50/60 group">
       <td className={`${td} font-mono text-steel-700 whitespace-nowrap`}>{point.id}</td>
+      {rack.profile.ioTag && <td className={`${td} font-mono text-steel-800 whitespace-nowrap`}>{(address && nativeName(rack, address)) || address || '—'}</td>}
       <td className={`${td} whitespace-nowrap`}>
         <div className="flex items-center gap-1">
           <input
-            key={address}
-            defaultValue={isManual ? address : ''}
+            key={`${address}|${bad?.text ?? ''}`}
+            defaultValue={bad ? bad.text : isManual ? address : ''}
+            aria-invalid={bad ? true : undefined}
             placeholder={address || '—'}
             aria-label={`PLC address for ${point.id}`}
-            title={isManual ? 'Manual address. Clear it to assign automatically.' : 'Assigned automatically. Type to override.'}
-            onBlur={(e) => { if (e.target.value.trim().toUpperCase() !== (point.plcAddress ?? '')) setPlcAddress(point.id, e.target.value); }}
+            title={isManual ? `${point.addressNote ? `Fixed address: ${point.addressNote}.` : 'Manual address.'} Clear it to assign automatically.` : 'Assigned automatically. Type to override.'}
+            onBlur={(e) => typedAddress(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-            className={`${cell} w-20 font-mono ${duplicate ? 'border-red-400 text-red-700' : isManual ? 'text-brand-800 font-semibold' : 'placeholder:text-steel-700'}`}
+            className={`${cell} w-20 font-mono ${bad || duplicate ? 'border-red-400 text-red-700' : isManual ? 'text-brand-800 font-semibold' : 'placeholder:text-steel-700'}`}
           />
           {duplicate && <span className="text-[10px] text-white bg-red-600 px-1 rounded-sm" title="Two I/O points use this address">DUP</span>}
           {isManual && !duplicate && <span className="text-[10px] text-brand-800" title="Manual address">M</span>}
         </div>
+        {isManual && point.addressNote && !bad && <p className="mt-0.5 max-w-xs whitespace-normal text-[10.5px] leading-snug text-steel-500">{point.addressNote}</p>}
+        {bad && <p role="alert" className="mt-0.5 max-w-xs whitespace-normal text-[11px] leading-snug text-red-700">{bad.reason}</p>}
       </td>
       <td className={td}>
         <div className="flex items-center gap-1">
@@ -89,11 +119,27 @@ export function IORow({ point, address, duplicate, device }: IORowProps) {
       <td className={`${td} text-xs text-steel-500 whitespace-nowrap`}>
         <div className="flex items-center gap-2">{point.signal !== 'analog' && <span>{device ?? (point.deviceType ? FIELD_DEVICE_LABEL[point.deviceType as FieldDeviceType] ?? point.deviceType : '—')}</span>}<AnalogCell point={point} address={address} /></div>
       </td>
-      <td className={td}>
-        <button onClick={() => deletePoint(point.id)} title="Delete" aria-label={`Delete ${point.id}`}
-          className="text-steel-300 opacity-0 group-hover:opacity-100 hover:text-red-600">
+      <td className={`${td} relative`}>
+        <button onClick={() => setConfirmUses(ioUsesOf(point.id))} title="Delete" aria-label={`Delete ${point.id}`}
+          className={`text-steel-300 group-hover:opacity-100 hover:text-red-600 ${confirmUses ? 'opacity-100 text-red-600' : 'opacity-0'}`}>
           <TrashIcon className="w-4 h-4" />
         </button>
+        {confirmUses && (
+          <div role="dialog" aria-label={`Delete ${point.id}?`} className="absolute right-0 top-full z-30 w-80 bg-white border border-steel-300 shadow-lg rounded-sm p-3 text-xs text-steel-800 space-y-2">
+            <div className="font-semibold">Delete {point.id}{point.description ? ` ${point.description}` : ''}?</div>
+            {confirmUses.length ? (
+              <>
+                <div>It is used by:</div>
+                <ul className="list-disc pl-4 max-h-32 overflow-auto">{confirmUses.map((u, i) => <li key={i}>{u}</li>)}</ul>
+                <div className="text-steel-600">The points after it get new addresses; the program and the HMI follow them. Rungs and HMI elements that used this point are marked for you to fix; HMI tags and alarms on it are removed. Undo puts everything back.</div>
+              </>
+            ) : <div className="text-steel-600">Nothing in the program or the HMI uses it.</div>}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmUses(null)} className="px-2 py-1 border border-steel-300 rounded-sm hover:bg-steel-50">Cancel</button>
+              <button onClick={remove} className="px-2 py-1 bg-red-600 text-white rounded-sm hover:bg-red-700">Delete</button>
+            </div>
+          </div>
+        )}
       </td>
     </tr>
   );

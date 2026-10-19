@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SpecSections } from '../spec/types';
+import { appPersistStorage } from '../lib/appStorage';
 
 export type StageId = 'spec' | 'equipment' | 'io' | 'electrical' | 'hmi' | 'program';
 
@@ -13,6 +14,8 @@ export interface StageSource {
   /** Installation region at generation time (codes, supply, colours: the electrical design depends on it). */
   region?: string;
   hmiFp?: string;
+  /** Touch panel the HMI screens were laid out for (another panel only scales them). */
+  panel?: string;
   /** Spec text at generation time, so updates can tell the AI exactly what changed. */
   spec: SpecSections;
   at: string;
@@ -37,6 +40,6 @@ export const useStageStore = create<StageStore>()(
       markGenerated: (stage, source) =>
         set((s) => ({ sources: { ...s.sources, [stage]: { ...(addressFp ? { addrFp: addressFp() } : {}), ...(regionNow ? { region: regionNow() } : {}), ...source, at: new Date().toISOString() } } })),
     }),
-    { name: 'plc-stage-store' }
+    { name: 'plc-stage-store', storage: appPersistStorage() }
   )
 );

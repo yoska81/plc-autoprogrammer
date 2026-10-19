@@ -8,7 +8,7 @@ import { collectProject } from '../deliverables/collect';
 import { useElectricalStore } from '../store/useElectricalStore';
 import { useSettingsStore, activeCredentials } from '../store/useSettingsStore';
 import { Spinner } from '../components/common';
-import { fixText, refreshChecks } from './actions';
+import { aiFindingsShown, fixText, refreshChecks } from './actions';
 import { runAiReview } from './reviewAI';
 import { statusOf, useReviewStore } from './useReviewStore';
 import { AREA_LABEL, SEVERITY_LABEL, SEVERITY_ORDER, pageRoute, sortFindings, type Finding, type FindingStatus, type ReviewArea, type Severity } from './types';
@@ -119,7 +119,8 @@ export default function ReviewPage() {
   // The checks are instant: run them every time the page opens.
   useEffect(() => { refreshChecks(); }, []);
 
-  const all = useMemo(() => sortFindings([...checks, ...(ai?.findings ?? [])]), [checks, ai]);
+  // checks are refreshed with the project on every visit; the AI's findings get the brand's I/O names the same way.
+  const all = useMemo(() => sortFindings([...checks, ...aiFindingsShown(collectProject(), ai?.findings)]), [checks, ai]);
   // Info findings that need the user's input become questions — asked on the Machine description page, never here.
   useSyncQuestions('review', all.filter((f) => f.severity === 'info' && !/^(enote|hnote|empty):/.test(f.id) && /confirm|\?|provide|unknown|not (stated|known|given)|to be /i.test(`${f.title} ${f.detail}`))
     .map((f) => ({ text: f.detail && f.detail !== f.title ? `${f.title}: ${f.detail}` : f.title, assumption: f.fix || undefined, topic: foundWhile('review') })));
@@ -157,7 +158,7 @@ export default function ReviewPage() {
   return (
     <>
       <header className="flex flex-wrap items-center gap-3 border-b border-steel-200 bg-white px-4 py-2.5">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-[1_1_16rem]">
           <h2 className="text-base font-semibold text-steel-800">8 · Design review</h2>
           <p className="mt-0.5 text-xs text-steel-500">A checking engineer's pass over the whole project before anything is built: instant consistency checks plus an AI senior-engineer review. Resolve or justify every finding; the result goes into the engineering package.</p>
         </div>

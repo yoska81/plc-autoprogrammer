@@ -5,6 +5,7 @@
  * Content identical to the built-in example is skipped.
  */
 import type { LadderProgram } from '../plc/core/ladder';
+import { appStorage, CLEARED_PREFIX } from '../lib/appStorage';
 
 export interface Piece {
   id: string;
@@ -60,16 +61,20 @@ export function deepScan(example: { ladder: LadderProgram; spec: Record<string, 
   const exampleJson = JSON.stringify(example.ladder);
   const exampleSpec = Object.entries(example.spec).filter(([, t]) => t?.trim()).map(([k, t]) => `${k}:\n${t.trim()}`).join('\n\n');
   let keys: string[];
-  try { keys = Object.keys(localStorage); } catch { return out; }
-  for (const k of keys) {
+  try { keys = appStorage.keys(); } catch { return out; }
+  for (const stored of keys) {
     let raw: unknown;
-    try { raw = JSON.parse(localStorage.getItem(k) ?? 'null'); } catch { continue; }
+    try { raw = JSON.parse(appStorage.getItem(stored) ?? 'null'); } catch { continue; }
     if (!raw || typeof raw !== 'object') continue;
-    if (k === 'plc-program-store') scanProgram('Open project', (raw as { state?: ProgramState }).state, out, exampleJson);
-    else if (k === 'plc-spec-store') scanSpec('Open project', (raw as { state?: never }).state, out, exampleSpec);
+    // kept aside when the app's storage was found cleared (appStorage.ts): found under its own key
+    const aside = stored.startsWith(CLEARED_PREFIX) ? /^[^:]+:\d+:(.*)$/.exec(stored) : null;
+    const k = aside ? aside[1] : stored;
+    const before = aside ? ' (from before the app\'s storage was cleared)' : '';
+    if (k === 'plc-program-store') scanProgram(`Open project${before}`, (raw as { state?: ProgramState }).state, out, exampleJson);
+    else if (k === 'plc-spec-store') scanSpec(`Open project${before}`, (raw as { state?: never }).state, out, exampleSpec);
     else if (k.startsWith('plc-project-data:') || k.startsWith('plc-backup:')) {
       const data = (k.startsWith('plc-backup:') ? (raw as { data?: Record<string, unknown> }).data : raw) as Record<string, unknown> | undefined;
-      const where = k.startsWith('plc-backup:') ? `Backup ${k.slice('plc-backup:'.length).slice(0, 16).replace('T', ' ')}` : 'Saved project copy';
+      const where = (k.startsWith('plc-backup:') ? `Backup ${k.slice('plc-backup:'.length).slice(0, 16).replace('T', ' ')}` : 'Saved project copy') + before;
       scanProgram(where, data?.program as ProgramState | undefined, out, exampleJson);
       scanSpec(where, data?.spec as never, out, exampleSpec);
     }
@@ -82,4 +87,21 @@ export function deepScan(example: { ladder: LadderProgram; spec: Record<string, 
     seen.add(key);
     return true;
   }).map((p, i) => ({ ...p, id: `${p.id}#${i}` })); // several saved copies share a label
+}
+
+/** Program versions kept unfolded per project; older ones fold away. */
+const KEEP_VERSIONS = 2;
+
+/** Pieces per project (`where`), projects by their newest piece; history versions beyond the latest few in `older`. */
+export function groupPieces(pieces: Piece[]): { where: string; latest: string | null; shown: Piece[]; older: Piece[] }[] {
+  const by = new Map<string, Piece[]>();
+  for (const pc of pieces) by.set(pc.where, [...(by.get(pc.where) ?? []), pc]);
+  const time = (pc: Piece) => (pc.when ? Date.parse(pc.when) || 0 : 0);
+  return [...by].map(([where, list]) => {
+    const history = list.filter((pc) => pc.id.includes(':v:')).sort((a, b) => time(b) - time(a));
+    // The current state (no date: the program, notes, description) first, then the dated pieces newest first.
+    const rest = list.filter((pc) => !pc.id.includes(':v:')).map((pc, i) => ({ pc, i })).sort((a, b) => (b.pc.when ? time(b.pc) : Infinity) - (a.pc.when ? time(a.pc) : Infinity) || a.i - b.i).map((x) => x.pc);
+    const latest = list.reduce<string | null>((m, pc) => (pc.when && (!m || Date.parse(pc.when) > Date.parse(m)) ? pc.when : m), null);
+    return { where, latest, shown: [...rest, ...history.slice(0, KEEP_VERSIONS)], older: history.slice(KEEP_VERSIONS) };
+  }).sort((a, b) => (b.latest ? Date.parse(b.latest) : 0) - (a.latest ? Date.parse(a.latest) : 0));
 }

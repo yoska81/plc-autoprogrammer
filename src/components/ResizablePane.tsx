@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 
 const read = (key: string): number | null => {
   try {
@@ -20,13 +20,17 @@ interface Props {
   className?: string;
   style?: CSSProperties;
   children: ReactNode;
+  /** Fill the free width instead (no splitter): a phone shows the pane on its own. */
+  fill?: boolean;
+  /** Extra attributes for the pane when it fills (a phone tab panel's role and ids). */
+  panel?: HTMLAttributes<HTMLDivElement>;
 }
 
 /**
  * A panel whose width the user drags, like a Windows splitter. The width is
  * remembered; double-click the divider to go back to the default width.
  */
-export default function ResizablePane({ id, defaultSize, min = 160, max = 1400, handle = 'right', className = '', style, children }: Props) {
+export default function ResizablePane({ id, defaultSize, min = 160, max = 1400, handle = 'right', className = '', style, children, fill, panel }: Props) {
   const key = `pane-width:${id}`;
   const [width, setWidth] = useState(() => read(key) ?? defaultSize);
   const [dragging, setDragging] = useState(false);
@@ -59,6 +63,7 @@ export default function ResizablePane({ id, defaultSize, min = 160, max = 1400, 
     if (e.key === shrink) { e.preventDefault(); setWidth((w) => clamp(w - step)); }
   };
 
+  if (fill) return <div {...panel} className={`relative flex-1 min-w-0 ${className}`} style={style}>{children}</div>;
   return (
     <div className={`relative flex-shrink-0 ${className}`} style={{ ...style, width }}>
       {children}

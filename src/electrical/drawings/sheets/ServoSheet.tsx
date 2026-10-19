@@ -5,6 +5,7 @@
  */
 import { AREA, AREA_B, AREA_R, LW_THIN } from '../geometry';
 import type { DrawingPlan, PlannedSheet, SheetSpec } from '../plan';
+import { ioLabel } from '../../ioNames';
 import { Line, TermPt, Txt, WireNo } from '../symbols';
 import { stripTag } from '../../../standards/designations';
 
@@ -58,7 +59,7 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
         const y = y0 + 8 + i * pitch;
         return (
           <g key={t.address}>
-            <Txt x={X.plc} y={y + 0.9} size={2.5} mono bold>{t.address}</Txt>
+            <Txt x={X.plc} y={y + 0.9} size={2.5} mono bold>{ioLabel(plan.model.ioNames, t.address)}</Txt>
             <TermPt x={X.plc + 20} y={y} />
             <Line x1={X.plc + 20.7} y1={y} x2={X.drv} y2={y} />
             <WireNo x={(X.plc + X.drv) / 2 + 6} y={y} n={t.address} />

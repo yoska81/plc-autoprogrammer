@@ -223,6 +223,19 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Rhino PSR/PSN/PSL, QUINT4, SITOP PSU6200 and S8VK-C supplies; Gladiator, S200U, 5SJ4, C60BP and 1489-M breakers; Class T, J and CC fuses; Fuji SC-E contactors and TK-E overloads; 78x, GQ and GRS-H relays; Dold, IDEM, 440R, 3SK1 and XPSUAF safety relays.
   - The QUINT4 data sheet was read from a distributor's copy of Phoenix's own document, because Phoenix refused scripted access.
   - No maker states a "~0 V across a healthy fuse" figure, so the fuse profiles use the Bussmann continuity test.
+- Extension (manager request):
+  - **VFDs (faults/vfd2.ts):** PowerFlex 525 (51), G120C (103), V20 (50), GA500 (184), ACS380 (191). Each drive's fault-history parameters are used in `confirm`, with relay pairs per state. For five V20 codes the manual gives no remedy, so their fix says exactly that instead of an invented remedy.
+  - **Servos and controllers (faults/servoCtrl.ts):** Kinetix 5100 (115), V90 PTI 400 V (105) and PN (86), Micro800 error codes (61) plus Micro820/850 and 2085 I/O, CompactLogix 5380 (201: major faults and #xxxx I/O codes), Compact 5000 I/O, and Unitronics UniStream/Vision/Jazz.
+  - **Pilz PNOZ s3 / X2.8P** (faults/pilz.ts and catalog vendor `pilz`).
+  - **Pins and internal pairs** backfilled into the 61 earlier profiles (194 of 237 readings; 105 pairs).
+  - `symptomKind` and `faultsOfKind()` added for Dev 2. faultCode() ignores spaces and dots, so 'E001' finds Kinetix 'E 001' and 'AL009' finds 'AL.009'.
+  - **Total:** 83 profiles, 1,933 faults.
+  - **Gaps:**
+    - V90 200 V PTI: the 2021 manual returned 403.
+    - Unitronics publishes no numeric system-error list in these guides.
+    - Micro800 plug-ins: 2080-UM004 not read.
+    - ACS355: not in the catalog.
+    - Delta drives: their manuals are behind a captcha.
 - Coverage of the families asked for:
   - Every CLICK part, every encoder, fuse, safety relay and valve, the GS drives and SureServo2.
   - Other brands' contactors, overloads, VFDs and servo motors have no profile yet.
@@ -230,6 +243,70 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - Delta VFD-E/MS300/C2000: manuals are behind a captcha.
   - No drive manual gives a DC bus nominal value, so only the trip band is used.
   - In the GS20 short-circuit check, one terminal is a symbol that did not extract. The text says so instead of guessing the terminal.
+
+## Roll former / servo flying shear (Debug 1's acceptance case)
+- **Machine symptom map** (machineSymptoms.ts + machineSymptomData.ts), roll-former-flying-shear, 6 symptoms:
+  - cut-length-wrong (7 causes; EPC TB-108 ranks wheel misalignment as the most common);
+  - shear-does-not-fire (5), material-slips (5), shear-cuts-crooked-or-burr (2), line-stops-servo-alarm (5), hydraulic-cutter-slow (5).
+  - Each cause has devices (fault profile ids or categories), checks, fix and a maker source.
+  - Ranking is the sources' own where they state one; otherwise it follows the documents' emphasis and the cause's `mechanism` says so.
+- **Device fault profiles** (faults/rollformer.ts), 10 profiles, 50 faults:
+  - Omron E6B2-C encoders, NPN and line driver.
+  - Omron H7CX counters, with E1/E2/E3 codes, CP1/CP2 NPN/PNP levels, the factory 30 Hz count-speed trap, and output contact pairs.
+  - Rexroth 4WE6 DC solenoid valves and HED 8 pressure switches.
+- **Imported-part data:**
+  - 15 Omron H7CX counters, discontinued in 2023 (the H7CC successor is named in each record).
+  - 16 Rexroth 4WE6/3WE6 valves (24 VDC K4).
+  - 8 HED 8 pressure switches, unverified: data sheet RE 50061 needs a Rexroth login.
+- **foreignPart() now ignores spaces**, so Rexroth's '4WE 6 E6X/EG24N9K4' finds its record.
+- **Gaps:**
+  - Delta ASDA-A2: deltaww.com is behind a captcha and Delta EMEA redirects there; no mirrors were used.
+  - "KT timers": KT is the Chinese drawing letter code for a time relay, not a brand.
+  - Huade 4WE6: no English data sheet on huade-hyd.com.
+  - Blade wear / burrs, and strip slip in the roll stands: no maker document covers them.
+
+## No-PLC roll-former → CLICK conversion: catalog coverage
+- **Already covered:** CLICK PLUS C2-0xCPU + C2-14D1/D2/TTL (3 PTO axes and 6 HSC at 100 kHz); GS20/GS23; SureServo2; TRD encoders; 17 safety relays.
+- **CLICK C0 modules (17):**
+  - Discrete: C0-08NE3, C0-16NE3, C0-08NA, C0-08ND3-1, C0-08TD2, C0-08TA, C0-08TR-3, C0-04TRS-10, C0-08CDR, C0-16CDD2.
+  - Analog: C0-04AD-2, C0-04DA-2, C0-4AD2DA-1/-2, C0-04RTD.
+  - Simulators: C0-08SIM, C0-04POT.
+  - C0-00AC is retired; C0-01AC is the current CLICK power supply.
+- **Encoder accessories (48):**
+  - Measuring wheels: Wachendorff MR200/MR500 (10 mm bore, fits TRD-GK); Lika AR01X 250 mm / 12.5 in with BR1 reducer bushings.
+  - Lika AR01 complete measuring-wheel kits (encoder + wheels + spring arm + bracket).
+  - 14 couplings and 13 brackets.
+  - Gap: AD sells no spring arm for the TRD encoders. The WDGMA arms fit Wachendorff WDG 58V/WDGI 36J only.
+- **Safety outputs:**
+  - Dold LG5929 (5 N.O.) and UG6929-60/61/62 (5/6/7 N.O.) expansions.
+  - IDEM SCR73 base relay with 7 N.O. Its spec sheet transposes N.O./N.C. and prints PFHd 7.20E-05; both are noted.
+  - Pilz PNOZ s7 (4 N.O. + 1 N.C.) and s7.1 (3 N.O., cascade) for the PNOZ s3.
+  - Combinations covering 2+2 STO channels + valves: PNOZ s3 + s7 = 6 N.O.; LG5925 + UG6929-62 = 10 N.O.; SCR73 = 7 N.O.
+- **Prices:** 71 AD prices and stock records. STP-MTRA-SC-3812 is end of life, successor SRBA-32C-9.525-12.7.
+
+## Fault knowledge: review fixes (old main) and copyright rewrite
+- **Safety:**
+  - Dold LG5925: the S33-S34 bridge advice is replaced (never bridge on an E-stop or guard relay).
+  - STO jumper / bypass / CN10 plug fixes (PowerFlex 525, GA500, Kinetix 5100, SureServo2 AL500, GS10 / GS20 / GS30 SrL / Sto short-circuit lines) are in `fixIfNoStoWiring`, behind `fixesFor(fault, { stoWired })`. Unknown STO wiring counts as wired. A test fails on any ungated STO jumper, short-circuit line/plug or bridge fix. Disabling DC-link monitoring (servo) or phase-loss detection (L8-05 = 0) is prefixed "Only after confirming the supply is correct; a qualified person must decide".
+  - CLICK output overrides and valve manual overrides carry "Keep everyone clear" (tested).
+  - LIVE_WORK_CAUTION + `readingsFor(profile)` / `needsLiveWorkCaution()`, decided by what the terminals connect to.
+- **Lazy loading:** `loadFaultKnowledge()` (knowledge.ts) keeps the knowledge out of the main and preview bundles.
+- **Copyright:** the 3,550 text fields over 150 characters were rewritten in our own short words (cause / check / fix). Only codes, parameters, terminals, values and the citation are kept. kbText.test.ts fails on any text field over 150 characters (URLs and citations not counted). The 156 remaining manual-style lists ("•" bullets, "1. … 2. …" steps) were also reworded; none are left.
+  - Dropped from the rewrite: list numbering, words such as "2nd" / "7-segment", the generic "H2-xx" (the specific H2-01 to H2-03 is kept), and a few long aux-code lists, which end in "(see source)".
+- **IDEM SCR73:** verified from IDEM's own data sheet 102581 (Jan 19) p.3: PFH 8.4E-10 1/h, SIL 3, PL e, Cat. 4, MTTFd 71 a, DC 99 %. The AD spec sheet's "PFHd 7.20E-05" is IDEM's PFDav figure under the wrong label.
+
+## Allen-Bradley CompactLogix 5370 (1769), for L5X upgrades
+- 34 parts in allenBradley.ts, from Rockwell product pages and 1769-TD005 / TD006 / TD008 / IN015:
+  - 13 CPUs: L30ER / L30ERM / L30ER-NSE / L33ER / L33ERM / L36ERM, L16 / L18 / L18ERM / L19ER-BB1B, L24ER-QB1B / L24ER-QBFC1B / L27ERM-QBFC1B.
+  - 15 Compact I/O modules, PA2 / PA4 / PB2 / PB4 supplies, and ECL / ECR end caps.
+- Lifecycle: the L1 CPUs are Active; everything else is Active Mature.
+- LOGIX_CPUS gains the 12 CPUs (id = catalog number), appended after the 5069 ones. builtInInputs / builtInOutputs are 16 / 16 on L1 / L2.
+- Platforms:
+  - ab-compactlogix-5370: L2 / L3 with 1769 modules.
+  - ab-compactlogix-5370-l1: expansion is 1734 POINT I/O, which is not in the catalog.
+- No HMI driver list names the 5370 yet, so panels show as unconfirmed for it.
+- 1769 I/O addressing (Local:n:I.Data bit-of-DINT) is Dev 3's. L19ER-BB1B (1 MB, 8 nodes, 8 POINT I/O; TD005O) is in the catalog only: LOGIX_CPUS and the L1 platform are Dev 3's to extend.
+- Checked against 1769-UM021K / TD005O: L1 embedded inputs are 24V DC sink only (L2 are sink/source); QBFC1B has 4 high-speed counters.
 
 ## How it was verified
 - `npx tsc -b`, `npx eslint src` clean; unit tests pass incl. new `npx tsx src/electrical/labels/layout.test.ts` (every preset × content × orientation: text inside the label, number never overlaps the description).
@@ -255,3 +332,75 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
 - 12x6 mm markers with "number + description" are cramped by nature; "number only" is the sensible choice there.
 - "Print" in the claude.ai preview window saves the PDF instead (printing is blocked there).
 - Brady part numbers: only entries verified on Brady / distributor pages go into `printers.ts`; anything unverified is listed here.
+
+## Motion parts, safety data and the supply swap (after the 0e7b78c merge)
+- **IDEM SCR73-280005 / -P:** verified from IDEM's data sheet 102581 (Jan 19): PFH 8.4E-10 1/h, SIL 3, PL e, Cat. 4, MTTFd 71 a, DC 99 %. AD prints PFDav 7.2E-05 as "PFHd".
+- **SINAMICS V90 FSA (-1UA2 / -2UA2 / -1UF2 / -2UF2):** peak current 3.6 / 4.2 A confirmed in Siemens D 33 07/2022 p.2/6, so now verified.
+- **IP ratings added:** Kinetix TLP is IP40 without a shaft seal; IP65 needs the S option or a TLP-SSN seal kit (KNX-TD001J p.129 / 207). S-1FL6 is IP65 with an oil seal (D 33 p.1/17).
+- **Coverage for servo / encoder / ultrasonic machines, all verified and sourced:**
+  - Servo systems (drive + motor + power/encoder cables): SureServo2, Kinetix 5100 + TLP, V90 + S-1FL6.
+  - Encoders: TRD-N / TRDA-20 / TRDA-25 (line driver and push-pull), TRD-SR, TRD-GK.
+  - Measuring wheels: MR wheels and the AR01 measuring-wheel encoder kit.
+  - Ultrasonic sensors: UK1 / UK6, P+F UB, Banner T30UX / S18U / QS18U, each with 4-20 mA and discrete versions.
+- **Gaps left:**
+  - Only the TLP motors without a shaft seal (option A) are in the catalog; the S variants are not.
+  - Measuring wheels and cables have no IP rating, because their makers give none.
+- **Swap picker:** compareStrength now refuses a power supply with a different input class, and a candidate whose AC input range does not hold `StrengthContext.feedVolts` (Dev 4 passes the PS feed from the picker). A 90-264 VAC supply is no longer "Equivalent" to a 480 V 3-phase one. A 200-500 V L-L supply (ABL8RPS) may stand in for a 1-phase or 3-phase one, but not the reverse. The cross-reference key carries the same input class (crossref.ts / strength.ts supplyInputClass).
+- **Touch panels for CompactLogix 5370** (both `ab-compactlogix-5370` and `-l1`). Before this, no panel listed 5370, so an L5X upgrade that keeps its 1769-L33ER could not get an HMI. Each entry gives its source in `drivers5370Source`.
+  - Rockwell names 5370 for the PanelView 800 (VIEW-SG002D p.12; product page: "5370 L1, L2, L3"), the PanelView 5310 (2713P-TD001K p.3, firmware V27+) and the PanelView 5510 (2715P-TD001G p.1).
+  - Pro-face's driver manual ROC_ETIP_27 names the 1769-L1x/L2x/L3x CPUs, in its L5K import lists.
+  - Weintek, Maple and Red Lion only say "CompactLogix", without naming a series. That is the same basis on which they already list 5380.
+  - C-more (Dev 5's HMI list) also says only "CompactLogix" (ea9drivers.pdf). Neither the PanelView Plus 7 nor the C-more is in the catalog's driver lists.
+  - Test: a 1769-L33ER has at least 10 compatible panels, including Allen-Bradley ones (platforms.test.ts).
+  - Review fixes:
+    - The serial-only Pro-face GP4100 panels (PFXGP4115T2D / T3D, PFXGP4116T2D) no longer list any CompactLogix driver.
+    - Tests: a Logix driver needs ethernetPorts > 0; the 5370 / 5370-l1 / 5380 ids stay in step; L1 works on Weintek and Red Lion panels.
+    - PanelView 5310 / 5510 carry `logixFirmwareMin: 27` (controller firmware V27 or later). The upgrade plan should check the L5X's firmware against it.
+- **PanelView Plus 7:** Standard 2711P-T7/T10/T15C22D8S and Performance 2711P-T7/T10/T15C22D9P. 6.5 / 10.4 / 15 in, 4:3, 24 VDC, 2 x Ethernet (DLR), FactoryTalk View ME.
+  - Size, resolution, power, cutout, dimensions and weight come from 2711P-TD008J / TD009M. Lifecycle is Active on each product page.
+  - CompactLogix 5370 is named in the TDs. 5380 appears only in the portfolio comparison 2711P-SP011L (Nov 2025).
+  - Standard catalog numbers end in D8S (series D needs firmware 13.x or later). "-B" means no brand label, not a series.
+- **Panels with no Ethernet port:** a panel keeps a PLC family only where the panel maker's own serial or fieldbus driver names it. Generic Modbus does not count; unclear cases are removed. The route, any module needed and the source are in `serialRouteNote`.
+  - Pro-face GP4115T2D / T3D (RS-232) keep M221, CP2E and FX5U/UC (via FX5-232 boards). GP4116T2D (RS-485) also keeps S7-1200 via a CM 1243-5.
+  - Omron NB loses S7-1200 (Ethernet only). It keeps NX1P2, which needs an NX1W-CIF option board.
+  - Mitsubishi GT21 loses S7-1200, S7-1500 and NX1P2.
+  - Delta DOP-100 serial models keep only DVP and AS300.
+  - KTP Basic DP needs a CM 1243-5 on an S7-1200, and a DP CPU or CM 1542-5 on an S7-1500.
+  - Tested in platforms.test.ts.
+- **PLC module a serial panel needs:** `ratings.plcModules` ("platform-id=module; …") on the serial-only and PROFIBUS panels. `plcModuleFor(hmi, platformId)` in platforms.ts returns it, or null when nothing is needed.
+  - Modules: CM 1243-5 on an S7-1200, CM 1542-5 on a non-DP S7-1500, FX5-232-BD/ADP on an FX5U, NX1W-CIF01 on an NX1P2, CP1W-CIF01/11 on a CP2E-N.
+  - The picker (Dev 5) shows the note and the BOM (Dev 4) adds the module. The modules themselves are not catalog parts yet.
+- **PLC interface modules as verified catalog parts** (category `commModule`, never the I/O `plcModule`, so they never take an I/O slot or shift addresses). Each comes from its maker's datasheet or manual.
+  - The parts:
+    - Siemens CM 1243-5 (6GK7243-5DX30-0XE0, 30 x 100 mm, 24 VDC 0.1 A).
+    - Siemens CM 1542-5 (6GK7542-5DX10-0XE0, which supersedes DX00; 35 x 142 mm, 200 mA at 15 V on the backplane).
+    - Mitsubishi FX5-232-BD (board; FX5S/UJ/U only, not FX5UC).
+    - Mitsubishi FX5-232ADP (17.6 x 106 mm adapter).
+    - Omron NX1W-CIF01 and CIF11.
+    - Omron CP1W-CIF01 and CIF11.
+  - The boards carry `inCpu: 'yes'`: they take no panel space.
+  - `plcModulePart(hmi, platformId)` returns the bare part number, for the BOM and the rack.
+- **Operator contacts in one form:** every maker now writes "(1) N.O." / "(1) N.C." (22 Allen-Bradley / Siemens / Schneider entries normalized). This lets the pushbutton pick choose non-AutomationDirect buttons. Enforced in catalog.test.
+- **Siemens SIRIUS ACT 3SU1 complete units**, from the Siemens TED datasheets:
+  - 1 NO, plain: blue (reset), black, yellow, white.
+  - 1 NO, illuminated with a 24 V AC/DC LED: white and blue.
+  - Front IP66/67/69K, 22.3 mm hole, 49.7 mm behind the panel.
+  - The 230 V and metal variants are left out.
+- **More Siemens panel parts**, each from its Siemens TED datasheet:
+  - 3SU1 pilot lights, white and blue (24 V LED).
+  - 3RT2 contactors from 32 to 110 A: 3RT2027/2028-1BB40 (S0), 3RT2035-2038-1NB30 (S2) and 3RT2045-2047-1NB30 (S3). The S2/S3 coil is 20-33 V AC/DC, which runs on 24 VDC. Each has AC-3 at 400 V and UL FLA / hp at 480 V.
+  - 3SU1400-1AA10-1CA0 1 NC contact module (front-plate mounting in the 3SU1 holder; sold in packs of 5).
+  - 3SU1900-0BC31-0DA0 yellow 75 mm EMERGENCY STOP backing plate.
+  - 8WD44 70 mm column parts: connection element 8WD4408-0AB, LED elements red / yellow / green (8WD4420-5AB/5AD/5AC) and buzzer 8WD4420-0FA.
+- **Gap:** Siemens has no verified pre-assembled red / yellow / green 8WD column, so there is no single Siemens stack-light part. A column is built from the elements above.
+- **Siemens 8WD44 stack light as a kit:** Siemens sells no pre-assembled red / yellow / green column.
+  - The `stackLight` entry is named by its real parts ("8WD4408-0AB + 8WD4420-5AB + 8WD4420-5AD + 8WD4420-5AC"). `kitParts` lists "PN xN"; the BOM expands it into one line per part (Dev 4).
+  - Total 105 mA at 24 V; with the buzzer variant, 130 mA.
+  - Tests: every kit part is a verified catalog part, and the kit name equals its parts.
+- **Siemens relays:**
+  - 3RQ4018-1AB00: slim 6.2 mm, 24 V AC/DC, 1 CO.
+  - 3RQ2000-1BW00: 22.5 mm, 24-240 V AC/DC, 2 CO.
+  - Both cULus.
+- **Siemens SENTRON 3LD switch disconnectors:**
+  - Parts: 3LD2203-0TK51 (32 A), 3LD2504-0TK51 (63 A), 3LD2704-0TK51 (100 A), and the red/yellow EMERGENCY-OFF 3LD2203-0TK53.
+  - UL 508 manual motor controller / motor disconnect only (`ulUse`). They are not a UL 98 / UL 489 supply-circuit disconnect, so they must not be the panel's main disconnect. compareStrength refuses one as a swap for a UL 98 / 489 disconnect, so the Part Picker greys it out.

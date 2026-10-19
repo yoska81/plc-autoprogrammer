@@ -18,6 +18,9 @@ export interface AiCall {
   /** Answered from the cache (no request made). */
   cached: 'memory' | 'stored' | 'shared' | null;
   ok: boolean;
+  /** Prompt-cache tokens the API reported (all turns of the request): read from the cache, written to it. */
+  cacheRead?: number;
+  cacheWrite?: number;
 }
 
 const MAX_LOG = 300;
@@ -34,7 +37,7 @@ export function setAiTimingQuiet(q: boolean) { quiet = q; }
 
 export function logAiCall(c: AiCall): void {
   useAiTimingStore.setState((s) => ({ calls: [...s.calls.slice(-(MAX_LOG - 1)), c] }));
-  if (!quiet) console.info(`[ai] ${c.task} ${c.model}/${c.effort} ${((c.endedAt - c.startedAt) / 1000).toFixed(1)} s · in ${c.promptChars} ch · out ${c.outChars} ch${c.cached ? ` · cache (${c.cached})` : ''}${c.ok ? '' : ' · failed'}`);
+  if (!quiet) console.info(`[ai] ${c.task} ${c.model}/${c.effort} ${((c.endedAt - c.startedAt) / 1000).toFixed(1)} s · in ${c.promptChars} ch · out ${c.outChars} ch${c.cached ? ` · cache (${c.cached})` : ''}${c.cacheRead || c.cacheWrite ? ` · prompt cache read ${c.cacheRead ?? 0} / written ${c.cacheWrite ?? 0} tokens` : ''}${c.ok ? '' : ' · failed'}`);
 }
 
 /** AI requests that ran (at least partly) between `from` and `to`. */

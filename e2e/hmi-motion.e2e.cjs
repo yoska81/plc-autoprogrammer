@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const OUT = path.join(__dirname, 'out-hmi-motion');
 fs.mkdirSync(OUT, { recursive: true });
@@ -47,24 +48,25 @@ function measure(els) {
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 1000 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
 
   for (const panel of [{ pn: 'CM5-T7W', w: 800, h: 480 }, { pn: 'CM5-T4W', w: 480, h: 272 }]) {
     // The rules design the screens for a machine with servo axes, an encoder and ultrasonic sensors.
     const info = await page.evaluate(async (panel) => {
-      const { buildHmi, defaultHmiContent } = await import('/src/hmi/engine/index.ts');
-      const { getCpu, getProfile } = await import('/src/plc/core/profiles/index.ts');
-      const { resolveAddresses } = await import('/src/plc/core/profile.ts');
-      const { moduleSlots } = await import('/src/plc/core/modules.ts');
-      const { useHmiStore } = await import('/src/store/useHmiStore.ts');
+      const { buildHmi, defaultHmiContent } = await appImport('/src/hmi/engine/index.ts');
+      const { getCpu, getProfile } = await appImport('/src/plc/core/profiles/index.ts');
+      const { resolveAddresses } = await appImport('/src/plc/core/profile.ts');
+      const { moduleSlots } = await appImport('/src/plc/core/modules.ts');
+      const { useHmiStore } = await appImport('/src/store/useHmiStore.ts');
       const pts = [
         ['E-Stop OK (safety relay)', 'input'], ['Start Button', 'input'], ['Stop Button', 'input'],
         ['Axis 1 Servo Ready', 'input', 'Servo/Axis'], ['Axis 1 Servo Fault', 'input', 'Servo/Axis'], ['Axis 1 Home Complete', 'input', 'Servo/Axis'],
@@ -79,7 +81,7 @@ function measure(els) {
       const design = buildHmi(defaultHmiContent({ io: pts, addresses, machineName: 'Pick and place' }), { partNumber: panel.pn, widthPx: panel.w, heightPx: panel.h });
       useHmiStore.getState().setHmiPartNumber(panel.pn);
       useHmiStore.getState().setDesign(design, null);
-      return { screens: design.screens.map((s) => s.name), looks: (await import('/src/hmi/theme.ts')).HMI_LOOKS };
+      return { screens: design.screens.map((s) => s.name), looks: (await appImport('/src/hmi/theme.ts')).HMI_LOOKS };
     }, panel);
     log(`${panel.pn}: ${info.screens.join(', ')}`);
     check(info.screens.some((n) => /^Motion/.test(n)), `${panel.pn}: Motion screen`);
@@ -89,12 +91,14 @@ function measure(els) {
     const buttons = page.locator('nav[aria-label="Screens"] > button');
     const names = await buttons.allInnerTexts();
     const wanted = names.map((n, i) => ({ n, i })).filter(({ n }) => /(Motion|Process|Setup)/.test(n));
+    // The page shows the design built above (its Motion screens), never a stale or empty list.
+    check(wanted.length > 0 && names.some((n) => /Motion/.test(n)), `${panel.pn}: the page shows the Motion / Setup screens (${names.length} screens)`);
     for (const look of info.looks) {
-      await page.evaluate(async (look) => { const { useHmiStore } = await import('/src/store/useHmiStore.ts'); const s = useHmiStore.getState(); s.setDesign({ ...s.design, look }, null); }, look);
+      await page.evaluate(async (look) => { const { useHmiStore } = await appImport('/src/store/useHmiStore.ts'); const s = useHmiStore.getState(); s.setDesign({ ...s.design, look }, null); }, look);
       for (const { i } of wanted) {
         await buttons.nth(i).click();
         await page.waitForTimeout(50);
-        const design = await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design);
+        const design = await page.evaluate(async () => (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design);
         const screenName = (await buttons.nth(i).innerText()).replace(/^\d+\.\s*/, '').split('\n')[0];
         const screen = design.screens.find((s) => s.name === screenName) ?? design.screens[i];
         const found = await page.evaluate(measure, screen.elements);

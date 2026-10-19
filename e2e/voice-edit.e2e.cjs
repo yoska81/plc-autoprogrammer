@@ -7,6 +7,7 @@
 //  review note; machine spec text; I/O description; rung comment; HMI alarm text; everything in the .isap file.
 //   npx vite --port 5205 &  ;  BASE_URL=http://localhost:5205 node e2e/voice-edit.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const BASE = process.env.BASE_URL || 'http://localhost:5205';
@@ -55,6 +56,7 @@ const FAKE_SPEECH = () => {
   const context = await browser.newContext({ viewport: { width: 1366, height: 900 }, acceptDownloads: true, permissions: ['microphone'] });
   await context.addInitScript(FAKE_SPEECH);
   const page = await context.newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource|huggingface|speech model/i.test(m.text())) errors.push(m.text()); });
@@ -71,17 +73,19 @@ const FAKE_SPEECH = () => {
   await page.route(/huggingface\.co|hf\.co|cdn\.jsdelivr\.net/, (r) => r.abort());
 
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   const fails = [];
   const check = (ok, what) => { if (ok) log('ok', what); else { fails.push(what); log('FAIL', what); } };
+  // A text box's own wrapper with its mic / speaker buttons: the nearest one (the page nests other wrappers around it).
+  const boxOf = (field) => field.locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " relative ")][1]');
   const tree = async (name) => { await page.locator('nav a', { hasText: new RegExp(`^${name}(\\s*\\d+\\?)?$`) }).first().click(); await page.waitForTimeout(600); };
 
   // ── 1. Dictation into the machine description (browser recognition) ──
   await tree('Machine description');
   const add = page.getByPlaceholder(/Pick and place cell/);
-  const addMic = page.locator('div.relative', { has: add }).getByTestId('mic');
+  const addMic = boxOf(add).getByTestId('mic');
   await page.evaluate(() => { window.__speech.push('The robot holds the part when a door opens'); });
   await addMic.click();
   await page.getByTestId('dictation').waitFor();
@@ -109,7 +113,7 @@ const FAKE_SPEECH = () => {
   // Read aloud: a spec section and a question.
   const overview = page.locator('#spec-overview');
   if (await overview.count()) {
-    await page.locator('div.relative', { has: overview }).getByTestId('speak').click();
+    await boxOf(overview).getByTestId('speak').click();
     await page.waitForTimeout(200);
     const spoken = await page.evaluate(() => window.__spoken.join(' '));
     check(spoken.includes((await overview.inputValue()).split(/[.!?]/)[0].trim()), 'speaker reads the spec section');
@@ -131,7 +135,7 @@ const FAKE_SPEECH = () => {
     await page.evaluate((n) => { window.__openBefore = n; }, openBefore);
     await page.waitForFunction(() => document.querySelectorAll('#questions-and-answers li[data-question].border-amber-300').length < window.__openBefore, null, { timeout: 15000 }).catch(() => {});
     const saved = await page.evaluate(async () => {
-      const m = await import('/src/components/questions/useQuestionStore.ts');
+      const m = await appImport('/src/components/questions/useQuestionStore.ts');
       return Object.values(m.useQuestionStore.getState().byProject).flat().filter((q) => q.answer === 'About twenty parts per minute' && q.status === 'answered').length;
     });
     check(saved === 1, 'hands-free: question read, answer heard, "yes" saved it');
@@ -164,7 +168,7 @@ const FAKE_SPEECH = () => {
   check(await openaiRadio.isEnabled(), 'OpenAI engine offered once a key is saved');
   await openaiRadio.check();
   const trial = page.getByLabel('Try the microphone');
-  await page.locator('div.relative', { has: trial }).getByTestId('mic').click();
+  await boxOf(trial).getByTestId('mic').click();
   await page.getByTestId('dictation').getByText(/Listening/).waitFor({ timeout: 10000 });
   check(await page.getByTestId('dictation').getByText(/OpenAI/).count() === 1, 'recording engine shown (OpenAI)');
   await page.waitForTimeout(1800);
@@ -176,7 +180,7 @@ const FAKE_SPEECH = () => {
   await voice.getByLabel('Speech language').selectOption('en-US');
   await voice.getByRole('radio', { name: /Speech model on this computer/ }).check();
   await trial.fill('');
-  await page.locator('div.relative', { has: trial }).getByTestId('mic').click();
+  await boxOf(trial).getByTestId('mic').click();
   await page.getByTestId('dictation').getByText(/Listening/).waitFor({ timeout: 10000 });
   await page.waitForTimeout(1200);
   await page.getByTestId('dictation').getByRole('button', { name: 'Done' }).click();
@@ -184,7 +188,7 @@ const FAKE_SPEECH = () => {
   await page.screenshot({ path: path.join(OUT, '04-local-model-error.png') });
   await page.getByTestId('dictation').getByRole('button', { name: 'Close' }).click();
   await page.evaluate(async () => {
-    const v = await import('/src/voice/useVoiceSettings.ts'); v.useVoiceSettings.getState().set({ engine: 'auto', language: 'en-US', voice: '' });
+    const v = await appImport('/src/voice/useVoiceSettings.ts'); v.useVoiceSettings.getState().set({ engine: 'auto', language: 'en-US', voice: '' });
   });
   await openaiKey.fill('');
   await page.getByRole('button', { name: 'Save Settings' }).click();
@@ -319,7 +323,7 @@ const FAKE_SPEECH = () => {
   // ── 11. Reload: everything is still there ──
   await page.reload();
   await page.waitForTimeout(800);
-  const edits = await page.evaluate(async () => (await import('/src/edits/useEditsStore.ts')).useEditsStore.getState());
+  const edits = await page.evaluate(async () => (await appImport('/src/edits/useEditsStore.ts')).useEditsStore.getState());
   check(edits.bom[pn]?.price === 123.45 && edits.bom[pn]?.partNumber === 'MY-PN-001', 'order-list edits kept after reload');
   check(edits.labels[labelId]?.code === '0V-MAIN', 'label edit kept');
   check(Object.values(edits.notes).includes('Route through the left gland') && Object.values(edits.notes).includes('Checked by Sam') && Object.values(edits.notes).includes('Discussed with the customer on site'), 'notes kept');
@@ -327,7 +331,7 @@ const FAKE_SPEECH = () => {
 
   // ── 12. The .isap project file holds the edits ──
   const isap = await page.evaluate(async () => {
-    const f = await import('/src/project/projectFile.ts');
+    const f = await appImport('/src/project/projectFile.ts');
     const { blob } = await f.buildProjectFile();
     const { body } = await f.readProjectFile(blob);
     return body.stores.edits;
@@ -337,7 +341,7 @@ const FAKE_SPEECH = () => {
   // ── 13. Regenerate the electrical design: the edits stay ──
   await page.goto(BASE + '/electrical?tab=design');
   await page.getByRole('button', { name: 'Update design' }).first().click();
-  await page.waitForFunction(async () => { const m = await import('/src/store/useElectricalStore.ts'); return !m.useElectricalStore.getState().isGenerating; }, null, { timeout: 120000 });
+  await page.waitForFunction(async () => { const m = await appImport('/src/store/useElectricalStore.ts'); return !m.useElectricalStore.getState().isGenerating; }, null, { timeout: 120000 });
   await page.waitForTimeout(1000);
   await page.goto(BASE + '/export');
   await page.waitForTimeout(800);
@@ -345,16 +349,17 @@ const FAKE_SPEECH = () => {
   const row = page.locator(`#order-list tr[data-part="${pn}"]`);
   check(await row.count() === 1 && await row.locator('input[aria-label^="Part number"]').inputValue() === 'MY-PN-001' && await row.locator('input[aria-label^="Unit price of"]').inputValue() === '123.45', 'order-list edits kept after the design was generated again');
   // Back to generated.
-  await row.locator('td').nth(5).getByTestId('reset-edit').click();
+  // The reset button of the price cell (found by its input, not by column number: the order list's columns change).
+  await row.locator('td', { has: page.locator('input[aria-label^="Unit price of"]') }).getByTestId('reset-edit').click();
   await page.waitForTimeout(200);
   check(await page.locator(`#order-list tr[data-part="${pn}"]`).locator('input[aria-label^="Unit price of"]').inputValue() === '', 'price back to generated');
 
   // ── 14. Another project does not see these edits ──
   await page.goto(BASE + '/new');
   const other = await page.evaluate(async () => {
-    const p = await import('/src/store/useProjectsStore.ts');
+    const p = await appImport('/src/store/useProjectsStore.ts');
     p.useProjectsStore.getState().createProject('Voice edit other');
-    const e = (await import('/src/edits/useEditsStore.ts')).useEditsStore.getState();
+    const e = (await appImport('/src/edits/useEditsStore.ts')).useEditsStore.getState();
     return Object.keys(e.bom).length + Object.keys(e.labels).length + Object.keys(e.notes).length + Object.keys(e.texts).length;
   });
   check(other === 0, 'a new project starts without hand edits');

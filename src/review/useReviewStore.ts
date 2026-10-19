@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Finding, FindingMark, FindingStatus } from './types';
+import { appPersistStorage } from '../lib/appStorage';
 
 /** A finding handed to another stage's AI fix flow (consumed once by that page). */
 export interface FixRequest { stage: 'program'; text: string; findingId: string }
@@ -26,7 +27,15 @@ export const useReviewStore = create<ReviewStore>()(
       ai: null,
       marks: {},
       fixRequest: null,
-      setChecks: (checks) => set({ checks, checkedAt: new Date().toISOString() }),
+      // A mark saved under a finding's old id (by address: lost on a brand switch that renumbers the I/O) moves to its id.
+      setChecks: (checks) => set((s) => {
+        let marks = s.marks;
+        for (const f of checks) if (f.legacyId && marks[f.legacyId] && !marks[f.id]) {
+          marks = { ...marks, [f.id]: marks[f.legacyId] };
+          delete marks[f.legacyId];
+        }
+        return { checks, marks, checkedAt: new Date().toISOString() };
+      }),
       setAi: (r) => set({ ai: r ? { ...r, at: new Date().toISOString() } : null }),
       mark: (id, status, reason) => set((s) => {
         const marks = { ...s.marks };
@@ -36,7 +45,7 @@ export const useReviewStore = create<ReviewStore>()(
       }),
       requestFix: (fixRequest) => set({ fixRequest }),
     }),
-    { name: 'plc-review-store', partialize: (s) => ({ checks: s.checks, checkedAt: s.checkedAt, ai: s.ai, marks: s.marks }) },
+    { name: 'plc-review-store', storage: appPersistStorage(), partialize: (s) => ({ checks: s.checks, checkedAt: s.checkedAt, ai: s.ai, marks: s.marks }) },
   ),
 );
 

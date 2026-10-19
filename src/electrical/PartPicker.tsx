@@ -14,15 +14,17 @@ const td = 'px-3 py-1.5 border-b border-steel-100 align-top';
  * is listed. Weaker or incompatible ones are grey with the reason; anything
  * equal or stronger can be chosen.
  */
-export default function PartPicker({ tag, partNumber, motor, onPick, onClose }: {
-  tag: string; partNumber: string; motor?: StrengthContext['motor']; onPick: (partNumber: string) => void; onClose: () => void;
+export default function PartPicker({ tag, partNumber, motor, feedVolts, onPick, onClose }: {
+  tag: string; partNumber: string; motor?: StrengthContext['motor'];
+  /** AC voltage feeding the part (power supplies): candidates that can't take it are greyed. */
+  feedVolts?: number; onPick: (partNumber: string) => void; onClose: () => void;
 }) {
   const pref = useVendorPreference();
   const current = getPart(partNumber);
   if (!current) return null;
   // The project's preferred brands, plus the brand already in the design.
   const pool = [...new Map([...partsIn(current.category, pref), ...partsIn(current.category, { ...pref, [groupOf(current)]: [current.vendor ?? 'automationdirect'] })].map((p) => [p.partNumber, p])).values()];
-  const rows = pool.filter((p) => sameKind(current, p)).map((p) => ({ p, s: compareStrength(current, p, { motor }) }))
+  const rows = pool.filter((p) => sameKind(current, p)).map((p) => ({ p, s: compareStrength(current, p, { motor, feedVolts }) }))
     .sort((x, y) => Number(y.s.ok) - Number(x.s.ok));
 
   return (

@@ -1,5 +1,6 @@
-import { elementAddresses, rungAddresses, rungWrites, type LadderProgram, type RawInstruction, type Rung } from './ladder';
+import { elementAddresses, motionWrites, rungAddresses, rungWrites, type LadderProgram, type RawInstruction, type Rung } from './ladder';
 import type { PlcProfile } from './profile';
+import { deletedAddress, isDeletedOperand } from './remapProgram';
 
 export interface ValidationIssue {
   rungId: string | null;
@@ -18,6 +19,12 @@ export function validateProgram(
   ioAddresses: Set<string>,
   /** The project's HMI: a tag the HMI shows that no rung writes, or a command no rung reads, is an error. */
   hmi?: { tags: { address: string; name: string; access: string }[] },
+  /**
+   * noPanel: the machine has no touch panel, so nothing writes the panel ranges C1001–C1300 / DS1001–DS1200 / DF101–DF200.
+   * pulseOutputs: the outputs that can carry a pulse train on this CPU / option module (electrical/highSpeedIo.ts);
+   * a motion axis whose pulse is elsewhere is an error.
+   */
+  opts: { noPanel?: boolean; pulseOutputs?: string[] } = {},
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const outCoils = new Map<string, number>();
@@ -27,18 +34,28 @@ export function validateProgram(
       issues.push({ rungId: rung.id, severity, message });
     const a = address.trim();
     if (!a) return add('error', `${role} has no address.`);
+    if (isDeletedOperand(a)) return add('error', `${role} used ${deletedAddress(a)}, whose I/O point was deleted or has no address on this PLC — pick its new input / output (or delete the rung).`);
     const info = profile.parseAddress(a);
     if (!info) return add('error', `${role} "${a}" is not a valid ${profile.name} address.`);
     if (info.kind === 'constant' && !opts.valueOk) return add('error', `${role} cannot be a constant (${a}).`);
     if (opts.bit && !info.isBit) add('error', `${role} "${a}" is not a bit address.`);
     if (opts.write && (info.kind === 'input' || info.kind === 'system')) add('error', `${role} writes to read-only ${info.kind} "${a}".`);
     if ((info.kind === 'input' || info.kind === 'output') && !ioAddresses.has(a)) {
-      add('warning', `${a} is not assigned to any point in the I/O list.`);
+      // An error: an I/O address with no point behind it reads / drives whatever gets that address next.
+      add('error', `${a} is not assigned to any point in the I/O list.`);
     }
   };
 
+  // Pulse trains only come out of the PLC's pulse outputs (CLICK PLUS: Y001 / Y003 / Y005 of the option-slot module).
+  if (opts.pulseOutputs) {
+    const ok = new Set(opts.pulseOutputs.map((a) => a.toUpperCase()));
+    for (const ax of program.motion?.axes ?? []) {
+      if (!ok.has(ax.pulse.trim().toUpperCase())) issues.push({ rungId: null, severity: 'error', message: `${ax.name}: its pulse output ${ax.pulse} cannot make a pulse train on this PLC — ${ok.size ? `use ${[...ok].join(' / ')}` : 'it has no pulse-train outputs (CLICK PLUS needs a C2-14D1 / D2 / TTL or C2-08D1 / D2 module in its option slot)'}.` });
+    }
+  }
+
   for (const rung of program.rungs) {
-    for (const extra of profile.checkRung?.(rung) ?? []) issues.push({ rungId: rung.id, ...extra });
+    for (const extra of profile.checkRung?.(rung, { ioAddresses }) ?? []) issues.push({ rungId: rung.id, ...extra });
     if (rung.outputs.length === 0) issues.push({ rungId: rung.id, severity: 'error', message: 'Rung has no output instruction.' });
 
     for (const branch of rung.branches) {
@@ -127,6 +144,10 @@ export function validateProgram(
       }
       for (const w of rungWrites(r)) note(writes, w, r.id);
     }
+    // The PLC's motion (instructions, axes, counters) writes its status bits and registers and reads its request
+    // bits and targets: set up in the PLC software, not in the rungs.
+    for (const w of motionWrites(program.motion)) note(writes, w, 'motion');
+    for (const i of program.motion?.instructions ?? []) for (const a of [i.enable, i.target, i.velocity].filter((x): x is string => !!x)) note(reads, a, 'motion');
     const hmiAddr = new Set((hmi?.tags ?? []).map((t) => t.address.trim().toUpperCase()));
     const hmiRange = (a: string) => /^(C1(0\d\d|1\d\d|2\d\d|300)|DS1(0\d\d|1\d\d|200)|DF(1\d\d|200))$/.test(a);
     const skip = (a: string) => {
@@ -140,6 +161,36 @@ export function validateProgram(
     for (const [a, rung] of writes) if (!timerRead(a) && !skip(a)) issues.push({ rungId: rung, severity: 'warning', message: `${a} is written but never read: this logic does nothing.` });
   }
 
+  // A coil that can never turn on: every branch that could switch it on (its own seal-in aside) needs a contact on a
+  // bit nothing writes — e.g. Cycle running started only from a panel Start bit on a machine with no touch panel.
+  if (program.rungs.length) {
+    const written = new Set([...program.rungs.flatMap((r) => rungWrites(r)), ...motionWrites(program.motion)].map((a) => a.trim().toUpperCase()));
+    for (const t of hmi?.tags ?? []) if (t.access !== 'read') written.add(t.address.trim().toUpperCase());
+    const panelRange = (a: string) => /^(C1(0\d\d|1\d\d|2\d\d|300)|DS1(0\d\d|1\d\d|200)|DF(1\d\d|200))$/.test(a);
+    const dead = (a: string) => {
+      const info = profile.parseAddress(a);
+      if (!info || info.kind === 'constant' || info.kind === 'input' || info.kind === 'output' || info.kind === 'system' || ioAddresses.has(a) || written.has(a)) return false;
+      if (/^(T|TD|CT|CTD)\d+$/.test(a)) return false;
+      return !panelRange(a) || Boolean(opts.noPanel);
+    };
+    const coils = new Map<string, Rung[]>();
+    for (const r of program.rungs) for (const o of r.outputs) if (o.type === 'OUT' || o.type === 'SET') { const k = o.address.trim().toUpperCase(); coils.set(k, [...(coils.get(k) ?? []), r]); }
+    for (const [a, rs] of coils) {
+      const blockers = new Set<string>();
+      const live = rs.some((r) => r.branches.some((b) => {
+        const contacts = b.filter((e): e is Extract<typeof e, { address: string }> => (e.type === 'NO' || e.type === 'RISE') && 'address' in e).map((e) => e.address.trim().toUpperCase());
+        if (contacts.includes(a)) return false; // its own seal-in
+        const d = contacts.filter(dead);
+        d.forEach((x) => blockers.add(x));
+        return !d.length;
+      }) || !r.branches.length);
+      if (live || !blockers.size) continue;
+      const panelOnly = [...blockers].some(panelRange);
+      issues.push({ rungId: rs[0].id, severity: panelOnly && opts.noPanel ? 'error' : 'warning',
+        message: `${a} can never turn on: every way to switch it on needs ${[...blockers].join(' / ')}, which nothing writes${panelOnly && opts.noPanel ? ' (a touch-panel command, and this machine has no touch panel — use a pushbutton input)' : ''}.` });
+    }
+  }
+
   for (const [address, count] of outCoils) {
     if (count > 1) {
       issues.push({ rungId: null, severity: 'warning', message: `${address} is driven by OUT coils in ${count} rungs; only the last one wins (double coil).` });
@@ -151,8 +202,13 @@ export function validateProgram(
 /** PLC families imported instructions come from (profile ids, plus brands the app reads but has no profile for). */
 const VENDOR_NAME: Record<string, string> = {
   logix: 'Logix', click: 'CLICK', micro800: 'Micro800', 'siemens-s7': 'Siemens S7', 'unitronics-unistream': 'UniStream', 'unitronics-vision': 'Vision',
-  'mitsubishi-fx': 'Mitsubishi', codesys: 'CODESYS',
+  'mitsubishi-fx': 'Mitsubishi', codesys: 'CODESYS', 'siemens-stl': 'Siemens STL', 'siemens-lad': 'a TIA Portal LAD network', delta: 'Delta', inovance: 'Inovance', xinje: 'Xinje',
+  'yaskawa-mp': 'Yaskawa MPE720',
 };
+
+/** The PLC an imported instruction belongs to: its vendor tag, with older tags (projects saved before) mapped to today's profile id. */
+const RAW_FAMILY: Record<string, string> = { yaskawa: 'yaskawa-mp' };
+export const rawFamily = (vendor: string) => RAW_FAMILY[vendor] ?? vendor;
 
 /**
  * An imported instruction kept as written: on its own PLC a warning (it is not checked or simulated);
@@ -160,9 +216,9 @@ const VENDOR_NAME: Record<string, string> = {
  */
 function rawIssues(rungId: string, r: RawInstruction, profile: PlcProfile): ValidationIssue[] {
   const short = r.text.length > 80 ? `${r.text.slice(0, 77).replace(/\s+/g, ' ')}…` : r.text;
-  if (r.vendor !== profile.id) {
+  if (rawFamily(r.vendor) !== profile.id) {
     const what = /^\s*(?:FUNCTION_BLOCK|FUNCTION)\s+"?(\w+)/i.exec(r.text)?.[1] ?? /^(\w+)\(/.exec(r.text)?.[1] ?? short;
-    return [{ rungId, severity: 'error', message: `${what} from ${VENDOR_NAME[r.vendor] ?? r.vendor} cannot run on ${profile.name}: this rung will not work (${short}).` }];
+    return [{ rungId, severity: 'error', message: `${what} from ${VENDOR_NAME[rawFamily(r.vendor)] ?? r.vendor} cannot run on ${profile.name}: this rung will not work (${short}).` }];
   }
   return [{ rungId, severity: 'warning', message: `Not understood: check by hand (${short}).` }, ...rawRules(rungId, r)];
 }

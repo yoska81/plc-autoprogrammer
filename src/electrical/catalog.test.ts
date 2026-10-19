@@ -6,7 +6,7 @@
  * Run with:  npx tsx src/electrical/catalog.test.ts
  */
 import assert from 'node:assert/strict';
-import { CATALOG } from './catalog';
+import { CATALOG, getPart } from './catalog';
 import { PRICES } from './prices';
 import { HMI_MODELS } from '../hmi/hmiCatalog';
 import { CLICK_CPUS } from '../plc/core/profiles/clickData';
@@ -65,6 +65,7 @@ const REQUIRED: Partial<Record<CatalogCategory, string[]>> = {
   vfd: ['inputVolts', 'inputPhases', 'outputAmps'],
   plc: ['supplyVolts'],
   plcModule: ['family'],
+  commModule: ['family', 'interface', 'forUse'],
   enclosure: [],
   estop: ['contacts'],
   pushbutton: ['contacts', 'color'],
@@ -101,10 +102,6 @@ const ENCLOSURE_IN: [number, number] = [2, 100];
 const UNVERIFIED_OK: Record<string, string> = {
   'XCSPA993': 'contacts (2 NC + 1 NO slow break), 1/2in NPT entry and AC-15 rating from the Schneider XCS catalog; terminal numbers still to be checked on the product data sheet (se.com not reachable).',
   '3SE5112-0QV10': 'Siemens data sheet server refused the download (403): terminal numbers and AC-15 / DC-13 ratings still to be checked; contacts (1 NO + 2 NC), M20 entry and actuator from distributor listings.',
-  '6SL3210-5FB10-1UF2': 'SINAMICS V90 FSA (new version): the Siemens datasheet gives no peak current, so peakAmps is the predecessor\'s figure from the V90 PN Operating Instructions (04/2016).',
-  '6SL3210-5FB10-2UF2': 'SINAMICS V90 FSA (new version): the Siemens datasheet gives no peak current, so peakAmps is the predecessor\'s figure from the V90 PN Operating Instructions (04/2016).',
-  '6SL3210-5FB10-1UA2': 'SINAMICS V90 FSA (new version): the Siemens datasheet gives no peak current, so peakAmps is the predecessor\'s figure from the V90 PN Operating Instructions (04/2016).',
-  '6SL3210-5FB10-2UA2': 'SINAMICS V90 FSA (new version): the Siemens datasheet gives no peak current, so peakAmps is the predecessor\'s figure from the V90 PN Operating Instructions (04/2016).',
   'C2-14D1': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
   'C2-14D2': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
   'C2-14TTL': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
@@ -140,7 +137,10 @@ test('part numbers are unique and look like real part numbers', () => {
   for (const p of CATALOG) {
     if (seen.has(p.partNumber)) bad.push(`${p.partNumber}: duplicate`);
     seen.add(p.partNumber);
-    if (!/^[A-Za-z0-9][A-Za-z0-9./#+\- ]{1,40}$/.test(p.partNumber) || /\b(TBD|XXX|N\/A|GENERIC|EXAMPLE)\b/i.test(p.partNumber)) bad.push(`${p.partNumber}: not a part number`);
+    // A kit (no single maker part number) is named by its real parts: 'A + B + C', exactly its kitParts.
+    const kit = p.ratings.kitParts !== undefined && p.partNumber === String(p.ratings.kitParts).split(',').map((x) => x.trim().replace(/ x\d+$/, '')).join(' + ');
+    if (p.ratings.kitParts !== undefined && !kit) bad.push(`${p.partNumber}: kit name must be its kitParts joined with ' + '`);
+    if (!kit && !/^[A-Za-z0-9][A-Za-z0-9./#+\- ]{1,40}$/.test(p.partNumber) || /\b(TBD|XXX|N\/A|GENERIC|EXAMPLE)\b/i.test(p.partNumber)) bad.push(`${p.partNumber}: not a part number`);
   }
   assert.deepEqual(bad, []);
 });
@@ -164,7 +164,8 @@ test('the source page is the page of that part', () => {
     const u = new URL(p.url);
     const last = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() ?? '').toLowerCase();
     if (isAdHost(p.url)) return last !== p.partNumber.toLowerCase() && !u.pathname.toLowerCase().includes(`/pn/${p.partNumber.toLowerCase()}`);
-    return !norm(decodeURIComponent(u.pathname + u.search)).includes(norm(p.partNumber)) && !isMakerDocument(u);
+    const names = p.ratings.kitParts !== undefined ? p.partNumber.split(' + ') : [p.partNumber];
+    return !names.some((n) => norm(decodeURIComponent(u.pathname + u.search)).includes(norm(n))) && !isMakerDocument(u);
   }).map((p) => `${p.partNumber}: ${p.url}`);
   assert.deepEqual(bad, []);
 });
@@ -223,8 +224,10 @@ test('ratings in the part number agree with the ratings (breakers, power supplie
 test('parts of other vendors give a datasheet footprint for back-panel parts', () => {
   // AutomationDirect parts may still use the category footprint estimate (shown as estimated on the layout);
   // new vendors' back-panel parts must state width x height from the datasheet.
-  const bad = CATALOG.filter((p) => !isAdHost(p.url) && p.mount === 'backplate' && !['enclosure', 'dinRail', 'wireDuct', 'terminalAccessory'].includes(p.category) && !(p.widthMm && p.heightMm)).map((p) => p.partNumber);
+  const bad = CATALOG.filter((p) => !isAdHost(p.url) && p.mount === 'backplate' && !['enclosure', 'dinRail', 'wireDuct', 'terminalAccessory'].includes(p.category) && p.ratings.inCpu !== 'yes' && !(p.widthMm && p.heightMm)).map((p) => p.partNumber);
   assert.deepEqual(bad, []);
+  // Option boards that plug into the CPU (FX5-232-BD, NX1W-CIF, CP1W-CIF) take no panel space of their own.
+  for (const p of CATALOG.filter((x) => x.ratings.inCpu === 'yes')) assert.ok(p.category === 'commModule' && !p.widthMm, `${p.partNumber}: in-CPU board`);
 });
 
 test('prices belong to catalog parts and come from the same site', () => {
@@ -236,6 +239,39 @@ test('prices belong to catalog parts and come from the same site', () => {
     if (new URL(pr.sourceUrl).host !== new URL(p.url).host) bad.push(`${pn}: price from ${new URL(pr.sourceUrl).host}, part page on ${new URL(p.url).host}`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(pr.date)) bad.push(`${pn}: price date ${pr.date}`);
   }
+  assert.deepEqual(bad, []);
+});
+
+test('safety relays and expansions state their safety outputs as a count', () => {
+  // The drawing converter sizes the safety relay (base + expansion) from these: '(4) N.O.' and safetyOutputCount 4.
+  const bad = CATALOG.filter((p) => p.category === 'safetyRelay' && !(/^\(\d+\) N\.O\.$/.test(String(p.ratings.safetyOutputs)) && Number(p.ratings.safetyOutputCount) === Number(String(p.ratings.safetyOutputs).match(/\d+/)?.[0]))).map((p) => p.partNumber);
+  assert.deepEqual(bad, []);
+});
+
+test('operator devices write their contacts in one form: "(1) N.O." / "(1) N.C."', () => {
+  // The pushbutton / E-stop / selector picks match this form for every maker (AutomationDirect's spelling).
+  const ONE = /^\(\d+\) N\.[OC]\.(\/\(\d+\) N\.[OC]\.)?$/;
+  const bad = CATALOG.filter((p) => ['pushbutton', 'estop', 'selector'].includes(p.category) && p.ratings.contacts !== undefined
+    && !/\dx \(/.test(String(p.ratings.contacts)) && !ONE.test(String(p.ratings.contacts))).map((p) => `${p.partNumber}: ${p.ratings.contacts}`);
+  assert.deepEqual(bad, []);
+});
+
+test('kits list real catalog parts: "PN xN" each, every one verified', () => {
+  const bad: string[] = [];
+  for (const p of CATALOG.filter((x) => x.ratings.kitParts !== undefined)) {
+    for (const item of String(p.ratings.kitParts).split(',').map((x) => x.trim())) {
+      const m = /^(\S+) x(\d+)$/.exec(item);
+      const part = m && getPart(m[1]);
+      if (!m || !part || !part.verified) bad.push(`${p.partNumber}: ${item}`);
+    }
+    if (!(Number(p.ratings.amps) > 0)) bad.push(`${p.partNumber}: kit needs its total current`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('every switching disconnect states its UL listing: 98, 489 or 508', () => {
+  // The main-disconnect pick (UL 508A) needs UL 98 / 489; a UL 508 part is a motor disconnect only. Handles and shafts carry no amps.
+  const bad = CATALOG.filter((p) => p.category === 'disconnect' && p.ratings.amps !== undefined && !/^(98|489|508)$/.test(String(p.ratings.ul ?? ''))).map((p) => `${p.partNumber}: ul ${p.ratings.ul}`);
   assert.deepEqual(bad, []);
 });
 

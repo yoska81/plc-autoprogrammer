@@ -28,7 +28,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
             "N"
           ]
         ],
-        "note": "PSR-24-120 technical data; three-phase -3 models take 3 x 380-500 VAC (range 3 x 320-575 VAC) on L1, L2, L3."
+        "note": "PSR-24-120 technical data; three-phase -3 models take 3 x 380-500 VAC (range 3 x 320-575 VAC) on L1, L2, L3.",
+        "liveWork": true
       },
       {
         "terminals": "L1-L2, L2-L3, L1-L3",
@@ -48,7 +49,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
             "L1",
             "L3"
           ]
-        ]
+        ],
+        "liveWork": true
       },
       {
         "terminals": "+ to -",
@@ -103,8 +105,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
           "Internal fuse (T3.15A on PSR-24-120) open - not user replaceable"
         ],
         "confirm": [
-          "Measure L to N: must be 90-264 VAC (single-phase) / 320-575 VAC phase-to-phase (three-phase). 0 V means the supply side is open: check the upstream breaker (AD recommends 20 A B-curve for 1-phase, 4 A B-curve for -3 models).",
-          "If input voltage is correct but the LED stays off and output is 0 VDC with the load removed, the unit has failed (internal fuse is not user-replaceable)."
+          "Meter L-N: 90-264 VAC (1-phase) or 320-575 VAC ph-ph (3-phase). 0 V: check upstream breaker (AD: 20 A B-curve 1-phase, 4 A B-curve -3 models).",
+          "Input OK but LED off and 0 VDC out with load removed: unit failed; the internal fuse cannot be replaced by the user."
         ],
         "fix": [
           "Restore input power / reset the upstream breaker after finding the cause.",
@@ -214,7 +216,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
             "L",
             "N"
           ]
-        ]
+        ],
+        "liveWork": true
       },
       {
         "terminals": "+ to -",
@@ -352,7 +355,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
             "L",
             "N"
           ]
-        ]
+        ],
+        "liveWork": true
       },
       {
         "terminals": "+ to -",
@@ -392,7 +396,7 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
           "Measure L to N: must be 90-264 VAC."
         ],
         "fix": [
-          "Restore input (backup protection 13 A B / 8 A C for PSL-24-030, 16 A B / 8 A C for PSL-24-060); replace the unit if input is present and output stays 0 V with load removed."
+          "Restore input (backup: PSL-24-030 13 A B / 8 A C, PSL-24-060 16 A B / 8 A C). Input present, 0 V out with no load: replace unit."
         ],
         "source": "https://cdn.automationdirect.com/static/manuals/psxinstall/PSL-24-030.pdf (5.1 Input connection, Technical data); https://cdn.automationdirect.com/static/manuals/psxinstall/PSL-24-060.pdf (5.1)"
       },
@@ -452,7 +456,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
             "N/-"
           ]
         ],
-        "note": "Values from QUINT4-PS/1AC/24DC/10; DC input 110-250 VDC -18%...+40% is also allowed."
+        "note": "Values from QUINT4-PS/1AC/24DC/10; DC input 110-250 VDC -18%...+40% is also allowed.",
+        "liveWork": true
       },
       {
         "terminals": "+ to - (Output DC 24V)",
@@ -641,7 +646,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
             "L1/+",
             "L2/N/-"
           ]
-        ]
+        ],
+        "liveWork": true
       },
       {
         "terminals": "+1/+2 to -1/-2/-3",
@@ -757,7 +763,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
             "L",
             "N"
           ]
-        ]
+        ],
+        "liveWork": true
       },
       {
         "terminals": "+V to -V",
@@ -853,7 +860,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "state": "energized",
         "meter": "VAC",
         "expected": "supply voltage, within the rating: 1P 120/240 V (1-63 A) or 277 V (1-25 A); DC 1P 60 V, 2P/3P 125 V",
-        "note": "Line voltage connection suitable for reverse feed (either end may be line)."
+        "note": "Line voltage connection suitable for reverse feed (either end may be line).",
+        "liveWork": true
       },
       {
         "terminals": "handle / status window",
@@ -1028,13 +1036,15 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "state": "ON at rated current",
         "meter": "VAC",
         "expected": "about P/I; 5SJ4106-7HG41 (C6): 2.7 W at 6 A -> about 0.45 V",
-        "note": "Power loss per pole from the data sheet; position of supply cord: any."
+        "note": "Power loss per pole from the data sheet; position of supply cord: any.",
+        "liveWork": true
       },
       {
         "terminals": "pole",
         "state": "supply",
         "meter": "VAC",
-        "expected": "max 240 VAC per UL 489 (1-pole); 60 VDC 1-channel, 125 VDC 2-channel"
+        "expected": "max 240 VAC per UL 489 (1-pole); 60 VDC 1-channel, 125 VDC 2-channel",
+        "liveWork": true
       }
     ],
     "indicators": [],
@@ -1086,7 +1096,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "terminals": "line to neutral (1P)",
         "state": "energized",
         "meter": "VAC",
-        "expected": "up to 240 VAC (Ue 240/415 VAC, 60 VDC)"
+        "expected": "up to 240 VAC (Ue 240/415 VAC, 60 VDC)",
+        "liveWork": true
       },
       {
         "terminals": "toggle / contact position indicator",
@@ -1137,7 +1148,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "state": "energized",
         "meter": "VAC",
         "expected": "up to 277 VAC (C 0.5-40 A) / 240 VAC (50-63 A); 48 VDC 1-pole",
-        "note": "Line and load may be reversed (may be bottom fed)."
+        "note": "Line and load may be reversed (may be bottom fed).",
+        "liveWork": true
       },
       {
         "terminals": "indicator window",
@@ -1448,7 +1460,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
             "A1",
             "A2"
           ]
-        ]
+        ],
+        "liveWork": true
       },
       {
         "terminals": "1/L1-2/T1, 3/L2-4/T2, 5/L3-6/T3",
@@ -1476,19 +1489,19 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "a": "1/L1",
         "b": "2/T1",
         "when": "energized",
-        "note": "https://cdn.automationdirect.com/static/manuals/fujimotorcontrolm/contactor_sce02e05.pdf (INA-F0154-E) wiring diagram L1-T1, L2-T2, L3-T3 main contacts; terminal marks 1/L1 3/L2 5/L3 / 2/T1 4/T2 6/T3 (https://cdn.automationdirect.com/static/specs/fujimc9150.pdf dimension drawings). Auxiliary contacts are add-on blocks (SC-E02..E4 have no internal auxiliary contact), so no 13-14/21-22 pair is given."
+        "note": "INA-F0154-E: main poles L1-T1, L2-T2, L3-T3 (marked 1/L1 3/L2 5/L3, 2/T1 4/T2 6/T3). SC-E02..E4 have no built-in aux, so no 13-14/21-22 pair. https://cdn.automationdirect.com/static/manuals/fujimotorcontrolm/contactor_sce02e05.pdf https://cdn.automationdirect.com/static/specs/fujimc9150.pdf"
       },
       {
         "a": "3/L2",
         "b": "4/T2",
         "when": "energized",
-        "note": "https://cdn.automationdirect.com/static/manuals/fujimotorcontrolm/contactor_sce02e05.pdf (INA-F0154-E) wiring diagram L1-T1, L2-T2, L3-T3 main contacts; terminal marks 1/L1 3/L2 5/L3 / 2/T1 4/T2 6/T3 (https://cdn.automationdirect.com/static/specs/fujimc9150.pdf dimension drawings). Auxiliary contacts are add-on blocks (SC-E02..E4 have no internal auxiliary contact), so no 13-14/21-22 pair is given."
+        "note": "INA-F0154-E: main poles L1-T1, L2-T2, L3-T3 (marked 1/L1 3/L2 5/L3, 2/T1 4/T2 6/T3). SC-E02..E4 have no built-in aux, so no 13-14/21-22 pair. https://cdn.automationdirect.com/static/manuals/fujimotorcontrolm/contactor_sce02e05.pdf https://cdn.automationdirect.com/static/specs/fujimc9150.pdf"
       },
       {
         "a": "5/L3",
         "b": "6/T3",
         "when": "energized",
-        "note": "https://cdn.automationdirect.com/static/manuals/fujimotorcontrolm/contactor_sce02e05.pdf (INA-F0154-E) wiring diagram L1-T1, L2-T2, L3-T3 main contacts; terminal marks 1/L1 3/L2 5/L3 / 2/T1 4/T2 6/T3 (https://cdn.automationdirect.com/static/specs/fujimc9150.pdf dimension drawings). Auxiliary contacts are add-on blocks (SC-E02..E4 have no internal auxiliary contact), so no 13-14/21-22 pair is given."
+        "note": "INA-F0154-E: main poles L1-T1, L2-T2, L3-T3 (marked 1/L1 3/L2 5/L3, 2/T1 4/T2 6/T3). SC-E02..E4 have no built-in aux, so no 13-14/21-22 pair. https://cdn.automationdirect.com/static/manuals/fujimotorcontrolm/contactor_sce02e05.pdf https://cdn.automationdirect.com/static/specs/fujimc9150.pdf"
       }
     ],
     "indicators": [
@@ -1539,7 +1552,7 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
           "Measure A1-A2 = 0 V while 2/T1, 4/T2, 6/T3 still carry line voltage."
         ],
         "fix": [
-          "Remove the arc chamber and separate slightly welded contacts with a screwdriver if necessary; replace the product if contact facings are eroded to the carrier material."
+          "Take off the arc chamber; pry lightly welded contacts apart with a screwdriver if needed. Replace if facings are worn down to the carrier."
         ],
         "source": "https://cdn.automationdirect.com/static/manuals/fujimotorcontrolm/contactor_sce02e05.pdf (Fuji INA-F0154-E) (7 Maintenance (3), (5))"
       },
@@ -1757,7 +1770,8 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
             "13",
             "14"
           ]
-        ]
+        ],
+        "liveWork": true
       },
       {
         "terminals": "13 (A1) to 14 (A2)",
@@ -1809,49 +1823,49 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "a": "9",
         "b": "5",
         "when": "energized",
-        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+        "note": "78relays.pdf, pin end: common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14. Poles: 781 = 1; 782 = 1, 4 (9, 12); 783 = 1, 2, 4; 784 all. https://cdn.automationdirect.com/static/specs/78relaysockets.pdf"
       },
       {
         "a": "10",
         "b": "6",
         "when": "energized",
-        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+        "note": "78relays.pdf, pin end: common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14. Poles: 781 = 1; 782 = 1, 4 (9, 12); 783 = 1, 2, 4; 784 all. https://cdn.automationdirect.com/static/specs/78relaysockets.pdf"
       },
       {
         "a": "11",
         "b": "7",
         "when": "energized",
-        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+        "note": "78relays.pdf, pin end: common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14. Poles: 781 = 1; 782 = 1, 4 (9, 12); 783 = 1, 2, 4; 784 all. https://cdn.automationdirect.com/static/specs/78relaysockets.pdf"
       },
       {
         "a": "12",
         "b": "8",
         "when": "energized",
-        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+        "note": "78relays.pdf, pin end: common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14. Poles: 781 = 1; 782 = 1, 4 (9, 12); 783 = 1, 2, 4; 784 all. https://cdn.automationdirect.com/static/specs/78relaysockets.pdf"
       },
       {
         "a": "9",
         "b": "1",
         "when": "de-energized",
-        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+        "note": "78relays.pdf, pin end: common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14. Poles: 781 = 1; 782 = 1, 4 (9, 12); 783 = 1, 2, 4; 784 all. https://cdn.automationdirect.com/static/specs/78relaysockets.pdf"
       },
       {
         "a": "10",
         "b": "2",
         "when": "de-energized",
-        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+        "note": "78relays.pdf, pin end: common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14. Poles: 781 = 1; 782 = 1, 4 (9, 12); 783 = 1, 2, 4; 784 all. https://cdn.automationdirect.com/static/specs/78relaysockets.pdf"
       },
       {
         "a": "11",
         "b": "3",
         "when": "de-energized",
-        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+        "note": "78relays.pdf, pin end: common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14. Poles: 781 = 1; 782 = 1, 4 (9, 12); 783 = 1, 2, 4; 784 all. https://cdn.automationdirect.com/static/specs/78relaysockets.pdf"
       },
       {
         "a": "12",
         "b": "4",
         "when": "de-energized",
-        "note": "https://cdn.automationdirect.com/static/specs/78relaysockets.pdf / 78relays.pdf wiring diagrams (viewed from pin end): common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14 (IEC numbers in brackets). 781 has pole 1 only, 782 poles 1 and 4 (9, 12), 783 poles 1, 2, 4, 784 all four."
+        "note": "78relays.pdf, pin end: common 9/10/11/12, N.O. 5/6/7/8, N.C. 1/2/3/4, coil 13-14. Poles: 781 = 1; 782 = 1, 4 (9, 12); 783 = 1, 2, 4; 784 all. https://cdn.automationdirect.com/static/specs/78relaysockets.pdf"
       }
     ],
     "indicators": [
@@ -2301,7 +2315,7 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
           "Check the S33-S34 link and the S1/S2 switch positions (only change S1 with power off)."
         ],
         "fix": [
-          "Bridge S33-S34 for automatic start; correct S1; replace device if welded."
+          "Auto start only where risk assessment and drawings call for it. Never bridge S33-S34 on an E-stop or guard relay. Fix S1; replace if contacts welded."
         ],
         "source": "https://www.dold.com/downloads/LG5925_DB.pdf (LG 5925 / 01.04.22 en / 542A) (Notes; Troubleshooting)"
       }
@@ -2528,19 +2542,19 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "a": "13",
         "b": "14",
         "when": "both buttons pressed within 0.5 s (outputs enabled)",
-        "note": "https://cdn.automationdirect.com/static/manuals/safetyrelays/bg5933_bh5933.pdf: BG 5933 block diagram 13, 23 (NO) and 31 (NC); function diagram 13-14/23-24 close when S1 and S2 are activated within 0.5 s; NC 31-32 only for signalling"
+        "note": "BG 5933: NO 13, 23, NC 31. 13-14/23-24 close if S1 and S2 operate within 0.5 s; NC 31-32 is for signalling only. https://cdn.automationdirect.com/static/manuals/safetyrelays/bg5933_bh5933.pdf"
       },
       {
         "a": "23",
         "b": "24",
         "when": "both buttons pressed within 0.5 s (outputs enabled)",
-        "note": "https://cdn.automationdirect.com/static/manuals/safetyrelays/bg5933_bh5933.pdf: BG 5933 block diagram 13, 23 (NO) and 31 (NC); function diagram 13-14/23-24 close when S1 and S2 are activated within 0.5 s; NC 31-32 only for signalling"
+        "note": "BG 5933: NO 13, 23, NC 31. 13-14/23-24 close if S1 and S2 operate within 0.5 s; NC 31-32 is for signalling only. https://cdn.automationdirect.com/static/manuals/safetyrelays/bg5933_bh5933.pdf"
       },
       {
         "a": "31",
         "b": "32",
         "when": "outputs not enabled (K1/K2 de-energized)",
-        "note": "https://cdn.automationdirect.com/static/manuals/safetyrelays/bg5933_bh5933.pdf: BG 5933 block diagram 13, 23 (NO) and 31 (NC); function diagram 13-14/23-24 close when S1 and S2 are activated within 0.5 s; NC 31-32 only for signalling"
+        "note": "BG 5933: NO 13, 23, NC 31. 13-14/23-24 close if S1 and S2 operate within 0.5 s; NC 31-32 is for signalling only. https://cdn.automationdirect.com/static/manuals/safetyrelays/bg5933_bh5933.pdf"
       }
     ],
     "indicators": [
@@ -2950,31 +2964,31 @@ export const POWER_FAULTS: DeviceFaultProfile[] = [
         "a": "13",
         "b": "14",
         "when": "safety OK (OUT on)",
-        "note": "https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf status indicators table: OUT On = 13/14, 23/24, 33/34 closed (41/42 open) on CI; 13/14, 23/24 closed on DI/SI; 13/14, 23/24, 33/34, 43/44 on EM. DIS has OSSD outputs 14, 24, 34, 44 (no relay contacts) (CI, DI, EM, SI)"
+        "note": "OUT On closes: CI 13/14, 23/24, 33/34 (41/42 open); DI/SI 13/14, 23/24; EM 13/14, 23/24, 33/34, 43/44. DIS: OSSD 14, 24, 34, 44 (CI, DI, EM, SI) https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf"
       },
       {
         "a": "23",
         "b": "24",
         "when": "safety OK (OUT on)",
-        "note": "https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf status indicators table: OUT On = 13/14, 23/24, 33/34 closed (41/42 open) on CI; 13/14, 23/24 closed on DI/SI; 13/14, 23/24, 33/34, 43/44 on EM. DIS has OSSD outputs 14, 24, 34, 44 (no relay contacts) (CI, DI, EM, SI)"
+        "note": "OUT On closes: CI 13/14, 23/24, 33/34 (41/42 open); DI/SI 13/14, 23/24; EM 13/14, 23/24, 33/34, 43/44. DIS: OSSD 14, 24, 34, 44 (CI, DI, EM, SI) https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf"
       },
       {
         "a": "33",
         "b": "34",
         "when": "safety OK (OUT on)",
-        "note": "https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf status indicators table: OUT On = 13/14, 23/24, 33/34 closed (41/42 open) on CI; 13/14, 23/24 closed on DI/SI; 13/14, 23/24, 33/34, 43/44 on EM. DIS has OSSD outputs 14, 24, 34, 44 (no relay contacts) (CI and EM only)"
+        "note": "OUT On closes: CI 13/14, 23/24, 33/34 (41/42 open); DI/SI 13/14, 23/24; EM 13/14, 23/24, 33/34, 43/44. DIS: OSSD 14, 24, 34, 44 (CI and EM only) https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf"
       },
       {
         "a": "43",
         "b": "44",
         "when": "safety OK (OUT on)",
-        "note": "https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf status indicators table: OUT On = 13/14, 23/24, 33/34 closed (41/42 open) on CI; 13/14, 23/24 closed on DI/SI; 13/14, 23/24, 33/34, 43/44 on EM. DIS has OSSD outputs 14, 24, 34, 44 (no relay contacts) (EM only)"
+        "note": "OUT On closes: CI 13/14, 23/24, 33/34 (41/42 open); DI/SI 13/14, 23/24; EM 13/14, 23/24, 33/34, 43/44. DIS: OSSD 14, 24, 34, 44 (EM only) https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf"
       },
       {
         "a": "41",
         "b": "42",
         "when": "safety not OK (OUT off)",
-        "note": "https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf status indicators table: OUT On = 13/14, 23/24, 33/34 closed (41/42 open) on CI; 13/14, 23/24 closed on DI/SI; 13/14, 23/24, 33/34, 43/44 on EM. DIS has OSSD outputs 14, 24, 34, 44 (no relay contacts) (CI only)"
+        "note": "OUT On closes: CI 13/14, 23/24, 33/34 (41/42 open); DI/SI 13/14, 23/24; EM 13/14, 23/24, 33/34, 43/44. DIS: OSSD 14, 24, 34, 44 (CI only) https://literature.rockwellautomation.com/idc/groups/literature/documents/um/440r-um013_-en-p.pdf"
       }
     ],
     "indicators": [

@@ -24,7 +24,9 @@ import type { AnalogRange } from '../../../types/io';
 import { elementAddresses, isBlockRaw, type LadderOutput, type LadderProgram } from '../ladder';
 import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseAddress } from './click';
 import { toIecSt, type StDialect, type StProgram, type StVariable } from './iecSt';
+import { logixName } from './logixExport';
 import { getPart } from '../../../electrical/catalog';
+import { outsideUserText } from '../userText';
 
 type Family = 'S7-1200' | 'S7-1500';
 
@@ -71,7 +73,9 @@ export function siemensAddress(base: string, c: CpuModel, modules: ModuleSlot[])
   if (io) {
     const isIn = io[1] === 'X', slot = Number(io[2]), n = Number(io[3]) - 1;
     const area = isIn ? 'I' : 'Q';
-    if (slot === 0) return { address: `%${area}${bit(0, n)}`, inferred: false };
+    // On-board terminals only as many as the CPU has: an S7-1500 has none (its %I0.0 is the first module's, X101), so
+    // a stale X001 must not get a second tag at %I0.0.
+    if (slot === 0) return n < (isIn ? c.builtInInputs : c.builtInOutputs) ? { address: `%${area}${bit(0, n)}`, inferred: false } : null;
     if (fam === 'S7-1200') return { address: `%${area}${bit(8 + 4 * (slot - 1), n)}`, inferred: true };
     // S7-1500 / ET 200SP: modules packed from byte 0 in slot order, ceil(points / 8) bytes each.
     let byte = 0;
@@ -94,7 +98,15 @@ export function siemensAddress(base: string, c: CpuModel, modules: ModuleSlot[])
   return { address: `%${area}${byte + 2 * (ch.channel - 1)}`, inferred: true };
 }
 
-export interface SiemensTag { name: string; address: string; type: 'Bool' | 'Int'; comment: string; inferred: boolean }
+export interface SiemensTag { name: string; address: string; type: 'Bool' | 'Int'; comment: string; inferred: boolean; /** The app operand behind the tag (X001, DF1). */ base?: string }
+
+/** SCL instruction and type names (also used to write changes into an original SCL source, import/stPatch.ts). */
+export const SCL_BLOCKS: Pick<StDialect, 'types' | 'params' | 'msToTime' | 'timeToMs'> = {
+  types: { TON: 'TON_TIME', TOF: 'TOF_TIME', RTO: 'TONR_TIME', CTU: 'CTU_DINT', CTD: 'CTD_DINT', R_TRIG: 'R_TRIG', F_TRIG: 'F_TRIG', BOOL: 'Bool', DINT: 'DInt', REAL: 'Real' },
+  params: { rtoReset: 'R', ctuReset: 'R', ctdLoad: 'LD' },
+  msToTime: (e) => (/^\d+$/.test(e) ? `T#${e}ms` : `DINT_TO_TIME(${e})`),
+  timeToMs: (e) => `TIME_TO_DINT(${e})`,
+};
 
 /** SCL dialect: FB statics referenced as #Name, PLC tags "Name", analog raw words scaled with NORM_X / SCALE_X. */
 function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDialect {
@@ -106,16 +118,21 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
     ioVar: (base, name) => {
       const s = siemensAddress(base, c, modules);
       if (!s || !/^[XY]/.test(base)) return null;
-      tags.push({ name, address: s.address, type: 'Bool', comment: ctx.labels.get(base) ?? base, inferred: s.inferred });
+      tags.push({ name, address: s.address, type: 'Bool', comment: ctx.labels.get(base) ?? `${base.startsWith('X') ? 'Input' : 'Output'} ${s.address}`, inferred: s.inferred, base });
       return `"${name}"`;
     },
-    ioTodo: (base, name) => `(* TODO ${base}: no address on this CPU (${name}) *)`,
+    ioTodo: (_base, name) => `(* ${name}: no I/O point on this CPU (kept as a static of the block, not wired) *)`,
+    // A register the project gives no name: named by its type, never by the CLICK register ("DS1119").
+    unnamed: (base) => {
+      const m = /^(X|Y|C|T|CT|DS|DD|DH|DF|TXT|SD)(\d+)$/.exec(base);
+      const kind: Record<string, string> = { X: 'Input', Y: 'Output', C: 'Flag', T: 'Timer', CT: 'Counter', DS: 'Int', DD: 'DInt', DH: 'Word', DF: 'Real', TXT: 'Text', SD: 'System' };
+      return m ? { name: `${kind[m[1]]}_${m[2]}`, comment: 'no name in the project' } : undefined;
+    },
+    // Kept SCL of the original program reads / writes the channel's raw word (Int 0…27648), as it did.
+    rawWord: (base, ref) => (analog.has(base) ? `"${ref.replace(/^#/, '')}_raw"` : null),
     ref: (n) => `#${n}`,
     firstScan: '#FirstScan',
-    types: { TON: 'TON_TIME', TOF: 'TOF_TIME', RTO: 'TONR_TIME', CTU: 'CTU_DINT', CTD: 'CTD_DINT', R_TRIG: 'R_TRIG', F_TRIG: 'F_TRIG', BOOL: 'Bool', DINT: 'DInt', REAL: 'Real' },
-    params: { rtoReset: 'R', ctuReset: 'R', ctdLoad: 'LD' },
-    msToTime: (e) => (/^\d+$/.test(e) ? `T#${e}ms` : `DINT_TO_TIME(${e})`),
-    timeToMs: (e) => `TIME_TO_DINT(${e})`,
+    ...SCL_BLOCKS,
     prologue: ['(* First scan after every start (non-retentive statics restart at FALSE) *)', '#FirstScan := NOT #Initialized;', '#Initialized := TRUE;'],
     ioExtra: (vars: Map<string, StVariable>) => {
       const inputs: string[] = [], outputs: string[] = [];
@@ -125,7 +142,7 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
         const s = siemensAddress(base, c, modules);
         if (!s) continue;
         const raw = `${v.name}_raw`;
-        tags.push({ name: raw, address: s.address, type: 'Int', comment: `${p.description} (${p.analog.range}, raw 0…27648 = ${p.analog.min}…${p.analog.max} ${p.analog.units})`, inferred: s.inferred });
+        tags.push({ name: raw, address: s.address, type: 'Int', comment: `${p.description} (${p.analog.range}, raw 0…27648 = ${p.analog.min}…${p.analog.max} ${p.analog.units})`, inferred: s.inferred, base });
         const lo = p.analog.min.toFixed(1), hi = p.analog.max.toFixed(1);
         if (p.type === 'input') inputs.push(`#${v.name} := SCALE_X(MIN := ${lo}, VALUE := NORM_X(MIN := 0, VALUE := "${raw}", MAX := 27648), MAX := ${hi});`);
         else outputs.push(`"${raw}" := REAL_TO_INT(SCALE_X(MIN := 0.0, VALUE := NORM_X(MIN := ${lo}, VALUE := #${v.name}, MAX := ${hi}), MAX := 27648.0));`);
@@ -133,6 +150,22 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
       return { inputs, outputs };
     },
   };
+}
+
+/**
+ * A comment in the program's own names: the app's operands an HMI description quotes ("Safety OK (X001)", "within
+ * DS1001 seconds", "Reset (C1003)") become the SCL names a TIA user sees — PLC tags "Safety_OK", statics
+ * #SP_Head_Timeout, timer / counter values #Tmr.ET / #Cnt.CV. Operands the program does not have are left as they are.
+ */
+export function sclComment(text: string, variables: StVariable[], users: string[] = []): string {
+  const ref = new Map<string, string>();
+  for (const v of variables) ref.set(v.base.toUpperCase(), v.io ?? `#${v.name}`);
+  return outsideUserText(text, users, (m) => {
+    const [, p, n] = /^([A-Z]+)(\d+)$/.exec(m) ?? [];
+    if (p === 'TD') { const t = ref.get(`T${n}`); return t ? `${t}.ET` : m; }
+    if (p === 'CTD') { const c = ref.get(`CT${n}`); return c ? `${c}.CV` : m; }
+    return ref.get(m) ?? m;
+  });
 }
 
 /** TIA Portal reads external sources as UTF-8 only with a byte-order mark. */
@@ -153,7 +186,14 @@ export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport 
   // Setpoints, counters and run hours survive a power cycle (CLICK keeps DS / DD / DH / DF registers and
   // counters retentive): those statics are RETAIN in the optimized instance DB, the rest are not.
   const RETAIN_RE = /^(DS|DD|DH|DF|CT|CTD)\d+$/i;
-  const line = (v: { name: string; type: string; comment: string }) => `      ${v.name} : ${v.type};   // ${v.comment.replace(/[\r\n]+/g, ' ')}`;
+  // The user's own texts a comment quotes (I/O descriptions, tag comments, rung comments) keep their words.
+  // Comments the app or its AI wrote (tag and rung comments) speak the program's names; the user's own I/O
+  // descriptions and kept code of another PLC stay as written.
+  const users = [...ctx.io.map((x) => x.description), ctx.header, ...program.rungs.flatMap((r) => r.outputs.flatMap((o) => (o.type === 'RAW' ? [o.text] : [])))]
+    .map((t) => t.trim()).filter((t) => t && !/^[A-Z]+\d+$/i.test(t)).sort((a, b) => b.length - a.length);
+  // A program contact on a terminal the CPU does not have (a stale X001 on an S7-1500): a plain static, said.
+  const stray = (v: StVariable) => (/^[XY]\d+$/.test(v.base) && !v.io ? ' (no I/O point: not wired)' : '');
+  const line = (v: StVariable) => `      ${v.name} : ${v.type};   // ${(v.comment === v.base ? v.comment : sclComment(v.comment, st.variables, users)).replace(/[\r\n]+/g, ' ')}${stray(v)}`;
   const decl = [
     '      Initialized : Bool;   // set after the first scan',
     '      FirstScan : Bool;   // TRUE on the first scan after a start',
@@ -161,7 +201,8 @@ export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport 
   ];
   const retain = st.variables.filter((v) => RETAIN_RE.test(v.base)).map(line);
   const indent = (s: string) => (s ? `   ${s}` : s);
-  const body = st.body.split('\n').map(indent).join('\n');
+  // Rung comments in the program's own names too ("preset is the HMI setpoint #SP_Push_Time", not DS1001).
+  const body = st.body.replace(/\(\* ([\s\S]*?) \*\)/g, (_m, t: string) => `(* ${sclComment(t, st.variables, users)} *)`).split('\n').map(indent).join('\n');
   const scl = `${BOM}${blocks.map((b) => `${b}\n\n`).join('')}FUNCTION_BLOCK "Machine"
 { S7_Optimized_Access := 'TRUE' }
 VERSION : 0.1
@@ -192,10 +233,33 @@ END_ORGANIZATION_BLOCK
   return { scl, tags, st };
 }
 
+/**
+ * Tags for the wired I/O points the program does not use (yet): TIA users expect every terminal of the I/O list in
+ * the tag table, with its description. Named like the program's tags; said in the comment.
+ */
+export function unusedIoTags(program: LadderProgram, ctx: ExportContext, have: SiemensTag[] = buildScl(program, ctx).tags): SiemensTag[] {
+  const c = SIEMENS_CPUS.find((x) => x.id === ctx.cpuId) ?? SIEMENS_CPUS[1];
+  const modules = ctx.modules ?? [];
+  const at = new Set(have.map((t) => t.address));
+  const used = new Set(have.map((t) => t.name.toLowerCase()));
+  const out: SiemensTag[] = [];
+  for (const p of ctx.io) {
+    const base = ctx.addresses.get(p.id)?.toUpperCase() ?? '';
+    const s = base ? siemensAddress(base, c, modules) : null;
+    if (!s || at.has(s.address)) continue;
+    const analog = p.signal === 'analog';
+    // The name as written (with _raw for an analog word) is the one reserved: no two tags share a name.
+    const name = logixName(analog ? `${p.description || base}_raw` : p.description || base, used, base);
+    at.add(s.address);
+    out.push({ name, address: s.address, type: analog ? 'Int' : 'Bool', comment: `${p.description || base} (not used by the program yet)`, inferred: s.inferred, base });
+  }
+  return out;
+}
+
 /** PLC tag table for TIA Portal import (.sdf). Module tags whose address is inferred say so in the comment. */
 export function siemensTagsSdf(program: LadderProgram, ctx: ExportContext): string {
   const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
-  const { tags } = buildScl(program, ctx);
+  const tags = [...buildScl(program, ctx).tags, ...unusedIoTags(program, ctx)];
   return tags.map((t) => [t.name, t.address, t.type, 'True', 'True', 'False', t.inferred ? `${t.comment} — check against Device configuration` : t.comment, '', 'True'].map(q).join(',')).join('\r\n') + '\r\n';
 }
 
@@ -241,5 +305,6 @@ export const siemensProfile: PlcProfile = {
   exporters: EXPORTERS,
   analogChannels: siemensAnalogChannels,
   mnemonics: SIEMENS_MNEMONICS,
-  ioTag: (a, modules) => siemensAddress(a, SIEMENS_CPUS[1], modules)?.address ?? null,
+  // The project's own CPU (an S7-1500 numbers module bytes differently from an S7-1200).
+  ioTag: (a, modules, cpuId) => siemensAddress(a, SIEMENS_CPUS.find((c) => c.id === cpuId) ?? SIEMENS_CPUS[1], modules)?.address ?? null,
 };
