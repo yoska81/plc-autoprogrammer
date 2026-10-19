@@ -134,6 +134,8 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   // The brand asked for (named in the description or set in Brand preference), else the chosen PLC's: its CPUs and its
   // panels first; the other brands are one click away, never hidden for good.
   const asked = requestedProfiles(specToText(spec), plcPreferenceOf(project.info.vendors?.plc, project.info.plcChosen));
+  // No brand asked for: the CPU selected on this page (before Apply) leads, on purpose, so picking another brand's
+  // CPU shows that brand's CPUs and panels at once.
   const mainProfiles = asked.length ? asked : PLC_PROFILES.filter((p) => p.cpuModels.some((c) => c.id === (choice?.cpuId ?? project.cpuId)));
   const isMain = (id: string) => !mainProfiles.length || mainProfiles.some((p) => p.cpuModels.some((c) => c.id === id));
   const [otherCpus, setOtherCpus] = useUi('equipment.otherBrandCpus', false);
@@ -147,6 +149,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   // is listed but cannot be chosen (screens are never laid out on a guessed resolution).
   // Panels of the HMI brands the user chose; none chosen: the PLC brand's own panels first (C-more for CLICK).
   const plcVendor = mainProfiles[0] ? vendorOf(mainProfiles[0]) : '';
+  // Follows the selected CPU's brand too (before Apply), so the panels listed are ones that CPU can talk to.
   const hmiMakers = project.info.vendors?.hmi?.length || !plcVendor ? normalizePreference(project.info.vendors).hmi : [plcVendor];
   const cpu = choice ? findCpu(choice.cpuId) : null;
   const fit = cpu && choice ? cpuFit(cpu, choice.modules, need) : null;
