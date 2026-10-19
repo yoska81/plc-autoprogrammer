@@ -116,10 +116,16 @@ export const useIOStore = create<IOStore>()(
         // A new list: description edits of the old points no longer apply.
         if (replace) useEditsStore.getState().clearTexts('io:');
         set((s) => {
-          let current = replace ? [] : [...s.projectIO];
+          const current = replace ? [] : [...s.projectIO];
+          // The lowest free number each time, as nextInputId / nextOutputId give (found once: a big program has thousands).
+          const used = { input: new Set<number>(), output: new Set<number>() };
+          for (const p of current) { const n = parseInt(p.id.slice(1), 10); if (!isNaN(n)) used[p.type].add(n); }
+          const next = { input: 1, output: 1 };
           for (const p of points) {
-            const id = p.type === 'input' ? nextInputId(current) : nextOutputId(current);
-            current = [...current, { ...p, ...(p.analog ? { analog: withAnalogRange(p.description, p.analog) } : {}), id }];
+            while (used[p.type].has(next[p.type])) next[p.type]++;
+            used[p.type].add(next[p.type]);
+            const id = `${p.type === 'input' ? 'I' : 'Q'}${String(next[p.type]).padStart(3, '0')}`;
+            current.push({ ...p, ...(p.analog ? { analog: withAnalogRange(p.description, p.analog) } : {}), id });
           }
           return { projectIO: current };
         });

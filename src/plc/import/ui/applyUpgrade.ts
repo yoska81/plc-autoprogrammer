@@ -17,10 +17,11 @@ import type { UpgradeRoles } from '../../../hmi/engine/upgradeHmi';
 /**
  * Make the imported program the open project: PLC and modules, the I/O list (replaced), the program
  * (the previous one is kept as a version), the machine description sections that are still empty,
- * the questions, and the original for "Original vs now".
+ * the questions, and the original for "Original vs now". `planned`: the plan already worked out (off the page,
+ * for a big program).
  */
-export function applyUpgrade(imp: ImportedProgram, fileText?: string): UpgradePlan {
-  const plan = planUpgrade(imp, useProjectStore.getState().plcId);
+export function applyUpgrade(imp: ImportedProgram, fileText?: string, planned?: UpgradePlan): UpgradePlan {
+  const plan = planned ?? planUpgrade(imp, useProjectStore.getState().plcId);
   const project = useProjectStore.getState();
   project.setPlc(plan.plcId, plan.cpuId);
   project.setModules(plan.modules);
