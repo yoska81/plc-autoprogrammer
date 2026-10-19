@@ -130,6 +130,17 @@ export async function measureOverlaps(variant: Parameters<typeof setup>[0], opts
       if (w > 0 && h > 0 && w * h >= minArea) tt.push({ a: texts[a].s, b: texts[b].s, area: +(w * h).toFixed(2), at: [+Math.max(A.x0, B.x0).toFixed(1), +Math.max(A.y0, B.y0).toFixed(1)] });
     }
     const tl: LineHit[] = [];
+    // The frame and the title block's border are lines too: sheet text keeps 0.5 mm clear of them and stays above the
+    // title block (a PDF renders the text a hair lower than the browser measures it).
+    const frameSegs = [...svg.querySelectorAll<SVGGraphicsElement>('[data-frame]')].flatMap((el) => segments(el, toRoot(el)));
+    const titleEl = svg.querySelector<SVGGraphicsElement>('[data-frame="title"]');
+    const titleTop = titleEl ? new DOMPoint(0, titleEl.getBBox().y).matrixTransform(toRoot(titleEl)).y : Infinity;
+    for (const x of texts) {
+      if (!x.t.closest('[data-cad="GRAPHICS"]')) continue;
+      const g = { x0: x.box.x0 - 0.5, y0: x.box.y0 - 0.5, x1: x.box.x1 + 0.5, y1: x.box.y1 + 0.5 };
+      const onFrame = Math.max(0, ...frameSegs.map((s) => inside(s, g)));
+      if (onFrame >= minLen || x.box.y1 > titleTop) tl.push({ text: `${x.s} (on the frame / title block)`, len: +Math.max(onFrame, x.box.y1 - titleTop).toFixed(2), at: [+x.box.x0.toFixed(1), +x.box.y0.toFixed(1)] });
+    }
     for (const x of texts) {
       let worst = 0;
       for (const { s, order: o } of segs) { const l = inside(s, x.box); if (l > worst && !hidden(o, x.box)) worst = l; }
