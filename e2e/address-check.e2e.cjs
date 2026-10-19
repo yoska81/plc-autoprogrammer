@@ -33,12 +33,19 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   const alertText = () => page.getByRole('alert').filter({ hasText: /address|input|output|module|CPU/ }).first().innerText().catch(() => '');
 
   await type('zz99');
-  check(/"zz99" is not an address on CLICK/.test(await alertText()), 'zz99: not an address, said under the field');
+  check(/"zz99" is not an address on AutomationDirect CLICK/.test(await alertText()), 'zz99: not an address, said under the field');
   check(await field.inputValue() === 'zz99' && await saved() === '', 'zz99 stays in the field and is not saved');
   await type('Y001');
   check(/Y001 is an output, and this point is an input/.test(await alertText()), 'Y001 on an input: refused');
   await type('X801');
   check(/no module in slot 8/.test(await alertText()), 'X801 with no module in slot 8: refused');
+  // Refused for a module that is not there; checked again once the module is added.
+  await page.evaluate(async () => (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().setModules([]));
+  await type('X101');
+  check(/no module in slot 1/.test(await alertText()), 'X101 with no module: refused');
+  await page.evaluate(async () => (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().setModules(['C0-16ND3']));
+  await page.waitForTimeout(300);
+  check(!(await alertText()), 'module added: the refusal goes away');
   await type('x002');
   check(await saved() === 'X002' && !(await alertText()), 'x002: saved as X002, no message');
   await type('');

@@ -4,6 +4,7 @@
  * too (%I0.0, Local:1:I.Pt00.Data, _IO_EM_DI_00) and turned into the app's address of that terminal.
  */
 import type { AddressInfo, CpuModel, ModuleSlot, PlcProfile } from './profile';
+import { platformOf } from './fit';
 
 export type AddressCheck = { ok: true; address: string } | { ok: false; reason: string };
 
@@ -17,6 +18,11 @@ export function rackTerminals(rack: Rack, type: 'input' | 'output'): string[] {
   counts.forEach((n, slot) => { for (let p = 1; p <= Math.min(n, 99) && slot < 10; p++) out.push(`${letter}${slot}${String(p).padStart(2, '0')}`); });
   return out;
 }
+
+/** The PLC numbers its I/O as the app's terminals (X001…, Y001…); generic Structured Text does not. */
+const usesTerminals = (rack: Rack) => rack.profile.id !== 'generic-st' && [...rack.profile.autoAddresses([{ id: 'p', description: '', type: 'input', category: 'Station 1' }], rack.cpu, rack.modules).values()].every((a) => !a || /^[XY]\d{3}$/.test(a));
+/** The PLC by its platform name ("CompactLogix 5370 (1769 L2 / L3)" on a 1769 CPU), else the profile's. */
+const plcName = (rack: Rack) => platformOf(rack.cpu.id)?.name ?? `${rack.profile.vendor} ${rack.profile.name}`;
 
 const analogOf = (rack: Rack, type: 'input' | 'output') => (rack.profile.analogChannels?.(rack.cpu, rack.modules) ?? []).filter((c) => c.kind === type);
 
@@ -33,6 +39,8 @@ export function checkIOAddress(rack: Rack, point: { type: 'input' | 'output'; si
   const typed = raw.trim();
   if (!typed) return { ok: true, address: '' };
   const up = typed.toUpperCase();
+  // A PLC whose I/O is not the app's X / Y terminals (generic Structured Text): the address is the user's.
+  if (!usesTerminals(rack)) return { ok: true, address: typed };
   const analog = point.signal === 'analog';
   const channels = analogOf(rack, point.type).map((c) => c.address);
   const terminals = analog ? channels : rackTerminals(rack, point.type);
@@ -43,8 +51,13 @@ export function checkIOAddress(rack: Rack, point: { type: 'input' | 'output'; si
   const first = terminals[0];
   // Said in the PLC's own form when it has one (%Q0.0 on an S7), else the app's (Y001).
   const example = first ? ` This PLC's first ${analog ? `analog ${word} channel` : word} is ${nativeName(rack, first) ?? first}.` : '';
-  const info = rack.profile.parseAddress(address);
-  if (!info) return { ok: false, reason: `"${typed}" is not an address on ${rack.profile.name}.${example}` };
+  // A terminal the CPU and modules have is valid whatever its number (a 32-point module's X117…X132, a Micro850's
+  // X017…X028): the rack is checked first, the PLC's general address rules only for the messages.
+  if (terminals.includes(address)) return { ok: true, address };
+  const other = analog ? [] : rackTerminals(rack, point.type === 'input' ? 'output' : 'input');
+  if (other.includes(address)) return { ok: false, reason: `${up} is ${point.type === 'input' ? 'an output' : 'an input'}, and this point is ${word === 'input' ? 'an input' : 'an output'}.${example}` };
+  const info = rack.profile.parseAddress(address) ?? (/^[XY]\d{3}$/.test(address) ? { kind: address[0] === 'X' ? 'input' as const : 'output' as const, isBit: true } : null);
+  if (!info) return { ok: false, reason: `"${typed}" is not an address on ${plcName(rack)}.${example}` };
   if (analog) {
     if (terminals.includes(address)) return { ok: true, address };
     if (!channels.length) return { ok: false, reason: `This PLC has no analog ${word} channel. Add an analog module on the Equipment page.` };

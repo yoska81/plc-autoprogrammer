@@ -35,10 +35,15 @@ export function IORow({ point, address, duplicate, device, rack }: IORowProps) {
   const { updateDescription, updateCategory, deletePoint, setPlcAddress } = useIOStore();
   const isManual = Boolean(point.plcAddress);
   // A typed address the PLC does not have stays in the field with the reason; it is not saved.
-  const [bad, setBad] = useState<{ text: string; reason: string } | null>(null);
+  const rackKey = `${rack.profile.id}|${rack.cpu.id}|${rack.modules.map((m) => m.partNumber).join(',')}`;
+  const [refused, setBad] = useState<{ text: string; reason: string; rackKey: string } | null>(null);
+  // Checked again when the PLC, CPU or modules change (the module it needed may be there now; never saved by itself).
+  const bad = refused && refused.rackKey !== rackKey
+    ? (() => { const r = checkIOAddress(rack, point, refused.text); return r.ok ? null : { ...refused, reason: r.reason }; })()
+    : refused;
   const typedAddress = (text: string) => {
     const r = checkIOAddress(rack, point, text);
-    if (!r.ok) { setBad({ text, reason: r.reason }); return; }
+    if (!r.ok) { setBad({ text, reason: r.reason, rackKey }); return; }
     setBad(null);
     if (r.address !== (point.plcAddress ?? '')) setPlcAddress(point.id, r.address);
   };
