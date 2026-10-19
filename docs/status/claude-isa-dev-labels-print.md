@@ -380,3 +380,9 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
     - Omron CP1W-CIF01 and CIF11.
   - The boards carry `inCpu: 'yes'`: they take no panel space.
   - `plcModulePart(hmi, platformId)` returns the bare part number, for the BOM and the rack.
+- **Operator contacts in one form:** every maker now writes "(1) N.O." / "(1) N.C." (22 Allen-Bradley / Siemens / Schneider entries normalized). This lets the pushbutton pick choose non-AutomationDirect buttons. Enforced in catalog.test.
+- **Siemens SIRIUS ACT 3SU1 complete units**, from the Siemens TED datasheets:
+  - 1 NO, plain: blue (reset), black, yellow, white.
+  - 1 NO, illuminated with a 24 V AC/DC LED: white and blue.
+  - Front IP66/67/69K, 22.3 mm hole, 49.7 mm behind the panel.
+  - The 230 V and metal variants are left out.
