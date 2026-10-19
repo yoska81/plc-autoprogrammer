@@ -102,29 +102,12 @@ function createWindow() {
   });
   if (b?.maximized) win.maximize();
   win.once('ready-to-show', () => win.show());
-  let storageFlushed = false, flushing = false;
-  win.on('close', (e) => {
-    saveBounds(win);
-    // The page writes the projects to IndexedDB a moment after each change: the window waits for those writes
-    // (at most 10 s), so a big project kept only there is never cut off.
-    if (storageFlushed || !flushReady.has(win.webContents.id) || win.webContents.isCrashed()) return;
-    e.preventDefault();
-    if (flushing) return;
-    flushing = true;
-    const done = (ev) => {
-      if (ev && ev.sender !== win.webContents) return;
-      ipcMain.removeListener('isa:storage-flushed', done);
-      clearTimeout(timer);
-      flushing = false;
-      storageFlushed = true;
-      if (!win.isDestroyed()) win.close();
-    };
-    const timer = setTimeout(done, 10000);
-    ipcMain.on('isa:storage-flushed', done);
-    win.webContents.send('isa:flush-storage');
-  });
+  win.on('close', () => saveBounds(win));
+  const waitAgain = waitForStorageOnClose(win);
 
   // Links: pages of the app (print views) open in a new app window, everything else in the browser.
+  // pages of the app opened from it (print views) keep projects too: their windows wait the same way
+  win.webContents.on('did-create-window', (child) => waitForStorageOnClose(child));
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isAppUrl(url)) return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true } } };
     if (/^https?:|^mailto:/.test(url)) void shell.openExternal(url);
@@ -141,7 +124,7 @@ function createWindow() {
       detail: 'Cancel, then press Save (Ctrl+S) to keep them in the project file.',
     });
     if (choice === 0) e.preventDefault();
-    else storageFlushed = false; // the window stays: the next close waits for the writes again
+    else waitAgain(); // the window stays: the next close waits for the writes again
   });
   const startFile = projectFileArg(process.argv);
   if (startFile) win.webContents.once('did-finish-load', () => setTimeout(() => sendProjectFile(win, startFile), 1500));
@@ -254,8 +237,50 @@ ipcMain.handle('isa:print', async (e, job) => {
 });
 
 ipcMain.on('isa:version', (e) => { e.returnValue = app.getVersion(); });
-// Pages that answer 'isa:flush-storage' (the app's own page; not print views).
+// Pages that answer 'isa:flush-storage' (pages of the app, through preload onFlushStorage).
 const flushReady = new Set();
+// Quitting (File › Exit, Cmd-Q): a window that waits for its writes cancels the quit; the quit goes on after them.
+let quitting = false;
+app.on('before-quit', () => { quitting = true; });
+
+/**
+ * The page writes the projects to IndexedDB a moment after each change: a window that closes waits for those
+ * writes, so a big project kept only there is never cut off. After 10 s the user is asked (wait, or close anyway).
+ * Returns `again()`: the window stayed open after all, so its next close waits again.
+ */
+function waitForStorageOnClose(win) {
+  let flushed = false, flushing = false;
+  win.on('close', (e) => {
+    if (flushed || win.webContents.isDestroyed() || !flushReady.has(win.webContents.id) || win.webContents.isCrashed()) return;
+    e.preventDefault();
+    if (flushing) return;
+    flushing = true;
+    const id = win.webContents.id;
+    let timer;
+    const finish = () => {
+      ipcMain.removeListener('isa:storage-flushed', onFlushed);
+      clearTimeout(timer);
+      flushing = false;
+      flushed = true;
+      if (!win.isDestroyed()) win.close();
+      if (quitting) app.quit();
+    };
+    const onFlushed = (ev) => { if (ev.sender.id === id) finish(); };
+    const ask = () => {
+      if (win.isDestroyed()) { finish(); return; }
+      const choice = dialog.showMessageBoxSync(win, {
+        type: 'warning', buttons: ['Wait', 'Close anyway'], defaultId: 0, cancelId: 0, noLink: true,
+        title: 'ISA Auto Programmer', message: 'The project is still being saved.',
+        detail: 'A big project takes a moment to write. Close anyway only if the app is stuck: its latest changes may be lost (save the project file first, Ctrl+S).',
+      });
+      if (choice === 1) finish(); else timer = setTimeout(ask, 10000);
+    };
+    timer = setTimeout(ask, 10000);
+    ipcMain.on('isa:storage-flushed', onFlushed);
+    win.webContents.send('isa:flush-storage');
+  });
+  return () => { flushed = false; quitting = false; };
+}
 ipcMain.on('isa:flush-ready', (e) => { const id = e.sender.id; flushReady.add(id); e.sender.once('destroyed', () => flushReady.delete(id)); });
 
 // ── Connect to PLC: Modbus TCP (electron/modbus.cjs) ──

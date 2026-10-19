@@ -35,6 +35,8 @@ export const CLEARED_PREFIX = 'isa-cleared:';
 const WRITE_DELAY_MS = 300;
 /** Longer values are not tried in localStorage (it holds about 5 million characters in all). */
 const LS_MAX_CHARS = 4_000_000;
+/** Sets of values kept aside after a clear that stay (the latest ones; an older set is removed). */
+const KEEP_CLEARED_SETS = 2;
 /** IndexedDB that does not open in this time is not used (the app starts on localStorage). */
 const OPEN_TIMEOUT_MS = 5000;
 
@@ -150,6 +152,8 @@ export async function loadAppStorage(opts: { backend?: StorageBackend; onFailure
   const cleared = !!s && s.getItem(MARKER_KEY) !== MARKER && stored.size > 0;
   const out = new Map<string, string>();
   const copies: [string, string][] = [];
+  // localStorage values IndexedDB is known to hold the same (only these may give way to the placeholder)
+  const confirmed = new Set<string>();
   for (const k of lsKeys) {
     const v = s!.getItem(k);
     if (v === null) continue;
@@ -159,7 +163,7 @@ export async function loadAppStorage(opts: { backend?: StorageBackend; onFailure
       continue;
     }
     out.set(k, v);
-    if (stored.get(k) !== v) copies.push([k, v]);
+    if (stored.get(k) === v) confirmed.add(k); else copies.push([k, v]);
   }
   const asideAt = opts.now ?? Date.now();
   const aside: [string, string][] = [];
@@ -172,13 +176,19 @@ export async function loadAppStorage(opts: { backend?: StorageBackend; onFailure
     if (key !== k) aside.push([k, key]);
   }
   // copies of localStorage's values: not waited for (they are in localStorage until written)
-  for (const [k, v] of copies) track(b.put(k, v).catch((err) => onFailure(err, k)), false);
+  for (const [k, v] of copies) track(b.put(k, v).then(() => { confirmed.add(k); }, (err) => onFailure(err, k)), false);
   // what is kept aside is written under its new key before the old one goes
   await Promise.all(aside.map(async ([k, key]) => { await b.put(key, stored.get(k)!); await b.remove(k); }));
-  if (s && !writeMarker(s, out)) {
+  // only the latest sets kept aside stay (each clear adds one, and all are read in at every start)
+  const setsAside = [...new Set([...out.keys()].flatMap((k) => (k.startsWith(CLEARED_PREFIX) ? [Number(k.slice(CLEARED_PREFIX.length).split(':')[0])] : [])))].sort((x, y) => y - x);
+  const dropped = new Set(setsAside.slice(KEEP_CLEARED_SETS).map((t) => `${CLEARED_PREFIX}${t}:`));
+  const old = [...out.keys()].filter((k) => [...dropped].some((pre) => k.startsWith(pre)));
+  for (const k of old) { out.delete(k); onlyInIdb.delete(k); }
+  await Promise.all(old.map((k) => b.remove(k)));
+  if (s && !writeMarker(s, out, confirmed)) {
     // localStorage full: make room by replacing values IndexedDB has (once written) with the placeholder
     await Promise.all(writing.keys());
-    writeMarker(s, out, true);
+    writeMarker(s, out, confirmed, true);
   }
   mem = out;
   backend = b;
@@ -186,10 +196,10 @@ export async function loadAppStorage(opts: { backend?: StorageBackend; onFailure
   listen();
 }
 
-/** The marker in localStorage; with `makeRoom`, values already in IndexedDB give way to their placeholder. */
-function writeMarker(s: Storage, values: Map<string, string>, makeRoom = false): boolean {
+/** The marker in localStorage; with `makeRoom`, values IndexedDB has confirmed holding give way to their placeholder. */
+function writeMarker(s: Storage, values: Map<string, string>, confirmed: Set<string>, makeRoom = false): boolean {
   try { s.setItem(MARKER_KEY, MARKER); return true; } catch { if (!makeRoom) return false; }
-  const big = [...values].filter(([k, v]) => s.getItem(k) === v && v.length > IN_IDB.length + MARKER_KEY.length + MARKER.length).sort((a, b) => b[1].length - a[1].length);
+  const big = [...values].filter(([k, v]) => confirmed.has(k) && s.getItem(k) === v && v.length > IN_IDB.length + MARKER_KEY.length + MARKER.length).sort((a, b) => b[1].length - a[1].length);
   for (const [k] of big) {
     try { s.setItem(k, IN_IDB); onlyInIdb.add(k); s.setItem(MARKER_KEY, MARKER); return true; } catch { /* next */ }
   }
@@ -219,10 +229,13 @@ function listen(): void {
 }
 
 let desktop = false;
-/** The desktop app: closing its window waits for this (instead of asking, as the browser does). */
-export async function flushBeforeClose(): Promise<void> {
+/**
+ * The desktop app: closing its window waits for this (main.cjs), so the page never asks before leaving (a reload
+ * there would show the "unsaved changes" dialog for it). Registered once at the start.
+ */
+export function flushBeforeClose(register: (flush: () => Promise<void>) => void): void {
   desktop = true;
-  await flushAppStorage();
+  register(flushAppStorage);
 }
 
 /** True when localStorage holds values that only IndexedDB has (shown empty while IndexedDB cannot be opened). */
