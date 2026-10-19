@@ -188,6 +188,9 @@ async function scenario(browser, quick) {
   await page.goto(BASE + '/online?tab=troubleshoot');
   const troubleshooter = await page.getByLabel('Point to troubleshoot').waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
   check(troubleshooter, 'Fault finding opens on an S7 (/online?tab=troubleshoot)');
+  const pointNames = await page.getByLabel('Point to troubleshoot').locator('option').allInnerTexts().catch(() => []);
+  const points = pointNames.filter((t) => /^[XY]\d{3}/.test(t));
+  check(points.length > 0 && points.every((t) => /^[XY]\d{3} \(%[IQ]\d+\.\d\) — /.test(t)), `Fault finding names each point's Siemens address (${points.slice(0, 2).join(' | ') || 'no points'})`);
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await page.context().close();
 }
