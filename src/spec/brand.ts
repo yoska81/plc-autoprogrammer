@@ -9,7 +9,9 @@ import { platformOf } from '../plc/core/fit';
 import { useProjectStore } from '../store/useProjectStore';
 
 /** Catalog vendor of a PLC profile (CLICK has no multi-vendor platform: AutomationDirect). */
-export const vendorOf = (p: PlcProfile) => platformOf(p.cpuModels[0]?.id ?? '')?.vendor ?? (p.id === 'click' ? 'automationdirect' : '');
+/** Catalog vendor of profiles whose CPUs have no platform yet (CLICK; the Yaskawa MP profile until its catalog CPUs land). */
+const PROFILE_VENDOR: Record<string, string> = { click: 'automationdirect', 'yaskawa-mp': 'yaskawa' };
+export const vendorOf = (p: PlcProfile) => platformOf(p.cpuModels[0]?.id ?? '')?.vendor ?? PROFILE_VENDOR[p.id] ?? '';
 
 /**
  * A maker's name counts only when it names the PLC:

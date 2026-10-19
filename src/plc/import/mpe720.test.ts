@@ -141,6 +141,7 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   assert.deepEqual([...hmi.addresses.keys()], ['MB000237', 'MW00010', 'ML00500']);
   const { program } = importProgramFiles([{ name: 'demo_mp.YMW7', text: '', bytes: ymw }, { name: 'panel.emtp', text: '', bytes }]);
   assert.ok(program.report.notes.some((n) => /Touch panel .*2 screens \(Main, Alarms\)/.test(n)));
+  assert.deepEqual(program.source.panel, { vendor: 'weintek', software: 'EasyBuilder Pro 5.07.01', screens: ['Main', 'Alarms'] }, 'the panel project, for the brand rows');
   assert.ok(program.report.notes.some((n) => /3 PLC addresses: 1 of them appear in the ladder/.test(n)));
   assert.throws(() => importProgramFiles([{ name: 'panel.emtp', text: '', bytes }]), /touch-panel project/);
   console.log('emtp: ok');
