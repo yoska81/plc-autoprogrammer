@@ -109,7 +109,14 @@ export function buildProgram(input: ProgramInput): ProgramResult {
   const freeDs = () => { let a: string; do { a = `DS${nextDs++}`; } while (taken.has(a)); taken.add(a); return a; };
   const timer = () => { let a: string; do { a = `T${nextTimer++}`; } while (taken.has(a) || taken.has(`TD${a.slice(1)}`)); taken.add(a); return a; };
   const tags: TagDefinition[] = [];
-  const nick = (address: string, nickname: string, comment: string) => { if (!tags.some((t) => t.address === address)) tags.push({ address, nickname: nickname.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24), comment }); };
+  // Nicknames are unique ("Man_Cut_Down" from a cylinder named Cut and from the cut cylinder's own buttons: _2).
+  const nick = (address: string, nickname: string, comment: string) => {
+    if (tags.some((t) => t.address === address)) return;
+    const base = nickname.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24);
+    let name = base;
+    for (let i = 2; tags.some((t) => t.nickname.toLowerCase() === name.toLowerCase()); i++) name = `${base.slice(0, 24 - String(i).length - 1)}_${i}`;
+    tags.push({ address, nickname: name, comment });
+  };
   const rungs: Rung[] = [];
   let n = 0;
   const R = (block: string, comment: string, branches: LadderElement[][], outputs: LadderOutput[]) => rungs.push({ id: `r_${block}_${++n}`, block, comment, branches, outputs });

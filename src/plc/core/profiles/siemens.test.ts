@@ -158,4 +158,13 @@ assert.match(validateProgram(bad, siemensProfile, new Set()).map((i) => i.messag
   assert.match(out.scl, /no I\/O point on this CPU/);
 }
 
+// A typed name for an unnamed register never takes the name of the user's own tag, whichever comes first in the
+// program: C1 (no name) is met before C5 ("Flag_1"); the user's keeps Flag_1, the typed one becomes Flag_1_2.
+{
+  const prog: LadderProgram = { tags: [{ address: 'C5', nickname: 'Flag_1', comment: 'my flag' }], rungs: [{ id: 'r1', comment: '', branches: [[{ type: 'NO', address: 'C1' }, { type: 'NO', address: 'C5' }]], outputs: [{ type: 'OUT', address: 'C2' }] }] };
+  const out = buildScl(prog, { ...ctx, extraTags: [] }).scl;
+  assert.match(out, /^\s+Flag_1 : Bool;\s+\/\/ .*my flag/m, out.split('\n').filter((l) => /Flag_/.test(l)).join('\n'));
+  assert.match(out, /^\s+Flag_1_2 : Bool;\s+\/\/ no name in the project/m);
+}
+
 console.log('siemens tests passed');

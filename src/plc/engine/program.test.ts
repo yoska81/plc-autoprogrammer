@@ -264,4 +264,16 @@ for (const [name, sensor] of [['example', 'X005'], ['sealing', 'X004']] as const
   assert.equal(sim.readWord(A(/Pump 1 speed/)), 0, 'speed reference 0 while the pump is stopped');
 }
 void buildProgram;
+// Nicknames stay unique: a cylinder named "Cut" whose HMI button is "Down" and the manual cut's own bits both want
+// Man_Cut_Down; the second gets _2 (an exported tag name, never two the same).
+{
+  const pr = project([
+    pt('E-stop OK (safety relay)', 'input', { category: 'Safety' }), pt('Start button', 'input'), pt('Stop button', 'input'), pt('Manual cut button', 'input'),
+    pt('Cut down', 'input'), pt('Cut up', 'input'), pt('Cut down solenoid', 'output', { category: 'Pneumatic' }), pt('Cut up solenoid', 'output', { category: 'Pneumatic' }),
+  ], 'C0-10DD1E-D');
+  const r = programWithCycle({ content: pr.content, hmiTags: pr.hmi.tags, spec: 'Cut station: the cut cylinder goes down and up.' });
+  const names = r.program.tags.map((t) => t.nickname.toLowerCase());
+  assert.deepEqual(names.filter((n, i) => names.indexOf(n) !== i), [], `unique nicknames: ${r.program.tags.filter((t) => /^Man_/.test(t.nickname)).map((t) => t.nickname).join(', ')}`);
+}
+
 console.log('program engine tests passed');

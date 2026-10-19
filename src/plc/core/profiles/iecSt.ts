@@ -75,6 +75,9 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
     if (o.type === 'TMR') { timerUnit.set(o.address.toUpperCase(), UNIT_MS[o.unit] ?? 1000); blockType.set(o.address.toUpperCase(), o.accumulate ? 'RTO' : o.mode === 'OFF_DELAY' ? 'TOF' : 'TON'); }
     if (o.type === 'CNT') blockType.set(o.address.toUpperCase(), o.direction === 'DOWN' ? 'CTD' : 'CTU');
   }
+  // The names the project's own tags and labels give (as exported), for typed names to stay clear of.
+  let ownNames: Set<string> | null = null;
+  const userNames = () => (ownNames ??= new Set([...[...nick.values()].map((t) => t.nickname), ...ctx.labels.values()].filter(Boolean).map((t) => logixName(t, new Set(), 'x').toLowerCase())));
   let edges = 0;
   let usesClock = false;
   const emulated = (a: string) => Boolean(d.rtoEmulation) && blockType.get(a) === 'RTO';
@@ -85,7 +88,11 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
     if (have) return d.ref(have.name);
     const n = nick.get(base), label = ctx.labels.get(base);
     const anon = !n?.nickname && !label && base !== 'SC7' ? d.unnamed?.(base) : undefined;
-    const name = logixName(n?.nickname || label || anon?.name || (base === 'SC7' ? 'Clock_1s' : base), used, base);
+    // A typed name ("Flag_1") never takes a name the user's own tags use, whichever is met first in the program.
+    const own = anon ? userNames() : null;
+    let anonName = anon?.name;
+    for (let i = 2; anonName && own?.has(anonName.toLowerCase()); i++) anonName = `${anon!.name}_${i}`;
+    const name = logixName(n?.nickname || label || anonName || (base === 'SC7' ? 'Clock_1s' : base), used, base);
     const io = d.ioVar(base, name);
     vars.set(base, { name, type: d.types[type], comment: [label, n?.comment].filter((x, i, all): x is string => !!x && all.indexOf(x) === i).join(' — ') || anon?.comment || (base === 'SC7' ? '1-second clock (generated)' : base), base, ...(io ? { io } : {}) });
     return d.ref(name);
