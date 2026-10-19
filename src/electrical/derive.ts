@@ -1863,12 +1863,39 @@ export function terminalCounts(ctx: DrawingContext) {
   return { feed, ground, fused, endPlates, endStops };
 }
 
+/**
+ * The parts a kit is ordered as (`ratings.kitParts` "PN xN, PN xN", e.g. a Siemens 8WD44 signal column), or null for
+ * an ordinary part. A distributor takes only real part numbers, so the BOM lists these instead of the kit.
+ */
+export function kitPartsOf(part: CatalogPart | undefined): { partNumber: string; each: number }[] | null {
+  const raw = part?.ratings.kitParts;
+  if (!raw) return null;
+  const parts = String(raw).split(',').map((s) => s.trim().match(/^(\S+)(?:\s*x\s*(\d+))?$/i)).filter((x): x is RegExpMatchArray => !!x)
+    .map((x) => ({ partNumber: x[1], each: x[2] ? parseInt(x[2], 10) : 1 }));
+  return parts.length ? parts : null;
+}
+
 export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
   const m = buildModel(ctx);
   const tc = terminalCounts(ctx);
   const lines = new Map<string, BomLine>();
   const notesFromLayout: BomLine[] = [];
   for (const c of m.rc) {
+    // A kit: one line per real part (qty = kit qty x each), listed with the device it builds; the drawings keep one device.
+    const kit = kitPartsOf(c.part);
+    if (kit) {
+      for (const k of kit) {
+        const key = `${c.category}|${k.partNumber}`;
+        const l = lines.get(key);
+        if (l) { l.qty += c.comp.quantity * k.each; if (!l.tags.includes(c.tag)) l.tags.push(c.tag); continue; }
+        const kp = ctx.getPart(k.partNumber);
+        lines.set(key, {
+          item: 0, qty: c.comp.quantity * k.each, partNumber: k.partNumber, manufacturer: kp?.manufacturer ?? c.part?.manufacturer ?? '',
+          description: `${kp?.description ?? `Part of ${c.part?.description ?? c.partNumber}`} — part of the ${c.tag} kit (${c.partNumber})`, tags: [c.tag], category: c.category,
+        });
+      }
+      continue;
+    }
     const key = `${c.category}|${c.partNumber}`;
     const l = lines.get(key);
     if (l) { l.qty += c.comp.quantity; l.tags.push(c.tag); continue; }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { collectProject } from '../deliverables/collect';
 import { plcNameOf } from '../deliverables/plcNames';
+import { moduleSlots } from '../plc/core/modules';
 import { planDrawings, type DrawingPlan } from '../electrical/drawings/plan';
 import SpeakButton from '../voice/SpeakButton';
 import { canSpeak, speak, stopSpeaking } from '../voice/tts';
@@ -40,7 +41,12 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
     const ctx = snap.drawingCtx;
     // The point as the PLC's software names it too ("X101 (%I0.0)" on an S7); CLICK keeps its own address.
     const name = plcNameOf(snap);
-    const nativeOf = (a: string) => { const n = name(a); return n && n !== a ? ` (${n})` : ''; };
+    // An analog channel by its terminal too (%IW64), not only its tag name.
+    const slots = moduleSlots(snap.modules);
+    const nativeOf = (a: string) => {
+      const n = snap.profile.id !== 'click' && /^DF\d+$/i.test(a) ? snap.profile.ioTag?.(a.toUpperCase(), slots, snap.cpu.id) ?? name(a) : name(a);
+      return n && n !== a ? ` (${n})` : '';
+    };
     let p: WiringPath[] = [];
     let pl: DrawingPlan | null = null;
     let cc: ReturnType<typeof circuitOf> | null = null;

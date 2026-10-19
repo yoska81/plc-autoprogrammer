@@ -184,3 +184,20 @@ export function newRung(): Rung {
     outputs: [{ type: 'OUT', address: '' }],
   };
 }
+
+/** A new empty rung just above or below `id` (at the end when `id` is not found); returns the program and the new rung's id. */
+export function insertRung(p: LadderProgram, id: string | null, where: 'above' | 'below'): { program: LadderProgram; id: string } {
+  const r = newRung();
+  const i = id ? p.rungs.findIndex((x) => x.id === id) : -1;
+  // A rung inserted beside another joins its block.
+  if (i >= 0 && p.rungs[i].block) r.block = p.rungs[i].block;
+  const at = i < 0 ? p.rungs.length : where === 'above' ? i : i + 1;
+  return { program: { ...p, rungs: [...p.rungs.slice(0, at), r, ...p.rungs.slice(at)] }, id: r.id };
+}
+
+/** A contact of `type` placed right after contact `i` of branch `b` (at the branch's end when `i` is null). */
+export function insertContact(r: Rung, b: number, i: number | null, type: 'NO' | 'NC'): Rung {
+  const el: LadderElement = { type, address: '' };
+  if (r.branches.length === 0) return { ...r, branches: [[el]] };
+  return { ...r, branches: r.branches.map((br, bi) => (bi === b ? (i === null ? [...br, el] : [...br.slice(0, i + 1), el, ...br.slice(i + 1)]) : br)) };
+}

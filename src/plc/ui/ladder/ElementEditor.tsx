@@ -3,13 +3,15 @@
  * Positioned with `position: fixed` from the clicked cell's bounding rect;
  * closes on Escape, outside click, or page scroll.
  */
-import { useEffect, useRef } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import type { CompareOp, LadderElement, LadderOutput, TimeUnit } from '../../core/ladder';
+import type { AddressKind } from '../../core/profile';
 import { defaultElement, defaultOutput, normAddr } from './ladderEdit';
 import type { ElementType, OutputType } from './ladderEdit';
 
-export interface Anchor { left: number; top: number; bottom: number }
+/** Where the editor opens; `el` (the clicked element) lets it follow the element when the ladder scrolls. */
+export interface Anchor { left: number; top: number; bottom: number; el?: HTMLElement }
 
 const inputCls =
   'w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500';
@@ -24,7 +26,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/** The PLC's own names of the project's addresses (%I0.2 → X003 on an S7): one typed in a field becomes the app's address. */
+const NativeNames = createContext<Map<string, string>>(new Map());
+
 function AddrInput({ value, onChange, placeholder, autoFocus }: { value: string; onChange: (v: string) => void; placeholder?: string; autoFocus?: boolean }) {
+  const natives = useContext(NativeNames);
   return (
     <input
       className={monoCls}
@@ -33,6 +39,7 @@ function AddrInput({ value, onChange, placeholder, autoFocus }: { value: string;
       autoFocus={autoFocus}
       spellCheck={false}
       onChange={(e) => onChange(normAddr(e.target.value))}
+      onBlur={() => { const a = natives.get(normAddr(value)); if (a) onChange(a); }}
     />
   );
 }
@@ -180,14 +187,70 @@ function OutputFields({ value, onChange }: { value: LadderOutput; onChange: (v: 
   }
 }
 
+/** One address the project knows (an I/O point in the chosen PLC's own addressing, or a named internal tag). */
+export interface AddressChoice {
+  address: string;
+  label: string;
+  /** The PLC's own name of the address when it differs (%I0.0 for X001 on an S7); the program keeps `address`. */
+  native?: string | null;
+  /** What the address is (input, output, bit, timer …), to offer each instruction only what it can use. */
+  kind?: AddressKind;
+}
+
+/** Contacts read any bit; coils write outputs and internal bits only. Timers, counters, compares and boxes get no list. */
+function choicesFor(v: LadderElement | LadderOutput, choices: AddressChoice[]): AddressChoice[] {
+  const read: (AddressKind | undefined)[] = ['input', 'output', 'bit', 'timer', 'counter', 'system'];
+  const write: (AddressKind | undefined)[] = ['output', 'bit'];
+  switch (v.type) {
+    case 'NO': case 'NC': case 'RISE': case 'FALL': return choices.filter((c) => read.includes(c.kind));
+    case 'OUT': case 'SET': case 'RST': return choices.filter((c) => write.includes(c.kind));
+    default: return [];
+  }
+}
+
+/** The target with its main address (the contact's / coil's address, a compare's left side, a copy's or math's result) set. */
+function withAddress<T extends LadderElement | LadderOutput>(v: T, address: string): T {
+  switch (v.type) {
+    case 'RAW': return v;
+    case 'CMP': return { ...v, left: address };
+    case 'COPY': case 'MATH': return { ...v, dest: address };
+    default: return { ...v, address };
+  }
+}
+
+function mainAddress(v: LadderElement | LadderOutput): string {
+  switch (v.type) {
+    case 'RAW': return '';
+    case 'CMP': return v.left;
+    case 'COPY': case 'MATH': return v.dest;
+    default: return v.address;
+  }
+}
+
+/** Pick the address from the project's I/O list instead of typing it. */
+function AddressPicker({ choices, value, onPick }: { choices: AddressChoice[]; value: string; onPick: (a: string) => void }) {
+  return (
+    <Field label="Pick from the project's I/O">
+      <select className={inputCls} data-testid="ladder-address-pick" value={choices.some((c) => c.address === value) ? value : ''}
+        onChange={(e) => { if (e.target.value) onPick(e.target.value); }}>
+        <option value="">— choose a signal —</option>
+        {choices.map((c) => <option key={c.address} value={c.address}>{c.native ? `${c.native} (${c.address})` : c.address}{c.label ? ` — ${c.label}` : ''}</option>)}
+      </select>
+    </Field>
+  );
+}
+
 type EditorTarget =
   | { kind: 'element'; value: LadderElement; onChange: (v: LadderElement) => void }
   | { kind: 'output'; value: LadderOutput; onChange: (v: LadderOutput) => void };
 
 export default function ElementEditor({
-  anchor, target, onDelete, onClose,
-}: { anchor: Anchor; target: EditorTarget; onDelete: () => void; onClose: () => void }) {
+  anchor, target, onDelete, onClose, choices = [],
+}: { anchor: Anchor; target: EditorTarget; onDelete: () => void; onClose: () => void; choices?: AddressChoice[] }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Scrolling the ladder moves the editor with its element (it closes only when the element leaves the window).
+  const [scrolled, setScrolled] = useState<{ from: Anchor; pos: Anchor } | null>(null);
+  const pos = scrolled?.from === anchor ? scrolled.pos : anchor;
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -196,7 +259,11 @@ export default function ElementEditor({
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     const onScroll = (e: Event) => {
       if (ref.current && e.target instanceof Node && ref.current.contains(e.target)) return;
-      onClose();
+      const el = anchor.el;
+      if (!el || !el.isConnected) return onClose();
+      const r = el.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > window.innerHeight) return onClose();
+      setScrolled({ from: anchor, pos: { left: r.left, top: r.top, bottom: r.bottom, el } });
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -206,16 +273,19 @@ export default function ElementEditor({
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('scroll', onScroll, true);
     };
-  }, [onClose]);
+  }, [onClose, anchor]);
 
   const width = 290;
-  const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8));
-  const below = window.innerHeight - anchor.bottom > 320;
+  const left = Math.max(8, Math.min(pos.left, window.innerWidth - width - 8));
+  const below = window.innerHeight - pos.bottom > 320;
   const style: React.CSSProperties = below
-    ? { left, top: anchor.bottom + 6, width }
-    : { left, bottom: window.innerHeight - anchor.top + 6, width };
+    ? { left, top: pos.bottom + 6, width }
+    : { left, bottom: window.innerHeight - pos.top + 6, width };
 
+  const offered = choicesFor(target.value, choices);
+  const natives = new Map(choices.filter((c) => c.native).map((c) => [normAddr(c.native!), c.address]));
   return (
+    <NativeNames.Provider value={natives}>
     <div ref={ref} className="fixed z-50 rounded-lg border border-slate-300 bg-white p-3 shadow-xl" style={style} role="dialog">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -226,18 +296,23 @@ export default function ElementEditor({
         </button>
       </div>
       <div className="space-y-2">
+        {offered.length > 0 && (
+          <AddressPicker choices={offered} value={mainAddress(target.value)}
+            onPick={(a) => (target.kind === 'element' ? target.onChange(withAddress(target.value, a)) : target.onChange(withAddress(target.value, a)))} />
+        )}
         {target.kind === 'element'
           ? <ElementFields value={target.value} onChange={target.onChange} />
           : <OutputFields value={target.value} onChange={target.onChange} />}
       </div>
       <div className="mt-3 flex justify-between border-t border-slate-100 pt-2">
         <button type="button" onClick={onDelete} className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">
-          <TrashIcon className="h-3.5 w-3.5" /> Delete
+          <TrashIcon className="h-3.5 w-3.5" /> Delete this {target.kind === 'element' ? 'contact' : 'output'}
         </button>
         <button type="button" onClick={onClose} className="rounded bg-slate-800 px-3 py-1 text-xs font-medium text-white hover:bg-slate-700">
           Done
         </button>
       </div>
     </div>
+    </NativeNames.Provider>
   );
 }

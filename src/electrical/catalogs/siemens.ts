@@ -4312,7 +4312,7 @@ export const SIEMENS: CatalogPart[] = [
     family: 'SIRIUS 8WD44',
     url: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=8WD4408-0AB&language=en&caller=SIOS',
     mount: 'field',
-    ratings: { tiers: 3, colors: 'red/amber/green', volts: '24 VDC', voltsNote: 'LED elements 24 V AC/DC ±10 %', diameterMm: 70, heightMm: 239, mounting: 'floor / bracket mount on enclosure (connection element 8WD4408-0AB)', buzzer: 'no', ip: 'IP65', amps: 0.105, watts: 2.52, kitParts: '8WD4408-0AB x1, 8WD4420-5AB x1, 8WD4420-5AD x1, 8WD4420-5AC x1', kitNote: 'Siemens sells no pre-assembled red / yellow / green 8WD44 column: the column is ordered as these parts (BOM expands kitParts).', datasheet: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=8WD4420-5AB&language=en&caller=SIOS' },
+    ratings: { tiers: 3, colors: 'red/amber/green', volts: '24 VDC', voltsNote: 'LED elements 24 V AC/DC ±10 %', diameterMm: 70, heightMm: 239, mounting: 'direct (base) mount on enclosure top, or on an angle bracket (connection element 8WD4408-0AB, floor / angle mounting)', buzzer: 'no', ip: 'IP65', amps: 0.105, watts: 2.52, kitParts: '8WD4408-0AB x1, 8WD4420-5AB x1, 8WD4420-5AD x1, 8WD4420-5AC x1', kitNote: 'Siemens sells no pre-assembled red / yellow / green 8WD44 column: the column is ordered as these parts (BOM expands kitParts).', datasheet: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=8WD4420-5AB&language=en&caller=SIOS' },
     verified: true,
   },
   {
@@ -4323,7 +4323,7 @@ export const SIEMENS: CatalogPart[] = [
     family: 'SIRIUS 8WD44',
     url: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=8WD4408-0AB&language=en&caller=SIOS',
     mount: 'field',
-    ratings: { tiers: 3, colors: 'red/amber/green', volts: '24 VDC', voltsNote: 'LED elements 24 V AC/DC ±10 %', diameterMm: 70, heightMm: 311, mounting: 'floor / bracket mount on enclosure (connection element 8WD4408-0AB)', buzzer: 'yes', ip: 'IP65', amps: 0.13, watts: 3.12, kitParts: '8WD4408-0AB x1, 8WD4420-5AB x1, 8WD4420-5AD x1, 8WD4420-5AC x1, 8WD4420-0FA x1', kitNote: 'Siemens sells no pre-assembled red / yellow / green 8WD44 column: the column is ordered as these parts (BOM expands kitParts).', datasheet: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=8WD4420-5AB&language=en&caller=SIOS' },
+    ratings: { tiers: 3, colors: 'red/amber/green', volts: '24 VDC', voltsNote: 'LED elements 24 V AC/DC ±10 %', diameterMm: 70, heightMm: 311, mounting: 'direct (base) mount on enclosure top, or on an angle bracket (connection element 8WD4408-0AB, floor / angle mounting)', buzzer: 'yes', ip: 'IP65', amps: 0.13, watts: 3.12, kitParts: '8WD4408-0AB x1, 8WD4420-5AB x1, 8WD4420-5AD x1, 8WD4420-5AC x1, 8WD4420-0FA x1', kitNote: 'Siemens sells no pre-assembled red / yellow / green 8WD44 column: the column is ordered as these parts (BOM expands kitParts).', datasheet: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=8WD4420-5AB&language=en&caller=SIOS' },
     verified: true,
   },
   {

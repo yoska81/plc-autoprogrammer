@@ -33,6 +33,7 @@ export function applyUpgrade(imp: ImportedProgram, fileText?: string, planned?: 
     plan.program,
     `Read from ${s.fileName}: ${imp.report.converted} of ${imp.report.rungs} rungs converted. This is the machine's original program; ask for changes here and compare with the original on the Upgrade page.`,
     null,
+    'user',
   );
   const spec = useSpecStore.getState();
   for (const [id, text] of Object.entries(plan.spec) as [SpecSectionId, string][]) {

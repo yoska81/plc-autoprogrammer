@@ -68,6 +68,8 @@ for (const mode of ['ai', 'quick-then-ai'] as const) {
     machine(mode);
     abortMidRequest();
     await runUpdateAll([...steps], () => {});
+    // The user worked on it since (an untouched generated program is rebuilt instead: updateAll.rebuild.test).
+    useProgramStore.setState({ ladderOrigin: 'user' });
     const before = useProgramStore.getState().ladder;
     assert.ok(before.rungs.length > 10);
     // the spec changes, so the program stage revises the program with the AI, which is aborted
@@ -89,6 +91,7 @@ await test('no API key, existing program: "No API key — built from rules" (no 
   machine('ai');
   abortMidRequest();
   await runUpdateAll([...steps], () => {});
+  useProgramStore.setState({ ladderOrigin: 'user' });
   const before = useProgramStore.getState().ladder;
   let asked = 0;
   setClaudeInterceptor(async () => { asked++; throw aborted(); });

@@ -140,4 +140,22 @@ assert.match(validateProgram(bad, siemensProfile, new Set()).map((i) => i.messag
   assert.deepEqual(left, [], 'no app operand in the example\'s SCL outside the I/O descriptions');
 }
 
+// S7-1500 + ET 200SP: no on-board I/O. The real input X101 is %I0.0; a stale contact X001 in the program gets no
+// hardware address (no second tag at %I0.0), it stays a static of the block, said in its comment.
+{
+  const c1500 = SIEMENS_CPUS.find((c) => c.id === '6ES7511-1AL03-0AB0')!;
+  const et: ModuleSlot[] = [{ partNumber: '6ES7131-6BH01-0BA0', inputs: 16, outputs: 0 }, { partNumber: '6ES7132-6BH01-0BA0', inputs: 0, outputs: 16 }];
+  assert.equal(siemensAddress('X001', c1500, et), null, 'no on-board terminal on an S7-1500');
+  assert.equal(siemensAddress('X101', c1500, et)?.address, '%I0.0');
+  const pts = [{ id: 'a', description: 'Start button', type: 'input', category: 'Operator/HMI' }, { id: 'b', description: 'Motor run', type: 'output', category: 'Motor' }] as IOPoint[];
+  const adr = new Map([['a', 'X101'], ['b', 'Y101']]);
+  const prog: LadderProgram = { tags: [], rungs: [{ id: 'r1', comment: '', branches: [[{ type: 'NO', address: 'X101' }, { type: 'NO', address: 'X001' }]], outputs: [{ type: 'OUT', address: 'Y101' }] }] };
+  const out = buildScl(prog, { io: pts, addresses: adr, labels: new Map([['X101', 'Start button'], ['Y101', 'Motor run']]), header: 'h', extraTags: [], cpuId: c1500.id, modules: et, projectName: 'p' });
+  const at00 = out.tags.filter((t) => t.address === '%I0.0');
+  assert.deepEqual(at00.map((t) => t.name), ['Start_button'], 'one tag at %I0.0');
+  assert.ok(!out.tags.some((t) => /X001/.test(t.name)), out.tags.map((t) => `${t.name}@${t.address}`).join(', '));
+  assert.match(out.scl, /: Bool;\s+\/\/ .*\(no I\/O point: not wired\)/, 'the stale contact is a static, said');
+  assert.match(out.scl, /no I\/O point on this CPU/);
+}
+
 console.log('siemens tests passed');

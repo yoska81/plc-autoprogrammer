@@ -54,8 +54,14 @@ interface ProgramStore {
   versions: ProgramVersion[];
   chat: ChatMessage[];
   proposal: Proposal | null;
-  /** Replace the program with a fresh AI generation. */
-  setGeneratedLadder: (program: LadderProgram, explanation: string, reasoning: string | null) => void;
+  /**
+   * Who made the program as it stands: 'app' = generated here and not changed by hand since (Update all may rebuild
+   * it, keeping a version); 'user' = edited, imported, restored or recovered (Update all only proposes). Absent on
+   * older projects: treated as 'user'.
+   */
+  ladderOrigin?: 'app' | 'user';
+  /** Replace the program with a fresh generation (origin 'user' for a program read from a file or recovered). */
+  setGeneratedLadder: (program: LadderProgram, explanation: string, reasoning: string | null, origin?: 'app' | 'user') => void;
   /** Manual edit from the ladder editor. */
   editLadder: (program: LadderProgram) => void;
   saveVersion: (label: string) => void;
@@ -99,8 +105,9 @@ export const useProgramStore = create<ProgramStore>()(
       versions: [],
       chat: [],
       proposal: null,
-      setGeneratedLadder: (program, explanation, reasoning) =>
+      setGeneratedLadder: (program, explanation, reasoning, origin = 'app') =>
         set((s) => ({
+          ladderOrigin: origin,
           versions: snapshot(s.versions, s.ladder, 'Before new generation'),
           // Rung comments the user rewrote stay (rungs keep their ids).
           ladder: keepRungComments(program),
@@ -110,13 +117,15 @@ export const useProgramStore = create<ProgramStore>()(
           // A new generation starts a new fix-it conversation.
           chat: [{ role: 'assistant', text: explanation, at: now(), outcome: 'applied' }],
         })),
-      editLadder: (ladder) => set({ ladder }),
+      // Every hand edit (the editor's history.edit, undo / redo included): the user's. Undo back to the generated
+      // program stays 'user' on purpose (the app cannot tell the user meant to undo everything).
+      editLadder: (ladder) => set({ ladder, ladderOrigin: 'user' }),
       saveVersion: (label) => set((s) => ({ versions: snapshot(s.versions, s.ladder, label) })),
       restoreVersion: (id) =>
         set((s) => {
           const v = s.versions.find((x) => x.id === id);
           if (!v) return {};
-          return { versions: snapshot(s.versions, s.ladder, 'Before restore'), ladder: v.program, proposal: null };
+          return { versions: snapshot(s.versions, s.ladder, 'Before restore'), ladder: v.program, proposal: null, ladderOrigin: 'user' };
         }),
       addChat: (msg) => set((s) => ({ chat: [...s.chat, { ...msg, at: now() }] })),
       setProposal: (proposal) => set({ proposal }),
@@ -128,12 +137,15 @@ export const useProgramStore = create<ProgramStore>()(
             ladder: keepRungComments(s.proposal.program),
             reasoning: s.proposal.reasoning,
             proposal: null,
+            // A change the user asked for (Change tab, checker fix, block rewrite) makes the program theirs; an Update
+            // all proposal (specUpdate) leaves the origin as it was.
+            ladderOrigin: s.proposal.specUpdate ? s.ladderOrigin : 'user',
             chat: markLastAssistant(s.chat, 'applied'),
           };
         }),
       rejectProposal: () => set((s) => ({ proposal: null, chat: markLastAssistant(s.chat, 'rejected') })),
       clearLadder: () =>
-        set((s) => ({ versions: snapshot(s.versions, s.ladder, 'Before clear'), ladder: EMPTY_PROGRAM, chat: [], proposal: null })),
+        set((s) => ({ versions: snapshot(s.versions, s.ladder, 'Before clear'), ladder: EMPTY_PROGRAM, chat: [], proposal: null, ladderOrigin: undefined })),
     }),
     {
       name: 'plc-program-store',
@@ -146,6 +158,7 @@ export const useProgramStore = create<ProgramStore>()(
         generatedCode: s.generatedCode,
         reasoning: s.reasoning,
         ladder: s.ladder,
+        ladderOrigin: s.ladderOrigin,
         versions: s.versions,
         chat: s.chat,
         proposal: s.proposal,
