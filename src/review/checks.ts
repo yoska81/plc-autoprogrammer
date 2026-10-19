@@ -99,7 +99,8 @@ const NON_MOTION_RE = /\b(light|lamp|indicator|beacon|horn|buzzer|stack|pilot)\b
 function programChecks({ p }: ReviewInput): Finding[] {
   const out: Finding[] = [];
   if (p.profile.language !== 'ladder' || !p.ladder.rungs.length) return out;
-  const rungNo = (id: string) => p.ladder.rungs.findIndex((r) => r.id === id) + 1;
+  const rungIndex = new Map(p.ladder.rungs.map((r, k) => [r.id, k + 1]));
+  const rungNo = (id: string) => rungIndex.get(id) ?? 0;
   for (const i of p.issues) {
     out.push(finding(`chk:${i.rungId ?? ''}:${hash(i.message)}`, i.severity === 'error' ? 'major' : 'minor', 'program', 'program', i.rungId ?? '',
       `Program checker${i.rungId ? ` (rung ${rungNo(i.rungId)})` : ''}: ${i.message}`, i.message, 'Fix the rung by hand or ask the AI to fix the checker issues on the PLC Program page.'));
@@ -496,7 +497,8 @@ export function runChecks(input: ReviewInput): Finding[] {
   ];
   // The Engineer review's rule checks (SCCR weak link, heat, voltage drop…) count here too: one set of findings everywhere.
   const eng = engineerChecksFor(input.p);
-  all.push(...eng.filter((e) => !all.some((f) => f.title === e.title)));
+  const titles = new Set(all.map((f) => f.title));
+  all.push(...eng.filter((e) => !titles.has(e.title)));
   const seen = new Set<string>();
   // The brand's address next to each I/O terminal a finding names ("Input X005 (%I0.4)"); ids stay as they are.
   const native = withNativeIo(input.p);

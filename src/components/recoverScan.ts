@@ -5,6 +5,7 @@
  * Content identical to the built-in example is skipped.
  */
 import type { LadderProgram } from '../plc/core/ladder';
+import { appStorage, CLEARED_PREFIX } from '../lib/appStorage';
 
 export interface Piece {
   id: string;
@@ -60,16 +61,20 @@ export function deepScan(example: { ladder: LadderProgram; spec: Record<string, 
   const exampleJson = JSON.stringify(example.ladder);
   const exampleSpec = Object.entries(example.spec).filter(([, t]) => t?.trim()).map(([k, t]) => `${k}:\n${t.trim()}`).join('\n\n');
   let keys: string[];
-  try { keys = Object.keys(localStorage); } catch { return out; }
-  for (const k of keys) {
+  try { keys = appStorage.keys(); } catch { return out; }
+  for (const stored of keys) {
     let raw: unknown;
-    try { raw = JSON.parse(localStorage.getItem(k) ?? 'null'); } catch { continue; }
+    try { raw = JSON.parse(appStorage.getItem(stored) ?? 'null'); } catch { continue; }
     if (!raw || typeof raw !== 'object') continue;
-    if (k === 'plc-program-store') scanProgram('Open project', (raw as { state?: ProgramState }).state, out, exampleJson);
-    else if (k === 'plc-spec-store') scanSpec('Open project', (raw as { state?: never }).state, out, exampleSpec);
+    // kept aside when the app's storage was found cleared (appStorage.ts): found under its own key
+    const aside = stored.startsWith(CLEARED_PREFIX) ? /^[^:]+:\d+:(.*)$/.exec(stored) : null;
+    const k = aside ? aside[1] : stored;
+    const before = aside ? ' (from before the app\'s storage was cleared)' : '';
+    if (k === 'plc-program-store') scanProgram(`Open project${before}`, (raw as { state?: ProgramState }).state, out, exampleJson);
+    else if (k === 'plc-spec-store') scanSpec(`Open project${before}`, (raw as { state?: never }).state, out, exampleSpec);
     else if (k.startsWith('plc-project-data:') || k.startsWith('plc-backup:')) {
       const data = (k.startsWith('plc-backup:') ? (raw as { data?: Record<string, unknown> }).data : raw) as Record<string, unknown> | undefined;
-      const where = k.startsWith('plc-backup:') ? `Backup ${k.slice('plc-backup:'.length).slice(0, 16).replace('T', ' ')}` : 'Saved project copy';
+      const where = (k.startsWith('plc-backup:') ? `Backup ${k.slice('plc-backup:'.length).slice(0, 16).replace('T', ' ')}` : 'Saved project copy') + before;
       scanProgram(where, data?.program as ProgramState | undefined, out, exampleJson);
       scanSpec(where, data?.spec as never, out, exampleSpec);
     }

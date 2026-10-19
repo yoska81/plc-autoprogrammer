@@ -6,6 +6,7 @@ import { isTechnicalIssue } from './classify';
 import { findKnown, type KnownAnswer, type KnownWhere } from './knowledge';
 import { NEEDS } from '../../spec/needs';
 import { useProjectsStore, runDerived } from '../../store/useProjectsStore';
+import { appPersistStorage } from '../../lib/appStorage';
 
 /**
  * Open questions the AI asks at every stage, with the user's answers.
@@ -167,6 +168,7 @@ export const useQuestionStore = create<QuestionStore>()(
     }),
     {
       name: 'isa-questions',
+      storage: appPersistStorage(),
       // Technical issues (HMI layout checks, wiring / catalog remarks) stored as questions by older versions are dropped on load.
       merge: (persisted, current) => {
         const byProject = (persisted as Partial<QuestionStore> | undefined)?.byProject ?? {};

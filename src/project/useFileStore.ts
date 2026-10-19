@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { appPersistStorage } from '../lib/appStorage';
 
 /** Where each project was last saved as a file, and whether it changed since. */
 export interface ProjectFileInfo {
@@ -27,6 +28,6 @@ export const useFileStore = create<FileStore>()(
         byProject: { ...s.byProject, [id]: { ...s.byProject[id], ...file, dirty: false, savedAt: new Date().toISOString() } },
       })),
     }),
-    { name: 'isa-project-files' },
+    { name: 'isa-project-files', storage: appPersistStorage() },
   ),
 );

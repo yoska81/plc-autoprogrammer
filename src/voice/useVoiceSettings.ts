@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { appPersistStorage } from '../lib/appStorage';
 
 /** Speech languages offered in Settings (BCP-47 tags; the first part is what the transcription services take). */
 export const VOICE_LANGUAGES: { value: string; label: string }[] = [
@@ -57,6 +58,6 @@ export const useVoiceSettings = create<VoiceSettings>()(
       voice: '',
       set: (patch) => set(patch),
     }),
-    { name: 'isa-voice-settings', partialize: ({ set: _s, ...rest }) => { void _s; return rest; } },
+    { name: 'isa-voice-settings', storage: appPersistStorage(), partialize: ({ set: _s, ...rest }) => { void _s; return rest; } },
   ),
 );

@@ -102,7 +102,27 @@ function createWindow() {
   });
   if (b?.maximized) win.maximize();
   win.once('ready-to-show', () => win.show());
-  win.on('close', () => saveBounds(win));
+  let storageFlushed = false, flushing = false;
+  win.on('close', (e) => {
+    saveBounds(win);
+    // The page writes the projects to IndexedDB a moment after each change: the window waits for those writes
+    // (at most 10 s), so a big project kept only there is never cut off.
+    if (storageFlushed || !flushReady.has(win.webContents.id) || win.webContents.isCrashed()) return;
+    e.preventDefault();
+    if (flushing) return;
+    flushing = true;
+    const done = (ev) => {
+      if (ev && ev.sender !== win.webContents) return;
+      ipcMain.removeListener('isa:storage-flushed', done);
+      clearTimeout(timer);
+      flushing = false;
+      storageFlushed = true;
+      if (!win.isDestroyed()) win.close();
+    };
+    const timer = setTimeout(done, 10000);
+    ipcMain.on('isa:storage-flushed', done);
+    win.webContents.send('isa:flush-storage');
+  });
 
   // Links: pages of the app (print views) open in a new app window, everything else in the browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -121,6 +141,7 @@ function createWindow() {
       detail: 'Cancel, then press Save (Ctrl+S) to keep them in the project file.',
     });
     if (choice === 0) e.preventDefault();
+    else storageFlushed = false; // the window stays: the next close waits for the writes again
   });
   const startFile = projectFileArg(process.argv);
   if (startFile) win.webContents.once('did-finish-load', () => setTimeout(() => sendProjectFile(win, startFile), 1500));
@@ -233,6 +254,9 @@ ipcMain.handle('isa:print', async (e, job) => {
 });
 
 ipcMain.on('isa:version', (e) => { e.returnValue = app.getVersion(); });
+// Pages that answer 'isa:flush-storage' (the app's own page; not print views).
+const flushReady = new Set();
+ipcMain.on('isa:flush-ready', (e) => { const id = e.sender.id; flushReady.add(id); e.sender.once('destroyed', () => flushReady.delete(id)); });
 
 // ── Connect to PLC: Modbus TCP (electron/modbus.cjs) ──
 registerModbusIpc(ipcMain);

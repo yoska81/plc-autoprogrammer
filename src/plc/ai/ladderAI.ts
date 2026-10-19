@@ -1,7 +1,9 @@
 import type { IOPoint } from '../../types/io';
 import type { AIProvider, Effort } from '../../store/useSettingsStore';
 import type { CpuModel, PlcProfile } from '../core/profile';
-import { newRungId, type LadderOutput, type LadderProgram, type Rung } from '../core/ladder';
+import { newRungId, rungAddresses, rungWrites, type LadderOutput, type LadderProgram, type Rung } from '../core/ladder';
+import { approxTokens, programSlice, PROGRAM_OUT_TOKENS } from '../../lib/ai/budget';
+import { GENERAL_BLOCK } from '../sim/blocks';
 import { LADDER_RESPONSE_SCHEMA } from '../core/schema';
 import type { ValidationIssue } from '../core/validate';
 import { callClaude, type ChatTurn } from '../../lib/ai/anthropic';
@@ -228,7 +230,7 @@ export function reviseLadder(
   request: string,
 ): Promise<LadderAIResult> {
   const issueText = issues.length
-    ? issues.map((i) => `- [${i.severity}] ${i.rungId ? `rung ${i.rungId}: ` : ''}${i.message}`).join('\n')
+    ? [...issues.slice(0, 200).map((i) => `- [${i.severity}] ${i.rungId ? `rung ${i.rungId}: ` : ''}${i.message}`), ...(issues.length > 200 ? [`- … and ${issues.length - 200} more`] : [])].join('\n')
     : '(none)';
   const hasRaw = program.rungs.some((r) => [...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW'));
   const rawNote = hasRaw ? '\n\nElements and outputs of type RAW were imported from the original PLC program and are kept as their text: copy each one back exactly as given, in its rung, unless the request is about that instruction (then change its text only). Never add a RAW.' : '';
@@ -238,6 +240,28 @@ export function reviseLadder(
     const kept = keepRaw(program, r.program);
     return { ...r, program: kept.program, explanation: kept.note ? `${r.explanation}\n\n${kept.note}` : r.explanation };
   });
+}
+
+/**
+ * What a program change sends. The AI writes the changed program back, so it must fit one answer: the whole
+ * program when it does; for a big program only the chosen block (`blockId`, as blockOfRung names it), with the
+ * I/O that block uses; otherwise what to do instead, in plain words.
+ */
+export function changeScope(program: LadderProgram, ctx: PlcContext, blockId: string | null, blockName: string):
+  { program: LadderProgram; ctx: PlcContext; part: boolean } | { tooBig: string } {
+  const size = (p: LadderProgram) => approxTokens(JSON.stringify(withoutDecl(p)));
+  if (size(program) <= PROGRAM_OUT_TOKENS) return { program, ctx, part: false };
+  if (blockId === null) {
+    return { tooBig: `This program is too big for the AI to change in one go (${program.rungs.length} rungs). Choose one block in the list on the left and ask for the change there: only that block is sent.` };
+  }
+  const ids = new Set((program.blocks ?? []).map((b) => b.id));
+  const rungs = program.rungs.filter((r) => (r.block && ids.has(r.block) ? r.block : GENERAL_BLOCK) === blockId);
+  const part = programSlice(program, rungs);
+  if (size(part) > PROGRAM_OUT_TOKENS) {
+    return { tooBig: `The block ${blockName} is too big for the AI to change in one go (${rungs.length} rungs; the AI writes about ${Math.round(PROGRAM_OUT_TOKENS * 3.5 / 1000)},000 characters of program at most). Split it into smaller blocks, or make this change by hand.` };
+  }
+  const used = new Set(rungs.flatMap((r) => [...rungAddresses(r), ...rungWrites(r)]).map((a) => a.toUpperCase()));
+  return { program: part, ctx: { ...ctx, io: ctx.io.filter((pt) => used.has((ctx.addresses.get(pt.id) ?? '').toUpperCase())) }, part: true };
 }
 
 /** The program without the original definitions RAW instructions carry (long, and the AI must not change them). */
