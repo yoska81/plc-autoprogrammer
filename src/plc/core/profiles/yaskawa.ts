@@ -73,7 +73,7 @@ export function yaskawaCpuOf(controller: string): CpuModel {
 }
 
 export const yaskawaProfile: PlcProfile = {
-  id: 'yaskawa',
+  id: 'yaskawa-mp',
   vendor: 'Yaskawa',
   name: 'MP2000 / MP3000 (MPE720)',
   language: 'ladder',

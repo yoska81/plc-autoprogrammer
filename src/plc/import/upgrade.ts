@@ -61,7 +61,7 @@ export interface UpgradePlan {
 }
 
 /** PLC of the app that a source format comes from (a read-only one: the program stays on it until a PLC is chosen). */
-const SAME_FAMILY: Partial<Record<SourceFormat, string>> = { l5x: 'logix', l5k: 'logix', 'click-csv': 'click', 'siemens-scl': 'siemens-s7', 'siemens-stl': 'siemens-s7', 'siemens-xml': 'siemens-s7', 'siemens-tags': 'siemens-s7', 'yaskawa-mpe720': 'yaskawa' };
+const SAME_FAMILY: Partial<Record<SourceFormat, string>> = { l5x: 'logix', l5k: 'logix', 'click-csv': 'click', 'siemens-scl': 'siemens-s7', 'siemens-stl': 'siemens-s7', 'siemens-xml': 'siemens-s7', 'siemens-tags': 'siemens-s7', 'yaskawa-mpe720': 'yaskawa-mp' };
 
 /**
  * PLC the program goes on: the original's family (read only when the app cannot program it yet, never another
@@ -83,7 +83,7 @@ function printoutFamily(text: string): string | undefined {
   if (/siemens|s7-|simatic|tia/i.test(text)) return 'siemens-s7';
   if (/unistream/i.test(text)) return 'unitronics-unistream';
   if (/unitronics|vision/i.test(text)) return 'unitronics-vision';
-  if (/yaskawa|mpe720|\bMP[23]\d{3}/i.test(text)) return 'yaskawa';
+  if (/yaskawa|mpe720|\bMP[23]\d{3}/i.test(text)) return 'yaskawa-mp';
   return undefined;
 }
 

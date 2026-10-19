@@ -183,7 +183,7 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
 {
   const { program } = importProgramFiles([{ name: 'demo_mp.YMW7', text: '', bytes: ymw }]);
   const plan = planUpgrade(program, 'click');
-  assert.equal(plan.plcId, 'yaskawa');
+  assert.equal(plan.plcId, 'yaskawa-mp');
   assert.equal(plan.cpuId, 'MP-CPU', 'a CPU the list does not have is the generic MP CPU');
   assert.deepEqual(plan.modules, []);
   assert.deepEqual(plan.io.map((p) => p.plcAddress).sort(), ['IB00000', 'IB00001', 'IB00002', 'IB00003', 'OB00000', 'OB00001', 'OB00002', 'OB00003']);
