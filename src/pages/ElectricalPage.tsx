@@ -37,6 +37,7 @@ import { useDrawingContext } from '../electrical/useDrawingContext';
 import DrawingSet from '../electrical/drawings/DrawingSet';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
 import PanelBrandOfferBanner from '../electrical/PanelBrandOfferBanner';
+import { psFeedVolts } from '../electrical/psFeed';
 import { vendorById } from '../electrical/catalogs';
 import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
 import type { CatalogCategory, DesignInputs, EnclosureRating, MotorSpec, StarterType, SupplyVoltage } from '../electrical/types';
@@ -423,6 +424,7 @@ export default function ElectricalPage() {
                 {swap !== null && el.design.components[swap] && (
                   <PartPicker tag={el.design.components[swap].tag} partNumber={el.design.components[swap].partNumber}
                     motor={motorContext(el.design, el.design.components[swap].motorTag, isIec(region))}
+                    feedVolts={getPart(el.design.components[swap].partNumber)?.category === 'powerSupply' ? psFeedVolts(el.design, getPart) : undefined}
                     onPick={(pn) => el.updateComponent(swap, { ...el.design!.components[swap], partNumber: pn })} onClose={() => setSwap(null)} />
                 )}
 
