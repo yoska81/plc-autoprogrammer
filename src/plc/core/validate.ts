@@ -1,7 +1,7 @@
 import { elementAddresses, motionWrites, rungAddresses, rungWrites, type LadderProgram, type RawInstruction, type Rung } from './ladder';
 import type { PlcProfile } from './profile';
 import { deletedAddress, isDeletedOperand } from './remapProgram';
-import { YASKAWA_PROFILE_ID, memoryOverlaps, type MemoryLayout } from './profiles/yaskawa';
+import { YASKAWA_PROFILE_ID, layoutFor, memoryOverlaps, type MemoryLayout } from './profiles/yaskawa';
 
 export interface ValidationIssue {
   rungId: string | null;
@@ -198,7 +198,7 @@ export function validateProgram(
     }
   }
   // Yaskawa: the app's memory never shares a register with the program's own (an imported MPE720 program keeps them).
-  if (profile.id === YASKAWA_PROFILE_ID) for (const message of memoryOverlaps(program, opts.yaskawaMemory)) issues.push({ rungId: null, severity: 'error', message });
+  if (profile.id === YASKAWA_PROFILE_ID) for (const message of memoryOverlaps(program, layoutFor(program, opts.yaskawaMemory))) issues.push({ rungId: null, severity: 'error', message });
   return issues;
 }
 

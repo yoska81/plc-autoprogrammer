@@ -12,7 +12,7 @@ import { toMicro800St } from './profiles/micro800';
 import { buildScl, unusedIoTags } from './profiles/siemens';
 import { buildUniLogicSt } from './profiles/unilogic';
 import { visiOperands } from './profiles/visilogic';
-import { yaskawaName } from './profiles/yaskawa';
+import { layoutFor, yaskawaName } from './profiles/yaskawa';
 import { rungAddresses } from './ladder';
 
 export interface PlcTagName {
@@ -90,7 +90,7 @@ export function plcTagNames(profile: PlcProfile, program: LadderProgram, ctx: Ex
       // MP registers in MPE720's form: an imported register as it was, I / O by module, memory by the project's layout.
       const all = new Set<string>([...program.tags.map((t) => t.address), ...ctx.extraTags.map((t) => t.address), ...ctx.addresses.values(),
         ...program.rungs.flatMap((r) => [...rungAddresses(r), ...r.outputs.flatMap((o) => (o.type === 'MATH' ? o.expression.match(/\b[A-Z]{1,3}\d+\b/gi) ?? [] : []))])].map((a) => a.trim().toUpperCase()).filter((a) => a && !/^-?\d/.test(a)));
-      const at = { cpuId: ctx.cpuId, modules: ctx.modules, tags: program.tags, layout: ctx.yaskawaMemory };
+      const at = { cpuId: ctx.cpuId, modules: ctx.modules, tags: program.tags, layout: layoutFor(program, ctx.yaskawaMemory) };
       for (const a of all) {
         const name = yaskawaName(a, at);
         if (!name) continue;

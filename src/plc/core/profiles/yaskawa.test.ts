@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { getProfile, PLC_PROFILES } from './index';
 import {
-  DEFAULT_MEMORY, YASKAWA_CPUS, allocateMemory, memoryOverlaps, mpRegister, mWords, nativeWords, yaskawaFamily, yaskawaIo, yaskawaMemory, yaskawaName, yaskawaProfile,
+  DEFAULT_MEMORY, YASKAWA_CPUS, allocateMemory, layoutFor, memoryNeed, memoryOverlaps, mpRegister, mWords, nativeWords, yaskawaFamily, yaskawaIo, yaskawaMemory, yaskawaName, yaskawaProfile,
 } from './yaskawa';
 import type { ModuleSlot } from '../profile';
 import type { LadderProgram } from '../ladder';
@@ -65,20 +65,33 @@ const imported: LadderProgram = {
 };
 const used = nativeWords(imported.tags);
 assert.ok(used.has(0) && used.has(20) && used.has(100), 'MW00000–MW00020 and MB001000 (MW00100) are the program\'s');
-assert.ok(memoryOverlaps(imported).some((m) => /C1 is MB000000/.test(m)), 'with the defaults, C1 would share MW00000');
+assert.ok(memoryOverlaps(imported, DEFAULT_MEMORY).some((m) => /C1 is MB000000/.test(m)), 'with the defaults, C1 would share MW00000');
+assert.deepEqual(memoryOverlaps(imported), [], 'with no layout stored, the one that fits the program avoids the program\'s registers');
 const layout = allocateMemory(used);
 assert.notEqual(layout.C, DEFAULT_MEMORY.C, 'the C area moves off the program\'s registers');
 assert.equal(layout.DS, DEFAULT_MEMORY.DS, 'areas that are free keep their default');
 assert.deepEqual(memoryOverlaps(imported, layout), [], 'with the allocated layout nothing is shared');
 for (const a of ['C1', 'DS1', 'T1', 'TD1']) for (const w of mWords(yaskawaMemory(a, layout)!)!) assert.ok(!used.has(w), `${a} lands on a free word`);
 // The checker reports a clash as an error.
-const errs = validateProgram(imported, yaskawaProfile, new Set(), undefined, {}).filter((i) => i.severity === 'error').map((i) => i.message);
+// A stored layout that does not fit (the defaults kept from before the import): the checker reports the clash.
+const errs = validateProgram(imported, yaskawaProfile, new Set(), undefined, { yaskawaMemory: DEFAULT_MEMORY }).filter((i) => i.severity === 'error').map((i) => i.message);
 assert.ok(errs.some((m) => /C1 is MB000000 in this project, which the program's MW00000 \(Reg_0\) already uses/.test(m)), errs.join(' | '));
 assert.ok(!validateProgram(imported, yaskawaProfile, new Set(), undefined, { yaskawaMemory: layout }).some((i) => /already uses/.test(i.message)));
 // Bits of one word are separate memory; a word over a bit is not.
 const bits: LadderProgram = { rungs: [{ id: 'r', comment: '', branches: [[{ type: 'NO', address: 'C2' }]], outputs: [{ type: 'OUT', address: 'C3' }] }], tags: [{ address: 'X999', nickname: 'Own', comment: '', native: 'MB000000' }] };
-assert.deepEqual(memoryOverlaps(bits), [], 'MB000001 / MB000002 next to the program\'s MB000000 are other bits');
-assert.equal(memoryOverlaps({ ...bits, rungs: [{ ...bits.rungs[0], outputs: [{ type: 'OUT', address: 'C1' }] }] }).length, 1, 'C1 = MB000000, the same bit');
+assert.deepEqual(memoryOverlaps(bits, DEFAULT_MEMORY), [], 'MB000001 / MB000002 next to the program\'s MB000000 are other bits');
+assert.equal(memoryOverlaps({ ...bits, rungs: [{ ...bits.rungs[0], outputs: [{ type: 'OUT', address: 'C1' }] }] }, DEFAULT_MEMORY).length, 1, 'C1 = MB000000, the same bit');
+
+// No CLICK caps on this PLC (side manager: 93 "C2001 is not a valid address" errors on the user's main file).
+assert.ok(yaskawaProfile.parseAddress('C2001') && yaskawaProfile.parseAddress('DS9000') && yaskawaProfile.parseAddress('T600'), 'C2001, DS9000, T600 are valid');
+assert.equal(yaskawaProfile.parseAddress('C0'), null);
+const big: LadderProgram = { rungs: [{ id: 'r', comment: '', branches: [[{ type: 'NO', address: 'C2001' }, { type: 'NO', address: 'C3000' }]], outputs: [{ type: 'OUT', address: 'C1' }, { type: 'COPY', source: '1', dest: 'DS6000' }] }], tags: [] };
+assert.deepEqual(memoryNeed(big), { C: 188, DS: 6000 });
+const bigLayout = layoutFor(big);
+assert.equal(bigLayout.size?.C, 188, 'the C area grows to hold C3000');
+assert.deepEqual(memoryOverlaps(big, bigLayout), [], 'and nothing overlaps');
+assert.ok(validateProgram(big, yaskawaProfile, new Set(), undefined, {}).every((i) => !/not a valid|past the/.test(i.message)), 'the checker accepts it');
+assert.match(memoryOverlaps(big, DEFAULT_MEMORY).join(' '), /C2001 is past the C area/, 'a stored layout too small says so');
 
 // The PLC names: the register is the name; an imported register stays as it was.
 const named = plcNameLookup(yaskawaProfile, imported, { io: [], addresses: new Map([['I001', 'X101']]), labels: new Map(), header: '', extraTags: [], cpuId: cpu301.id, modules: lio, yaskawaMemory: layout })!;

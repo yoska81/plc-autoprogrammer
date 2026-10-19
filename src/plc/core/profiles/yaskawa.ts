@@ -19,10 +19,10 @@
  * imported from MPE720 keeps its own registers (TagDefinition.native) and the app's areas are moved into MW
  * ranges it does not use (allocateMemory), stored with the project so they never move by themselves.
  */
-import type { AnalogChannel, CpuModel, ExportContext, ModuleSlot, PlcProfile } from '../profile';
+import type { AddressInfo, AnalogChannel, CpuModel, ModuleSlot, PlcProfile } from '../profile';
 import type { LadderProgram, TagDefinition } from '../ladder';
 import { rungAddresses, type Rung } from '../ladder';
-import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseAddress } from './click';
+import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseAddress as neutralParse } from './click';
 import { getPart } from '../../../electrical/catalog';
 
 export const YASKAWA_PROFILE_ID = 'yaskawa-mp';
@@ -146,15 +146,46 @@ export function yaskawaIo(address: string, c: CpuModel, modules: ModuleSlot[]): 
 
 // ── Memory layout ──
 
-/** MW word base of each neutral memory area in this project. */
-export interface MemoryLayout { C: number; DS: number; DD: number; DH: number; DF: number; T: number; CT: number; TD: number; CTD: number }
+export type MemoryArea = 'C' | 'DS' | 'DD' | 'DH' | 'DF' | 'T' | 'CT' | 'TD' | 'CTD';
 
-/** Words each area needs for the neutral range (C1–C2000 = 125 words of 16 bits, DD = 2 words each …). */
-const AREA_WORDS: MemoryLayout = { C: 125, DS: 4500, DD: 2000, DH: 500, DF: 1000, T: 32, CT: 16, TD: 500, CTD: 500 };
-const AREAS = Object.keys(AREA_WORDS) as (keyof MemoryLayout)[];
+/** MW word base of each neutral memory area in this project, and the words an area holds when more than the default. */
+export type MemoryLayout = Record<MemoryArea, number> & { size?: Partial<Record<MemoryArea, number>> };
+
+/**
+ * Words each area holds by default: CLICK's neutral ranges (C1–C2000 = 125 words of 16 bits, DD = 2 words each …).
+ * On Yaskawa these are not limits: a program with more (an MPE720 import with C2001 …) gets bigger areas.
+ */
+const AREA_WORDS: Record<MemoryArea, number> = { C: 125, DS: 4500, DD: 2000, DH: 500, DF: 1000, T: 32, CT: 16, TD: 500, CTD: 500 };
+const AREAS = Object.keys(AREA_WORDS) as MemoryArea[];
+/** M registers in the 5-digit form go to MW65534 (MP2000; MP3000 has more, MW1048575, in its 7-digit form). */
+const M_WORDS = 65535;
+
+const sizeOf = (layout: MemoryLayout, k: MemoryArea) => Math.max(layout.size?.[k] ?? 0, AREA_WORDS[k]);
+
+/** Words of its area one neutral operand needs (C17 → 2 words of C, DD3 → 6 of DD); null when it is not neutral memory. */
+function wordsNeeded(a: string): { area: MemoryArea; words: number } | null {
+  const m = /^(CTD|CT|TD|DS|DD|DH|DF|C|T)(\d+)$/.exec(a.trim().toUpperCase());
+  if (!m || Number(m[2]) < 1) return null;
+  const k = m[1] as MemoryArea, n = Number(m[2]) - 1;
+  return { area: k, words: k === 'C' || k === 'T' || k === 'CT' ? (n >> 4) + 1 : k === 'DD' || k === 'DF' || k === 'CTD' ? 2 * n + 2 : n + 1 };
+}
 
 /** A new project's layout. */
 export const DEFAULT_MEMORY: MemoryLayout = { C: 0, DS: 1000, DD: 6000, DH: 8000, DF: 8500, T: 9500, CT: 9600, TD: 9700, CTD: 10200 };
+
+const MEMORY_KIND: Record<string, AddressInfo> = {
+  C: { kind: 'bit', isBit: true }, T: { kind: 'timer', isBit: true }, CT: { kind: 'counter', isBit: true },
+  DS: { kind: 'register', isBit: false }, DD: { kind: 'register', isBit: false }, DH: { kind: 'register', isBit: false }, DF: { kind: 'register', isBit: false },
+  TD: { kind: 'timerValue', isBit: false }, CTD: { kind: 'counterValue', isBit: false },
+};
+
+/** The app's operands, with no CLICK caps on the memory (C2001, DS5000 … of a big MPE720 program are fine). */
+export function parseAddress(raw: string): AddressInfo | null {
+  const n = neutralParse(raw);
+  if (n) return n;
+  const m = /^(CTD|CT|TD|DS|DD|DH|DF|C|T)([1-9]\d*)$/.exec(raw.trim().toUpperCase());
+  return m ? MEMORY_KIND[m[1]] : null;
+}
 
 /** The MW words an imported program's own registers use (tags with an M register as `native`). */
 export function nativeWords(tags: TagDefinition[]): Set<number> {
@@ -167,17 +198,41 @@ export function nativeWords(tags: TagDefinition[]): Set<number> {
  * The layout for a program with registers of its own: each area keeps its default range when that is free, else
  * goes to the first free range (from MW10000, in steps of 1000 words) that no imported register and no other area uses.
  */
-export function allocateMemory(used: Set<number>): MemoryLayout {
+export function allocateMemory(used: Set<number>, need: Partial<Record<MemoryArea, number>> = {}): MemoryLayout {
   const taken = new Set(used);
-  const free = (base: number, size: number) => { for (let w = base; w < base + size; w++) if (taken.has(w)) return false; return base + size <= 65535; };
-  const out = { ...DEFAULT_MEMORY };
-  for (const k of AREAS) {
+  const free = (base: number, size: number) => { if (base + size > M_WORDS) return false; for (let w = base; w < base + size; w++) if (taken.has(w)) return false; return true; };
+  const out: MemoryLayout = { ...DEFAULT_MEMORY };
+  const size: Partial<Record<MemoryArea, number>> = {};
+  // Areas bigger than their default first (they move anyway), then the rest in order.
+  for (const k of [...AREAS].sort((a, b) => Number((need[b] ?? 0) > AREA_WORDS[b]) - Number((need[a] ?? 0) > AREA_WORDS[a]))) {
+    const words = Math.max(need[k] ?? 0, AREA_WORDS[k]);
+    if (words > AREA_WORDS[k]) size[k] = words;
     let base = DEFAULT_MEMORY[k];
-    if (!free(base, AREA_WORDS[k])) { base = 10000; while (!free(base, AREA_WORDS[k])) base += 1000; }
+    if (!free(base, words)) { base = 10000; while (base < M_WORDS && !free(base, words)) base += 1000; }
     out[k] = base;
-    for (let w = base; w < base + AREA_WORDS[k]; w++) taken.add(w);
+    for (let w = base; w < base + words; w++) taken.add(w);
   }
-  return out;
+  return Object.keys(size).length ? { ...out, size } : out;
+}
+
+/** The words each area needs for the program's own operands (its imported registers aside). */
+export function memoryNeed(program: LadderProgram): Partial<Record<MemoryArea, number>> {
+  const natives = new Set(program.tags.filter((t) => t.native).map((t) => t.address.toUpperCase()));
+  const need: Partial<Record<MemoryArea, number>> = {};
+  for (const a of operandsOf(program)) {
+    if (natives.has(a)) continue;
+    const w = wordsNeeded(a);
+    if (w && w.words > (need[w.area] ?? 0)) need[w.area] = w.words;
+  }
+  return need;
+}
+
+/**
+ * The layout a project uses: the one stored with it (set once, e.g. when an MPE720 program is imported), else the
+ * one that fits this program (the defaults for a program within CLICK's ranges and no registers of its own).
+ */
+export function layoutFor(program: LadderProgram, stored?: MemoryLayout): MemoryLayout {
+  return stored ?? allocateMemory(nativeWords(program.tags), memoryNeed(program));
 }
 
 /** SC1 always ON, SC2 first scan, SC7 1 s clock → the MP system registers of an H drawing. */
@@ -236,7 +291,7 @@ function cells(register: string): { word: number; bit: number | null }[] {
  * keeps MB001000 … as they are): each is an error. A bit clashes with the same bit or with a word holding it; a
  * word with any use of that word. Also an operand past its area (it would run into the next one).
  */
-export function memoryOverlaps(program: LadderProgram, layout: MemoryLayout = DEFAULT_MEMORY): string[] {
+export function memoryOverlaps(program: LadderProgram, layout: MemoryLayout = layoutFor(program)): string[] {
   const natives = new Set(program.tags.filter((t) => t.native).map((t) => t.address.toUpperCase()));
   // word → who uses it: whole word, or bit → who
   const byWord = new Map<number, { whole?: string; bits: Map<number, string> }>();
@@ -251,11 +306,10 @@ export function memoryOverlaps(program: LadderProgram, layout: MemoryLayout = DE
   const issues: string[] = [];
   for (const a of [...operandsOf(program)].sort()) {
     if (natives.has(a)) continue;
-    const m = /^(CTD|CT|TD|DS|DD|DH|DF|C|T)(\d+)$/.exec(a);
-    if (!m) continue;
-    const k = m[1] as keyof MemoryLayout, n = Number(m[2]) - 1;
-    const words = k === 'C' || k === 'T' || k === 'CT' ? (n >> 4) + 1 : k === 'DD' || k === 'DF' || k === 'CTD' ? 2 * n + 2 : n + 1;
-    if (words > AREA_WORDS[k]) { issues.push(`${a} is past the ${k} area of this Yaskawa project (${AREA_WORDS[k]} words from MW${dec(layout[k])}).`); continue; }
+    const need = wordsNeeded(a);
+    if (!need) continue;
+    const k = need.area;
+    if (need.words > sizeOf(layout, k)) { issues.push(`${a} is past the ${k} area of this Yaskawa project (${sizeOf(layout, k)} words from MW${dec(layout[k])}).`); continue; }
     const reg = yaskawaMemory(a, layout);
     if (!reg) continue;
     for (const c of cells(reg)) {
@@ -308,6 +362,3 @@ export const yaskawaProfile: PlcProfile = {
   // I / O only (memory needs the project's layout: see yaskawaName and the PLC names lookup).
   ioTag: (a, modules, cpuId) => yaskawaIo(a, cpuOf(cpuId), modules)?.register ?? null,
 };
-
-/** The layout an export context carries (a new project's defaults when it has none). */
-export const layoutOf = (ctx: Pick<ExportContext, 'yaskawaMemory'>): MemoryLayout => ctx.yaskawaMemory ?? DEFAULT_MEMORY;
