@@ -121,9 +121,9 @@ T1 Tmr_Head_Ext: Head extend timeout
 T2 Tmr_Head_Ret: Head retract timeout
 C23 Auto_Heater_run: Automatic run request for Heater (set by the cycle block)
 C3 Any_Fault: A latched fault: stops the cycle
-C24 Man_Unwinder_Y001: Manual request Unwinder motor run
-C25 Man_Head_Y003: Manual request Head down solenoid
-C26 Man_Head_Y004: Manual request Head up solenoid
+C24 Man_Unwinder_Run: Manual request Unwinder motor run
+C25 Man_Head_Down: Manual request Head down solenoid
+C26 Man_Head_Up: Manual request Head up solenoid
 C6 Pulse_1s: One scan every second
 T3 Tmr_Run_Hour: Run-hour timer
 C5 Run_Hour_Pulse: One run hour reached

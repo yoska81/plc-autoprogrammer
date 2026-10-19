@@ -28,7 +28,7 @@ const seen = { equipment: null, unknown: [] };
 function reply(system) {
   if (system.includes('choosing the control equipment')) {
     seen.equipment = system;
-    const panel = (system.match(/^- (\S+) \((Siemens|Weintek|Maple Systems|Red Lion)[^)]*\): 7"/m) || system.match(/^- (\S+) \([^)]*\): 7"/m) || system.match(/^- (\S+) \([^)]*\):/m) || [])[1] ?? null;
+    const panel = EQUIP.hmi ?? (system.match(/^- (\S+) \((Siemens|Weintek|Maple Systems|Red Lion)[^)]*\): 7"/m) || system.match(/^- (\S+) \([^)]*\): 7"/m) || system.match(/^- (\S+) \([^)]*\):/m) || [])[1] ?? null;
     return {
       summary: `${EQUIP.cpuId} for the capper.`, estimatedIO: { digitalInputs: 8, digitalOutputs: 4, analogInputs: 0, analogOutputs: 0, motionAxes: 0 },
       plc: { profileId: 'siemens-s7', cpuId: EQUIP.cpuId, why: 'Siemens, as the customer asked.' }, modules: EQUIP.modules.map((partNumber) => ({ partNumber, quantity: 1, why: 'I/O' })),
@@ -142,7 +142,42 @@ async function scenario(browser, quick) {
   check(st.rungs > 0 || st.code, 'program built');
   check(st.exporters.some((f) => /TIA|SCL|\.scl|\.xml/i.test(f)), `TIA Portal export offered (${st.exporters.join(' | ')})`);
   check(!results.some((r) => / failed:/.test(r)), 'no stage failed');
+  // The .scl speaks TIA Portal's names: no CLICK operand outside the user's own I/O descriptions, no static named
+  // after a CLICK register, no "_Y003"-style name.
+  const scl = await page.evaluate(async () => {
+    const p = (await import('/src/deliverables/collect.ts')).collectProject();
+    const { exportContext } = await import('/src/deliverables/exportContext.ts');
+    const { buildScl } = await import('/src/plc/core/profiles/siemens.ts');
+    let text = buildScl(p.ladder, exportContext(p)).scl;
+    for (const x of [...p.io].sort((a, b) => b.description.length - a.description.length)) text = text.split(x.description).join('');
+    const ops = [...new Set(text.match(/\b(?:CTD|TD|CT|DS|DD|DH|DF|SC|SD|TXT|C|T|X|Y)\d+\b/g) ?? [])];
+    const names = [...text.matchAll(/^\s+([A-Za-z_][A-Za-z0-9_]*) : /gm)].map((m) => m[1]).filter((n) => /^(?:CTD|TD|CT|DS|DD|DH|DF|C|T|X|Y)\d+$|_[XY]\d{3}$/.test(n));
+    return { ops, names };
+  });
+  check(scl.ops.length === 0 && scl.names.length === 0, `SCL in TIA names only (operands: ${scl.ops.slice(0, 8).join(' ') || 'none'}; names: ${scl.names.slice(0, 8).join(' ') || 'none'})`);
   check(seen.unknown.length === 0, `every AI prompt known to the mock ${seen.unknown.join(' | ')}`);
+  // Equipment: the Siemens CPUs and panels first, the other brands one click away.
+  await page.goto(BASE + '/equipment');
+  await page.locator('input[aria-label^="Choose 6ES7"]').first().waitFor({ timeout: 15000 });
+  const cpuIds = await page.locator('input[aria-label^="Choose "][type="radio"]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label').replace('Choose ', '')));
+  check(cpuIds.some((id) => /^6ES7/.test(id)) && !cpuIds.some((id) => /^C[02]-/.test(id)), `Equipment: only Siemens CPUs shown first (${cpuIds.filter((id) => !/^6ES7|^6AV/.test(id)).slice(0, 3).join(', ') || 'no other'})`);
+  check(await page.getByRole('button', { name: /^Show \d+ CPUs of other brands$/ }).count() === 1, 'the other brands are one click away');
+  check(await page.locator('input[aria-label^="Choose CM5-"]').count() === 0, 'no C-more panel listed by default for an S7');
+  // The brand rows and the CPU table follow the project's PLC (never the untouched CLICK / C-more default).
+  const brandRow = async (g) => page.locator(`select[aria-label="Brand for ${g}"]`).inputValue();
+  const shownBrands = [await brandRow('PLC and I/O'), await brandRow('Operator panel (HMI)')];
+  const hmiNow = await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber);
+  check(shownBrands[0] === 'siemens' && (!/^6AV/.test(hmiNow ?? '') || shownBrands[1] === 'siemens'), `Preferred brands show the S7 project's brands (${shownBrands.join(' / ')}, panel ${hmiNow})`);
+  check(await page.locator(`input[aria-label="Choose ${CPU}"][type="radio"]`).isChecked(), `the project's ${CPU} is selected in the CPU table`);
+  // Online: a plain sentence for an S7 (its own software monitors it), never CLICK's Modbus table.
+  await page.goto(BASE + '/online');
+  const online = await page.getByTestId('online-not-here').innerText({ timeout: 10000 }).catch(() => '');
+  check(/TIA Portal/.test(online) && !(await page.getByText(/MODBUS|016385|401001/).count()), `Online page: the sentence, no CLICK Modbus table (${online.slice(0, 80)})`);
+  check(await page.getByRole('button', { name: /^I\/O check-out/ }).count() === 1 && await page.getByRole('button', { name: 'Fault finding' }).count() === 1, 'Online page: the I/O check-out and Fault finding tabs stay on an S7');
+  // The navigation's Fault finding link: the troubleshooter works from the wiring alone, on every brand.
+  await page.goto(BASE + '/online?tab=troubleshoot');
+  const troubleshooter = await page.getByLabel('Point to troubleshoot').waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
+  check(troubleshooter, 'Fault finding opens on an S7 (/online?tab=troubleshoot)');
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await page.context().close();
 }
@@ -188,6 +223,9 @@ async function extras(browser) {
     applyEquipment({ cpuId: '5069-L310ER', modules: ['5069-IB16', '5069-OB16'], hmiPartNumber: null }, null);
   });
   await page.goto(BASE + '/equipment');
+  await page.locator('select[aria-label="Brand for PLC and I/O"]').waitFor({ timeout: 15000 });
+  check(await page.locator('select[aria-label="Brand for PLC and I/O"]').inputValue() === 'allen-bradley', 'a Logix project shows Allen-Bradley as its PLC brand');
+  check(await page.locator('input[aria-label="Choose 5069-L310ER"][type="radio"]').isChecked(), 'the project\'s 5069-L310ER is selected in the CPU table');
   const sensors = page.locator('select[aria-label^="Brand for"]').filter({ has: page.locator('option[value="ifm"]') }).first();
   await sensors.selectOption('ifm');
   const after = await page.evaluate(async () => {
@@ -214,7 +252,8 @@ async function extras(browser) {
 // tag table (.sdf) gives the same point. The CPU has no I/O of its own, so every point is on an ET 200SP module.
 async function s1500(browser) {
   console.log('• === S7-1500 + ET 200SP: shown and exported addresses agree');
-  EQUIP = { cpuId: '6ES7511-1AL03-0AB0', modules: ['6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0'] };
+  // The AI answers with a C-more panel here: Update all must swap it for one that talks to the S7.
+  EQUIP = { cpuId: '6ES7511-1AL03-0AB0', modules: ['6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0'], hmi: 'CM5-T7W' };
   const page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -255,6 +294,9 @@ async function s1500(browser) {
     return { cpu: p.cpu.id, modules: p.modules, exported, ids, hmi: hmiTagRows(p).filter((r) => r.plcIo).map((r) => [r.address, r.plcIo]) };
   });
   console.log('  ·', out.cpu, out.modules.join(', '), '|', shown.slice(0, 3).map((x) => x.join('=')).join(' '), '| export', out.exported.slice(0, 3).map((t) => `${t.name}=${t.address}`).join(' '));
+  check(results.some((r) => /^equipment done: .*The CM5-T7W panel cannot talk to the 6ES7511-1AL03-0AB0: \S+ \(/.test(r)), 'AI path: a panel that cannot talk to the S7 is swapped, and said');
+  const hmiNow = await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber);
+  check(hmiNow && !/^CM5-/.test(hmiNow), `the project's panel talks to the S7 (${hmiNow})`);
   check(out.cpu === '6ES7511-1AL03-0AB0' && out.modules.length >= 2, `S7-1500 with ET 200SP modules (${out.cpu} ${out.modules.join(', ')})`);
   const exportedAt = new Set(out.exported.filter((t) => t.type === 'Bool').map((t) => t.address));
   // Every wired point is in the tag table with its description (the ones the program does not use say so).

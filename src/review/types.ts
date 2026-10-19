@@ -19,6 +19,8 @@ export interface Finding {
   page: ReviewPage;
   /** Item on that page: rung id, address, device tag, screen id … ('' = page only). */
   item: string;
+  /** The id an earlier version gave it (keyed by address): a mark saved under it moves to `id`. */
+  legacyId?: string;
 }
 
 export type FindingStatus = 'open' | 'resolved' | 'ignored';

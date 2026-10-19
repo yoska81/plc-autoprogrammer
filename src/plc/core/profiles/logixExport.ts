@@ -31,7 +31,8 @@ const GENERATED: Record<string, string> = { SC7: 'Clock_1s', CLOCK_TMR: 'Clock_1
 
 /** Logix tag names: letters, digits, single underscores; start with a letter or underscore; at most 40 characters. */
 export function logixName(text: string, used: Set<string>, fallback: string): string {
-  let base = text.normalize('NFKD').replace(/[^A-Za-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+  // Accents dropped, not turned into "_": "Ölstand" → Olstand, "Straße" → Strasse.
+  let base = text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').replace(/[^A-Za-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
   if (!base) base = fallback;
   if (/^\d/.test(base)) base = `T_${base}`;
   base = base.slice(0, 40).replace(/_+$/, '');
@@ -91,7 +92,11 @@ export function toLogix(program: LadderProgram, ctx: ExportContext, ioTag: IoTag
       return tag;
     }
     const label = ctx.labels.get(base);
-    const alias = dataType === 'BOOL' || dataType === 'REAL' ? ioTag(base, modules, ctx.cpuId) : null;
+    // Studio 5000 refuses an alias to a module that is not configured: a point on a slot with no module (an address
+    // previewed before the modules are chosen) is a plain tag until its module is there.
+    const slot = /^[XY](\d)\d\d$/.exec(base)?.[1];
+    const onRack = !slot || slot === '0' || Boolean(modules[Number(slot) - 1]);
+    const alias = (dataType === 'BOOL' || dataType === 'REAL') && onRack ? ioTag(base, modules, ctx.cpuId) : null;
     const tag: LogixTag = {
       base,
       name: logixName(n?.nickname || label || GENERATED[base] || base, used, base),

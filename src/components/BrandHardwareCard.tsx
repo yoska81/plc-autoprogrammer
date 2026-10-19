@@ -39,7 +39,7 @@ export default function BrandHardwareCard({ need, onPick }: { need: Need; onPick
         <h4 className="text-xs font-semibold text-steel-700">{plcVendors.map((v) => VENDORS.find((x) => x.id === v)?.name).join(' / ')} hardware for this machine</h4>
         <p className="text-[11px] text-steel-600">From the verified catalogs: the expansion modules each CPU would need for {need.digitalInputs} inputs / {need.digitalOutputs} outputs{need.analogInputs || need.analogOutputs ? ` / ${need.analogInputs} analog in / ${need.analogOutputs} analog out` : ''}. {notHere.length
           ? `${notHere.map((v) => VENDORS.find((x) => x.id === v)?.name).join(' / ')}: this tool cannot program ${notHere.length > 1 ? 'these brands' : 'this brand'} yet, so ${notHere.length > 1 ? 'their' : 'its'} CPUs cannot be chosen — use them for comparison and quotes. The program, I/O addresses and drawings follow the PLC chosen below.`
-          : 'Use this CPU sets it with these modules for the project.'}</p>
+          : 'Use this CPU selects it with these modules below; it is applied to the project with "Use this selection".'}</p>
       </div>
       {platforms.map((pl) => (
         <div key={pl.id} className="border-b border-steel-200 last:border-b-0">

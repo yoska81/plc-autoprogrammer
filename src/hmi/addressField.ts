@@ -21,8 +21,8 @@ function tidy(a: string): string | null {
   return t === a ? null : t;
 }
 
-/** A PLC name as typed, for comparing: no spaces, no "on-board" (Unitronics I0, "I 0", "on-board I0"). */
-const key = (s: string) => s.toUpperCase().replace(/\s+/g, '').replace(/^ON-?BOARD/, '');
+/** A PLC name as typed, for comparing: no spaces, no "on-board", input / output as I / O (Unitronics I0, "I 0", "on-board input 0"). */
+const key = (s: string) => s.toUpperCase().replace(/\s+/g, '').replace(/^ON-?BOARD/, '').replace(/^INPUT/, 'I').replace(/^OUTPUT/, 'O');
 
 export function hmiAddressProblem(rack: Rack, io: Set<string>, kind: HmiElement['kind'], raw: string | null | undefined): string | null {
   const { profile, cpu } = rack;

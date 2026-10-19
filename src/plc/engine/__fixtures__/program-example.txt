@@ -118,8 +118,8 @@ T1 Tmr_Pusher_Ext: Pusher extend timeout
 T2 Tmr_Pusher_Ret: Pusher retract timeout
 C22 Auto_Main_Air_Dump_run: Automatic run request for Main Air Dump (set by the cycle block)
 C3 Any_Fault: A latched fault: stops the cycle
-C23 Man_Conveyor_Y001: Manual request Conveyor motor contactor
-C24 Man_Pusher_Y002: Manual request Pusher solenoid
+C23 Man_Conveyor_Run: Manual request Conveyor motor contactor
+C24 Man_Pusher_Extend: Manual request Pusher solenoid
 C6 Pulse_1s: One scan every second
 C4 Batch_Done: Batch target reached
 T3 Tmr_Rate: 10 s rate window

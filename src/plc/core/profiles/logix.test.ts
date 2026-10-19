@@ -92,6 +92,12 @@ const lx = toLogix(program, ctx, logixIoTag);
   assert.ok(tag && tag.aliasFor && /:I\./.test(tag.aliasFor), `unused input is an alias tag (${JSON.stringify(tag)})`);
   for (const p of io) assert.ok(t.some((x) => x.base === addr.get(p.id)?.toUpperCase()), `${p.id} has a tag`);
 }
+// A point on a slot with no module is a plain tag (Studio 5000 refuses an alias to a module that is not configured).
+{
+  const t = toLogix(program, { ...ctx, modules: [] }, logixIoTag).tags;
+  const onEmpty = t.filter((x) => /^[XY][1-9]\d\d$/.test(x.base ?? ''));
+  assert.ok(onEmpty.length > 0 && onEmpty.every((x) => !x.aliasFor), onEmpty.map((x) => `${x.base}→${x.aliasFor}`).join(', '));
+}
 const all = lx.routines.flatMap((r) => r.rungs.map((g) => g.text));
 const has = (t: string) => assert.ok(all.includes(t), `missing rung ${t}\n${all.join('\n')}`);
 has('[XIC(Start_PB),XIC(Run_Latch)]XIO(Stop_PB)OTE(Run_Latch);'); // shared conditions behind the branch
@@ -191,5 +197,10 @@ assert.match(msgs, /no embedded I\/O/);
   assert.equal(logixProfile.checkRung!(rung, { ioAddresses: new Set(['X001', 'Y001']) }).length, 0);
   assert.match(logixProfile.checkRung!(rung, { ioAddresses: new Set() }).map((i) => i.message).join(), /X001: this CompactLogix has no embedded I\/O/);
 }
+
+// Accented letters keep their letter: "Ölstand" → Olstand, "Straße" → Strasse (never O_lstand).
+assert.equal(logixName('Ölstand', new Set(), 'X'), 'Olstand');
+assert.equal(logixName('Straße Förderband', new Set(), 'X'), 'Strasse_Forderband');
+assert.equal(logixName('Température', new Set(), 'X'), 'Temperature');
 
 console.log('logix tests passed');

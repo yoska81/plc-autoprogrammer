@@ -24,6 +24,7 @@ import { analogSetup } from '../plc/core/analog';
 import { getPart } from '../electrical/catalog';
 import { vendorPreference } from '../store/useProjectStore';
 import { nearestPanel } from '../hmi/nearestPanel';
+import { hasBuiltInPanel } from '../hmi/panels';
 import { generateRuleBasedHmi } from '../lib/ai/hmiContentAI';
 import { useDraftStore } from '../store/useDraftStore';
 import { projectUpgradeRoles } from '../plc/import/ui/applyUpgrade';
@@ -72,6 +73,21 @@ interface RunCtx {
  * answered from the cache. I/O, electrical and HMI are applied; a change to an existing PLC program is
  * left as a proposal. A failed stage stops the stages after it.
  */
+/**
+ * The panel to apply with a CPU: the one picked when it talks to the CPU; else the closest listed panel that can;
+ * else one is kept (the current one if it talks to the CPU, else the one picked), never none: no panel would make
+ * the project "no touch panel" and add the door pushbuttons and lamps to the I/O list. `say` is what the step tells.
+ */
+export function panelForCpu(picked: string | null, current: string | null, cpuId: string, need: Need, nearest: typeof nearestPanel = nearestPanel): { panel: string | null; say: string } {
+  const model = picked && !hasBuiltInPanel(getPart(picked)) ? getHmi(picked) : undefined;
+  if (!model || hmiFit(model, need, cpuId).ok) return { panel: picked, say: '' };
+  const swap = nearest(cpuId, need, { w: model.widthPx, h: model.heightPx }, vendorPreference().hmi);
+  if (swap) return { panel: swap.partNumber, say: ` The ${picked} panel cannot talk to the ${cpuId}: ${swap.partNumber} (${swap.sizeIn}") instead; change it on the Equipment page.` };
+  const cur = current && !hasBuiltInPanel(getPart(current)) ? getHmi(current) : undefined;
+  if (cur && current !== picked && hmiFit(cur, need, cpuId).ok) return { panel: current, say: ` The ${picked} panel cannot talk to the ${cpuId}: kept your ${current}.` };
+  return { panel: picked, say: ` The ${picked} panel cannot talk to the ${cpuId} and no listed panel can: it is kept for now (no door pushbuttons added); choose a panel that can on the Equipment page.` };
+}
+
 export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) => void, opts: { signal?: AbortSignal; shouldStop?: () => boolean } = {}): Promise<void> {
   const { signal, shouldStop = () => false } = opts;
   const running = new Map<UpdateStep, Promise<boolean>>();
@@ -180,9 +196,18 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         // The AI's CPU + modules must cover its own I/O estimate: add the modules it is short of, or stop.
         const mods = modulesToFit(choice.cpuId, choice.modules, need);
         if (!mods) { onStep({ step, status: 'failed', message: `${choice.cpuId} cannot cover ${need.digitalInputs} inputs / ${need.digitalOutputs} outputs even with modules: choose a bigger CPU on the Equipment page.` }); return false; }
-        const warn = applyEquipment({ ...choice, modules: mods }, rec);
+        // The panel the AI picked must talk to its CPU: else the closest one that can (said).
+        const { panel: applied, say: panelSay } = panelForCpu(choice.hmiPartNumber, curHmi, choice.cpuId, { ...need, ethernetHmi: true });
+        choice.hmiPartNumber = applied;
+        const panelOk = !panelSay;
+        // The stored recommendation names the panel applied, so later sizing (minHmiSizeIn) and its suggestion agree.
+        const stored = choice.hmiPartNumber === (rec.hmi?.partNumber ?? null) || !choice.hmiPartNumber ? rec
+          : { ...rec, hmi: { partNumber: choice.hmiPartNumber, why: `${rec.hmi?.partNumber ?? 'The suggested panel'} cannot talk to the ${choice.cpuId}.` } };
+        const warn = applyEquipment({ ...choice, modules: mods }, stored);
         const added = mods.length - choice.modules.length;
-        onStep({ step, status: 'done', message: `${brandNote(rec.plc.cpuId)}${rec.plc.cpuId}${cur.cpuId && cur.cpuId !== rec.plc.cpuId ? ` (was ${cur.cpuId}, no longer enough)` : ''}, ${mods.length} module(s)${added ? ` (${added} added to cover the I/O)` : ''}${rec.hmi ? `, HMI ${rec.hmi.partNumber}` : ''}.${warn ? ` ${warn}` : ''}` });
+        const fitsNow = curCpu ? cpuFit(curCpu, cur.modules, need).ok : false;
+        const was = !cur.cpuId || cur.cpuId === rec.plc.cpuId ? '' : otherBrand(cur.plcId) ? ` (was ${cur.cpuId}, another brand)` : fitsNow ? ` (was ${cur.cpuId})` : ` (was ${cur.cpuId}, no longer enough)`;
+        onStep({ step, status: 'done', message: `${brandNote(rec.plc.cpuId)}${rec.plc.cpuId}${was}, ${mods.length} module(s)${added ? ` (${added} added to cover the I/O)` : ''}${choice.hmiPartNumber && panelOk ? `, HMI ${choice.hmiPartNumber}` : ''}.${panelSay}${warn ? ` ${warn}` : ''}` });
       }
       if (equipmentNow() !== before) ctx.changed.add('equipment');
       return true;

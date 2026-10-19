@@ -26,7 +26,15 @@ export const useReviewStore = create<ReviewStore>()(
       ai: null,
       marks: {},
       fixRequest: null,
-      setChecks: (checks) => set({ checks, checkedAt: new Date().toISOString() }),
+      // A mark saved under a finding's old id (by address: lost on a brand switch that renumbers the I/O) moves to its id.
+      setChecks: (checks) => set((s) => {
+        let marks = s.marks;
+        for (const f of checks) if (f.legacyId && marks[f.legacyId] && !marks[f.id]) {
+          marks = { ...marks, [f.id]: marks[f.legacyId] };
+          delete marks[f.legacyId];
+        }
+        return { checks, marks, checkedAt: new Date().toISOString() };
+      }),
       setAi: (r) => set({ ai: r ? { ...r, at: new Date().toISOString() } : null }),
       mark: (id, status, reason) => set((s) => {
         const marks = { ...s.marks };

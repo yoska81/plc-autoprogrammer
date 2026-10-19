@@ -1,7 +1,7 @@
 // npx tsx src/lib/ai/equipmentAI.test.ts — the Equipment AI chooses from the brand the customer named or prefers.
 import assert from 'node:assert/strict';
 import { equipmentChoices, equipmentSystemPrompt } from './equipmentAI';
-import { brandMismatch, choosableProfiles, plcPreferenceOf, requestedProfiles, unsupportedBrands, brandNote } from '../../spec/brand';
+import { brandMismatch, choosableProfiles, plcPreferenceOf, requestedProfiles, unsupportedBrands, brandNote, brandPhrase } from '../../spec/brand';
 
 const ids = (spec: string, pref: string[] = ['automationdirect']) => choosableProfiles(spec, pref).map((p) => p.id);
 
@@ -133,5 +133,17 @@ assert.deepEqual(plcPreferenceOf(undefined), []);
 assert.deepEqual(plcPreferenceOf(['siemens']), ['siemens']);
 assert.deepEqual(plcPreferenceOf(['automationdirect'], true), ['automationdirect'], 'picked on the card: a request');
 assert.equal(brandMismatch('Pick and place', plcPreferenceOf(['automationdirect']), 'logix'), null, 'a Logix project is not flagged by the default');
+
+// The quoted phrase: whole sentences (a decimal point is not a full stop), cut at a word, single spaces.
+assert.equal(brandPhrase('Conveyor speed 1.5 m/s and the PLC is an Allen-Bradley CompactLogix. E-stop.'), 'Conveyor speed 1.5 m/s and the PLC is an Allen-Bradley CompactLogix');
+assert.equal(brandPhrase('Controller: Siemens S7-1200 (firmware v4.5) in the main panel.'), 'Controller: Siemens S7-1200 (firmware v4.5) in the main panel');
+{
+  const q = brandPhrase('The machine is a very long and complicated bottle capping and labelling line whose control is done by a Siemens   S7-1200 PLC mounted in the main cabinet next to the drives and the safety relays of the line.') ?? '';
+  assert.ok(q.startsWith('…') && q.endsWith('…') && !/\s{2}/.test(q), q);
+  assert.match(q, /Siemens S7-1200 PLC/);
+  const words = (t: string) => t.replace(/…/g, '').trim().split(' ');
+  const full = 'The machine is a very long and complicated bottle capping and labelling line whose control is done by a Siemens S7-1200 PLC mounted in the main cabinet next to the drives and the safety relays of the line'.split(' ');
+  assert.ok(words(q).every((w) => full.includes(w)), `cut at whole words: ${q}`);
+}
 
 console.log('equipment AI tests passed');
