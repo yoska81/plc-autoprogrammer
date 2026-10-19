@@ -9,9 +9,12 @@
  *                     MW00000 bit 0, MB01234A = MW01234 bit 10 (the bit digit is hex)
  *   system            SB000004 (always ON, as the reader reads it from a real project)
  *   constants         #00100
- * I / O: each module's points from its leading input / output register. Without catalog data the modules are
- * numbered consecutively in slot order, 16 points per word: that is marked "assumed" (check the module
- * configuration in MPE720).
+ * I / O: each module's points from its leading register, 16 points per word. Without catalog data the leading
+ * registers follow MPE720's self-configuration (slot order after the CPU's own registers, each module on a 16-word
+ * boundary): that is marked "assumed" (check the module configuration in MPE720).
+ * Register widths are the reader's (4 hex I / O digits, 5 decimal M digits). The MP3000 manual also prints
+ * 5 hex / 7 decimal digit forms: to be checked against what MPE720 shows for the user's CPU-301 (mpRegister is
+ * the one place to change).
  * Memory: each neutral area sits in its own MW range (the layout). A new project uses the defaults; a program
  * imported from MPE720 keeps its own registers (TagDefinition.native) and the app's areas are moved into MW
  * ranges it does not use (allocateMemory), stored with the project so they never move by themselves.
@@ -35,12 +38,15 @@ const cpu = (id: string, family: YaskawaFamily, inputs: number, outputs: number,
  * catalog's CPU and LIO parts; until then the CPU fit is the generic one.
  */
 export const YASKAWA_CPUS = [
-  cpu('JAPMC-CP3301-1-E', 'yaskawa-mp3000', 0, 0, 'JAPMC-CP3301-1-E — MP3000 CPU-301, 16 axes (I/O on LIO modules)', 16),
-  cpu('JAPMC-CP3302-1-E', 'yaskawa-mp3000', 0, 0, 'JAPMC-CP3302-1-E — MP3000 CPU-302, 32 axes (I/O on LIO modules)', 32),
-  cpu('JAPMC-CP3201-E', 'yaskawa-mp3000', 0, 0, 'JAPMC-CP3201-E — MP3300 CPU-201, 16 axes (I/O on LIO modules)', 16),
-  cpu('JAPMC-CP3202-E', 'yaskawa-mp3000', 0, 0, 'JAPMC-CP3202-E — MP3300 CPU-202, 32 axes (I/O on LIO modules)', 32),
-  cpu('JEPMC-MP2300-E', 'yaskawa-mp2000', 8, 4, 'JEPMC-MP2300-E — MP2300 basic module, 8 DI / 4 DO, 16 axes', 16),
-  cpu('JEPMC-MP2310-E', 'yaskawa-mp2000', 0, 0, 'JEPMC-MP2310-E — MP2310 basic module, 16 axes (I/O on LIO modules)', 16),
+  cpu('JAPMC-CP3301-1-E', 'yaskawa-mp3000', 0, 0, 'JAPMC-CP3301-1-E — MP3300 CPU-301, 16 axes (I/O on LIO modules)', 16),
+  cpu('JAPMC-CP3301-2-E', 'yaskawa-mp3000', 0, 0, 'JAPMC-CP3301-2-E — MP3300 CPU-301, 32 axes (I/O on LIO modules)', 32),
+  cpu('JAPMC-CP3302-1-E', 'yaskawa-mp3000', 0, 0, 'JAPMC-CP3302-1-E — MP3300 CPU-302, 16 axes (I/O on LIO modules)', 16),
+  cpu('JAPMC-CP3302-2-E', 'yaskawa-mp3000', 0, 0, 'JAPMC-CP3302-2-E — MP3300 CPU-302, 32 axes (I/O on LIO modules)', 32),
+  cpu('JEPMC-CP3201-E', 'yaskawa-mp3000', 0, 0, 'JEPMC-CP3201-E — MP3200 CPU-201 (I/O on LIO modules)', 16),
+  cpu('JEPMC-CP3202-E', 'yaskawa-mp3000', 0, 0, 'JEPMC-CP3202-E — MP3200 CPU-202 (I/O on LIO modules)', 32),
+  cpu('JEPMC-MP2310-E', 'yaskawa-mp2000', 0, 0, 'JEPMC-MP2310-E — MP2310 basic module (I/O on LIO modules)', 16),
+  cpu('JEPMC-MP2300S-E', 'yaskawa-mp2000', 0, 0, 'JEPMC-MP2300S-E — MP2300S basic module (I/O on LIO modules)', 16),
+  cpu('JEPMC-MP2300-E', 'yaskawa-mp2000', 8, 4, 'JEPMC-MP2300-E — MP2300 basic module, 8 DI / 4 DO built in', 16),
 ];
 
 const cpuOf = (cpuId?: string): CpuModel => YASKAWA_CPUS.find((c) => c.id === cpuId) ?? YASKAWA_CPUS[0];
@@ -71,18 +77,36 @@ export function mWords(register: string): number[] | null {
 
 interface Lead { input: number; output: number; assumed: boolean }
 
-/** Leading input / output register of each module: from the catalog (ratings.leadInputRegister / leadOutputRegister, hex), else consecutive by slot. */
+/**
+ * Where the registers the CPU itself uses end, so the first option module starts after them (self-configuration
+ * defaults): MP3300 CPU-301 / CPU-302: 218IFD IW/OW 0000–07FF, MECHATROLINK-III I/O 0800–0BFF, M-EXECUTOR
+ * 0C00–0C3F (SIEP C880725 21E); MP2300: built-in 8 DI at IW0000, 4 DO at OW0001 (SIEP C880700 03G). Others: 0.
+ */
+function cpuWords(c: CpuModel): number {
+  if (/^JAPMC-CP330[12]/.test(c.id)) return 0x0c40;
+  if (c.builtInInputs || c.builtInOutputs) return 2;
+  return 0;
+}
+
+/** MP2300 built-in I/O: inputs IW0000, outputs OW0001 (SIEP C880700 03G). */
+const BUILT_IN = { input: 0, output: 1 };
+
+/**
+ * Leading register of each option module, the same number for its inputs and outputs (a 2-word LIO-01 / LIO-02
+ * block puts its outputs on the second word: ratings.outputWordOffset). From the catalog (ratings.leadRegister,
+ * hex) when known; else self-configuration's rule: in slot order after the CPU's own registers, each module on a
+ * 16-word boundary (SIEP C880700 34 §1.3) — marked assumed.
+ */
 export function ioLeads(c: CpuModel, modules: ModuleSlot[]): Lead[] {
-  // Built-in I/O (MP2300) takes the first words.
-  let nextIn = Math.ceil(c.builtInInputs / 16), nextOut = Math.ceil(c.builtInOutputs / 16);
+  let next = cpuWords(c);
   return modules.map((m) => {
     const r = getPart(m.partNumber)?.ratings ?? {};
-    const li = r.leadInputRegister != null ? parseInt(String(r.leadInputRegister), 16) : NaN;
-    const lo = r.leadOutputRegister != null ? parseInt(String(r.leadOutputRegister), 16) : NaN;
-    const lead: Lead = { input: isNaN(li) ? nextIn : li, output: isNaN(lo) ? nextOut : lo, assumed: isNaN(li) || isNaN(lo) };
-    nextIn = lead.input + Math.ceil(m.inputs / 16) + (m.analogInputs ?? 0);
-    nextOut = lead.output + Math.ceil(m.outputs / 16) + (m.analogOutputs ?? 0);
-    return lead;
+    const given = r.leadRegister != null ? parseInt(String(r.leadRegister), 16) : NaN;
+    const lead = isNaN(given) ? Math.ceil(next / 16) * 16 : given;
+    const off = Number(r.outputWordOffset ?? 0);
+    const words = Math.max(Math.ceil(m.inputs / 16) + (m.analogInputs ?? 0), off + Math.ceil(m.outputs / 16) + (m.analogOutputs ?? 0), 1);
+    next = lead + words;
+    return { input: lead, output: lead + off, assumed: isNaN(given) };
   });
 }
 
@@ -105,7 +129,7 @@ export function yaskawaIo(address: string, c: CpuModel, modules: ModuleSlot[]): 
     const input = io[1] === 'X', slot = Number(io[2]), n = Number(io[3]) - 1;
     if (slot === 0) {
       if (n >= (input ? c.builtInInputs : c.builtInOutputs)) return null;
-      return { register: mpRegister(input ? 'I' : 'O', 'B', n >> 4, n & 15), assumed: true };
+      return { register: mpRegister(input ? 'I' : 'O', 'B', (input ? BUILT_IN.input : BUILT_IN.output) + (n >> 4), n & 15), assumed: false };
     }
     const m = modules[slot - 1];
     if (!m || n >= (input ? m.inputs : m.outputs)) return null;
@@ -156,6 +180,9 @@ export function allocateMemory(used: Set<number>): MemoryLayout {
   return out;
 }
 
+/** SC1 always ON, SC2 first scan, SC7 1 s clock → the MP system registers of an H drawing. */
+const SYSTEM_BITS: Record<number, string> = { 1: 'SB000004', 2: 'SB000001', 7: 'SB000012' };
+
 /** The MP register of a neutral memory operand (C1 → MB000000, DS1 → MW01000, TD3 → MW09702 …); null for what MP has no register for. */
 export function yaskawaMemory(address: string, layout: MemoryLayout = DEFAULT_MEMORY): string | null {
   const m = /^(CTD|CT|TD|DS|DD|DH|DF|SC|C|T)(\d+)$/.exec(address.trim().toUpperCase());
@@ -168,7 +195,9 @@ export function yaskawaMemory(address: string, layout: MemoryLayout = DEFAULT_ME
     case 'DS': case 'DH': case 'TD': return mpRegister('M', 'W', layout[k] + n);
     case 'DD': case 'CTD': return mpRegister('M', 'L', layout[k] + 2 * n);
     case 'DF': return mpRegister('M', 'F', layout.DF + 2 * n);
-    case 'SC': return n === 0 ? 'SB000004' : null; // always ON; first scan / clock are not confirmed (flagged by the checker)
+    // MP3000 Ladder Programming Manual SIEP C880725 13 App. A, for H (high-speed) drawings, where the app's
+    // program goes: always ON, first high-speed scan, 1.0 s flicker (L drawings: SB000003 / SB000032).
+    case 'SC': return SYSTEM_BITS[n + 1] ?? null;
   }
   return null;
 }
@@ -241,7 +270,7 @@ const KNOWLEDGE = (c: CpuModel) => `Target: Yaskawa ${c.label}, programmed in MP
 - I/O is on LIO modules (X1xx / Y1xx… = module in slot order, 16 points per word): X101 = IB00000 on the first module${c.builtInInputs ? `; the built-in points are X001–X0${String(c.builtInInputs).padStart(2, '0')} / Y001–Y0${String(c.builtInOutputs).padStart(2, '0')}` : ''}.
 - Internal bits C → MB, registers DS / DH → MW, DD → ML, DF → MF; timers T (done bit) with TD (count register), counters CT with CTD.
 - Servo axes are MECHATROLINK network axes (motion registers, not pulse outputs): never use pulse / direction outputs for them.
-- SC1 = SB000004 (always ON). No other SC / SD bits: build a first-scan or clock bit in the program.`;
+- SC1 = SB000004 (always ON), SC2 = SB000001 (first scan), SC7 = SB000012 (1 s clock). No other SC / SD bits.`;
 
 export const yaskawaProfile: PlcProfile = {
   id: YASKAWA_PROFILE_ID,
@@ -258,13 +287,13 @@ export const yaskawaProfile: PlcProfile = {
   checkRung: (rung) => {
     const issues: { severity: 'error' | 'warning'; message: string }[] = [];
     for (const a of operandsOfRung(rung)) {
-      if (/^SC\d+$/.test(a) && a !== 'SC1') issues.push({ severity: 'error', message: `${a}: no confirmed MP system register for it (only SC1 = SB000004, always ON). Build a first-scan or clock bit in the program.` });
+      if (/^SC\d+$/.test(a) && !['SC1', 'SC2', 'SC7'].includes(a)) issues.push({ severity: 'error', message: `${a}: the MP system registers the app uses are SC1 (SB000004, always ON), SC2 (SB000001, first scan) and SC7 (SB000012, 1 s clock) only.` });
       if (/^(SD|TXT)\d+$/.test(a)) issues.push({ severity: 'error', message: `${a}: the Yaskawa profile has no register for it.` });
     }
     return issues;
   },
   dataTypeOf: (a) => neutralType(a),
-  simSemantics: { alwaysOn: 'SC1', firstScan: null, clock1s: null, retentive: clickRetentive },
+  simSemantics: { alwaysOn: 'SC1', firstScan: 'SC2', clock1s: 'SC7', retentive: clickRetentive },
   analogChannels: yaskawaAnalogChannels,
   // I / O only (memory needs the project's layout: see yaskawaName and the PLC names lookup).
   ioTag: (a, modules, cpuId) => yaskawaIo(a, cpuOf(cpuId), modules)?.register ?? null,

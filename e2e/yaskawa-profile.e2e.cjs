@@ -31,7 +31,7 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   const io = await page.evaluate(async () => { const [{ useIOStore }, { ioAddresses }, { getProfile }, { useProjectStore }] = await Promise.all([import('/src/store/useIOStore.ts'), import('/src/plc/core/ioChange.ts'), import('/src/plc/core/profiles/index.ts'), import('/src/store/useProjectStore.ts')]);
     const a = ioAddresses(useIOStore.getState().projectIO); const s = useProjectStore.getState();
     return [...a.values()].map((x) => getProfile(s.plcId).ioTag(x, [], s.cpuId)).join(','); });
-  check(/^IB00000,IB00001/.test(io) && /OB00000/.test(io), `the I/O on IB / OB registers (${io})`);
+  check(/^IB00000,IB00001/.test(io) && /OB00010/.test(io), `the I/O on IB / OB registers: built-in DI at IW0000, DO at OW0001 (${io})`);
 
   await page.goto(BASE + '/program');
   await page.waitForSelector('div.overflow-auto div[role="button"][title]');

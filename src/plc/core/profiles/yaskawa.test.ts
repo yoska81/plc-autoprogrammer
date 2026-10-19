@@ -31,23 +31,27 @@ assert.ok(PLC_PROFILES.includes(yaskawaProfile));
 assert.equal(getProfile('yaskawa-mp').id, 'yaskawa-mp');
 assert.deepEqual([...new Set(YASKAWA_CPUS.map((c) => yaskawaFamily(c.id)))].sort(), ['yaskawa-mp2000', 'yaskawa-mp3000'], 'one profile, two families (Dev 5\'s panel drivers)');
 
-// I / O: two 16 / 16 LIO modules numbered consecutively (no catalog data: assumed).
+// I / O: two LIO modules by self-configuration (no catalog data: assumed): after the CPU-301's own registers
+// (218IFD, MECHATROLINK-III I/O, M-EXECUTOR up to 0C3F), each module on a 16-word boundary.
 const cpu301 = YASKAWA_CPUS[0];
 const lio: ModuleSlot[] = [{ partNumber: 'LIO-A', inputs: 16, outputs: 16 }, { partNumber: 'LIO-B', inputs: 32, outputs: 32 }];
-assert.deepEqual(yaskawaIo('X101', cpu301, lio), { register: 'IB00000', assumed: true });
-assert.equal(yaskawaIo('X116', cpu301, lio)?.register, 'IB0000F');
-assert.equal(yaskawaIo('X201', cpu301, lio)?.register, 'IB00010', 'the second module after the first one\'s word');
-assert.equal(yaskawaIo('X216', cpu301, lio)?.register, 'IB0001F');
-assert.equal(yaskawaIo('Y101', cpu301, lio)?.register, 'OB00000');
+assert.deepEqual(yaskawaIo('X101', cpu301, lio), { register: 'IB0C400', assumed: true });
+assert.equal(yaskawaIo('X116', cpu301, lio)?.register, 'IB0C40F');
+assert.equal(yaskawaIo('X201', cpu301, lio)?.register, 'IB0C500', 'the second module on the next 16-word boundary');
+assert.equal(yaskawaIo('X216', cpu301, lio)?.register, 'IB0C50F');
+assert.equal(yaskawaIo('Y101', cpu301, lio)?.register, 'OB0C400', 'the same leading register for its outputs');
+const mp2300 = YASKAWA_CPUS.find((c) => c.id === 'JEPMC-MP2300-E')!;
+assert.deepEqual([yaskawaIo('X001', mp2300, [])?.register, yaskawaIo('X008', mp2300, [])?.register, yaskawaIo('Y001', mp2300, [])?.register], ['IB00000', 'IB00007', 'OB00010'], 'MP2300: built-in DI at IW0000, DO at OW0001');
+assert.equal(yaskawaIo('X101', mp2300, [{ partNumber: 'LIO-A', inputs: 16, outputs: 16 }])?.register, 'IB00100', 'its first module after the built-in words, on a 16-word boundary');
 assert.equal(yaskawaIo('X001', cpu301, lio), null, 'a CPU-301 has no I/O of its own');
 assert.equal(yaskawaIo('X117', cpu301, lio), null, 'no 17th point on a 16-point module');
-assert.equal(yaskawaProfile.ioTag!('X101', lio, cpu301.id), 'IB00000');
+assert.equal(yaskawaProfile.ioTag!('X101', lio, cpu301.id), 'IB0C400');
 
 // Memory with the defaults (a new project).
 const regs = Object.fromEntries(['C1', 'C17', 'DS1', 'DD2', 'DH1', 'DF1', 'T1', 'TD3', 'CT1', 'CTD1', 'SC1', 'SC2'].map((a) => [a, yaskawaMemory(a)]));
 assert.deepEqual(regs, {
   C1: 'MB000000', C17: 'MB000010', DS1: 'MW01000', DD2: 'ML06002', DH1: 'MW08000', DF1: 'MF08500',
-  T1: 'MB095000', TD3: 'MW09702', CT1: 'MB096000', CTD1: 'ML10200', SC1: 'SB000004', SC2: null,
+  T1: 'MB095000', TD3: 'MW09702', CT1: 'MB096000', CTD1: 'ML10200', SC1: 'SB000004', SC2: 'SB000001',
 });
 assert.equal(yaskawaName('100', {}), '#100', 'constants');
 
@@ -78,7 +82,7 @@ assert.equal(memoryOverlaps({ ...bits, rungs: [{ ...bits.rungs[0], outputs: [{ t
 
 // The PLC names: the register is the name; an imported register stays as it was.
 const named = plcNameLookup(yaskawaProfile, imported, { io: [], addresses: new Map([['I001', 'X101']]), labels: new Map(), header: '', extraTags: [], cpuId: cpu301.id, modules: lio, yaskawaMemory: layout })!;
-assert.equal(named('X101')?.name, 'IB00000');
+assert.equal(named('X101')?.name, 'IB0C400');
 assert.equal(named('C1500')?.name, 'MB001000', 'the program\'s own register');
 assert.equal(named('DS1')?.name, 'MW01000');
 assert.equal(named('C1')?.name, yaskawaMemory('C1', layout));
