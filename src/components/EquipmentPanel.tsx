@@ -172,8 +172,10 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     const why = builtIn ? `The ${old} screen is built into that PLC, so it goes with it.` : `The ${old} cannot talk to the ${cpuId}.`;
     setPanelNote(next
       ? `${why} ${next.partNumber} (${next.sizeIn}", ${next.widthPx}×${next.heightPx}) is selected instead: the closest touch panel that can. Designed screens are kept and scaled to it; pick another below if you prefer.`
-      : `${why} Choose a touch panel for the ${cpuId} below; designed screens are kept and scaled to it.`);
-    return { cpuId, hmiPartNumber: next?.partNumber ?? null };
+      : builtIn ? `${why} Choose a touch panel for the ${cpuId} below; designed screens are kept and scaled to it.`
+      // No listed panel can: the current one stays (none would add the door pushbuttons and lamps to the I/O list).
+      : `${why} No listed touch panel can, so the ${old} is kept for now (no door pushbuttons are added); choose another below if one fits.`);
+    return { cpuId, hmiPartNumber: next?.partNumber ?? (builtIn ? null : old) };
   };
   const set = (patch: Partial<EquipmentChoice>) => setChoice((c) => ({ cpuId: c?.cpuId ?? cpus[0].id, modules: c?.modules ?? [], hmiPartNumber: c?.hmiPartNumber ?? null, ...patch }));
   const apply = () => {
@@ -336,7 +338,12 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                       // The suggestion's own panel when it talks to that CPU, else the same check as any CPU change.
                       const own = a.hmiPartNumber ? getHmi(a.hmiPartNumber) : undefined;
                       if (a.hmiPartNumber && (hasBuiltInPanel(getPart(a.hmiPartNumber)) || (own && hmiFit(own, need, a.cpuId).ok))) { setPanelNote(null); set({ cpuId: a.cpuId, hmiPartNumber: a.hmiPartNumber }); }
-                      else set(withCpu(a.cpuId));
+                      else {
+                        const patch = withCpu(a.cpuId);
+                        set(patch);
+                        // The current panel talks to that CPU and is kept: say why the suggestion's own was not taken.
+                        if (a.hmiPartNumber && choice?.hmiPartNumber && !('hmiPartNumber' in patch) && choice.hmiPartNumber !== a.hmiPartNumber) setPanelNote(`The suggestion's ${a.hmiPartNumber} cannot talk to the ${a.cpuId}: your ${choice.hmiPartNumber} is kept (it can).`);
+                      }
                     }} className="text-xs text-brand-800 font-medium hover:underline">Select</button>
                   </div>
                 ))}
