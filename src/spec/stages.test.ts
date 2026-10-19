@@ -103,5 +103,15 @@ assert.equal(regionRun.program.status, 'ready');
   const same = computeStages({ fp: { ...fp(click), panel: 'CM5-T7W' }, sources: laidOut, ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true });
   assert.equal(same.hmi.status, 'ready', 'back on the panel it was laid out for');
 }
+// The electrical design made for one panel (its PLC-side communication module, cutout, 24 V load) is out of date
+// when the touch panel changes; an older design recorded without a panel is left alone.
+{
+  const made = Object.fromEntries(Object.entries(sources(click)).map(([k, v]) => [k, k === 'electrical' ? { ...v, panel: 'PFXGP4116T2D' } : v]));
+  const swapped = computeStages({ fp: { ...fp(click), panel: 'CM5-T7W' }, sources: made, ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true });
+  assert.equal(swapped.electrical.status, 'stale');
+  assert.match(swapped.electrical.reason ?? '', /touch panel changed .*PFXGP4116T2D.*update it for CM5-T7W/);
+  assert.equal(computeStages({ fp: { ...fp(click), panel: 'PFXGP4116T2D' }, sources: made, ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true }).electrical.status, 'ready');
+  assert.equal(computeStages({ fp: { ...fp(click), panel: 'CM5-T7W' }, sources: sources(click), ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true }).electrical.status, 'ready', 'no panel recorded: not flagged');
+}
 
 console.log('stage tests passed');

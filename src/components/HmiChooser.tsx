@@ -101,7 +101,7 @@ function GroupRows({ name, list, need, cpuId, selected, suggested, onPick }: {
             <td className={td}>{r.sizeIn ? `${r.sizeIn}"` : '—'}</td>
             <td className={td}>{r.res}</td>
             <td className={`${td} text-xs`}>{r.price ?? '—'}</td>
-            <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">{r.builtIn ? 'Yes · built into the PLC' : 'Yes'}</span> : f.reason}{r.note && <span className="block text-amber-700" title={r.note}>Check availability: not on the maker's current list</span>}</td>
+            <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">{r.builtIn ? 'Yes · built into the PLC' : 'Yes'}</span> : f.reason}{f.ok && 'note' in f && f.note && <span className="block text-steel-700" data-testid="panel-plc-needs">{f.note}</span>}{r.note && <span className="block text-amber-700" title={r.note}>Check availability: not on the maker's current list</span>}</td>
           </tr>
         );
       })}

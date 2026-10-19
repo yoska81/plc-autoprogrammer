@@ -13,6 +13,7 @@ import { getHmi } from '../hmi/hmiCatalog';
 import { normalizePreference } from '../electrical/catalogs';
 import { moduleSlots, ioCapacity } from '../plc/core/modules';
 import { cpuFit, findCpu, hmiFit, modulesToFit, platformOf, type Need } from '../plc/core/fit';
+import { PLATFORMS } from '../plc/core/platforms';
 import { nearestPanel } from '../hmi/nearestPanel';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice, usePendingEquipment, type EquipmentChoice } from '../spec/equipment';
@@ -171,7 +172,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     const next = nearestPanel(cpuId, need, was ? { w: was.widthPx, h: was.heightPx } : null, hmiMakers);
     const why = builtIn ? `The ${old} screen is built into that PLC, so it goes with it.` : `The ${old} cannot talk to the ${cpuId}.`;
     setPanelNote(next
-      ? `${why} ${next.partNumber} (${next.sizeIn}", ${next.widthPx}×${next.heightPx}) is selected instead: the closest touch panel that can. Designed screens are kept and scaled to it; pick another below if you prefer.`
+      ? `${why} ${next.partNumber} (${next.sizeIn}", ${next.widthPx}×${next.heightPx}) is selected instead: the closest touch panel that can. Designed screens are kept and scaled to it; pick another below if you prefer.${(() => { const n = hmiFit(next, need, cpuId).note; return n ? ` ${n}.` : ''; })()}`
       : builtIn ? `${why} Choose a touch panel for the ${cpuId} below; designed screens are kept and scaled to it.`
       // No listed panel can: the current one stays (none would add the door pushbuttons and lamps to the I/O list).
       : `${why} No listed touch panel can, so the ${old} is kept for now (no door pushbuttons are added); choose another below if one fits.`);
@@ -245,13 +246,14 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                 <thead><tr>{['', 'Part number', 'Inputs', 'Outputs', 'Features', 'Fits this machine?'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
                 <tbody>
                   {shownCpus.map((c) => {
-                    // The modules chosen when they belong to this CPU's platform; a CPU with no (or too little) on-board
-                    // I/O (S7-1500, CompactLogix 5380) fits once its own I/O modules are added: say which, add them on Select.
+                    // The chosen modules this CPU takes (its platform's; on a CLICK, which has no platform entry, only modules
+                    // of no other platform). A CPU with no or too little on-board I/O (S7-1500, CompactLogix 5380) fits once
+                    // its own I/O modules are added after the user's: say which, add them on Select.
                     const platform = platformOf(c.id);
-                    const own = (choice?.modules ?? []).filter((m) => !platform || platform.modules.includes(m));
-                    const base = own.length === (choice?.modules ?? []).length ? own : [];
+                    const base = (choice?.modules ?? []).filter((m) => (platform ? platform.modules.includes(m) : !PLATFORMS.some((x) => x.modules.includes(m))));
                     const f0 = cpuFit(c, base, need);
-                    const grow = f0.ok ? null : modulesToFit(c.id, base, need);
+                    const g = f0.ok ? null : modulesToFit(c.id, base, need);
+                    const grow = g && base.every((m, i) => g[i] === m) ? g : null;
                     const f = grow ? cpuFit(c, grow, need) : f0;
                     const added = grow ? grow.slice(base.length) : [];
                     const family = [...new Set(added.map((m) => getPart(m)?.family?.replace(/^SIMATIC\s+/, '') ?? 'I/O'))].join(' / ');
@@ -266,7 +268,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                         <td className={td}>{c.builtInInputs}</td>
                         <td className={td}>{c.builtInOutputs}</td>
                         <td className={`${td} text-xs`}>{[/ethernet/i.test(c.label) && 'Ethernet', /analog/i.test(c.label) && 'Analog', /relay/i.test(c.label) && 'Relay out', /sourcing/i.test(c.label) && 'Sourcing out', /CLICK PLUS/.test(c.label) && 'CLICK PLUS', /built-in [\d.]+" touch screen/.test(c.label) && 'Built-in touch screen'].filter(Boolean).join(' · ')}</td>
-                        <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes{added.length ? ` with ${added.length} ${family} module${added.length === 1 ? '' : 's'} (added when selected)` : ''} · {f.spareIn} in / {f.spareOut} out spare</span> : f.reason}</td>
+                        <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes{added.length ? ` with ${added.length} ${family} module${added.length === 1 ? '' : 's'} (${selected ? 'select the row again to add them' : 'added when selected'})` : ''} · {f.spareIn} in / {f.spareOut} out spare</span> : f.reason}</td>
                       </tr>
                     );
                   })}

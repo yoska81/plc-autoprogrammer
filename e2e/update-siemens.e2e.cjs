@@ -177,6 +177,12 @@ async function scenario(browser, quick) {
   check(await page.locator('input[aria-label="Choose 6ES7511-1AL03-0AB0"]').isChecked(), 'the S7-1500 can be selected');
   const sel = await page.getByText(/6ES7131-6/).count();
   check(sel > 0, 'selecting it adds the ET 200SP input module to the selection');
+  // From the S7-1500 with its ET 200SP modules to a CLICK: the Siemens modules leave, Apply is not offered with them.
+  await page.getByRole('button', { name: /^Show \d+ CPUs of other brands$/ }).click();
+  const clickRow = page.locator('tr', { has: page.locator('input[aria-label^="Choose C0-"]:not([disabled])') }).first();
+  await clickRow.click();
+  check(await page.getByText(/6ES7131-6|6ES7132-6/).count() === 0, 'on a CLICK the ET 200SP modules leave the selection');
+  await page.getByRole('button', { name: /^Show only / }).click().catch(() => {});
   await page.locator('tr', { has: page.locator(`input[aria-label="Choose ${CPU}"]`) }).click();
   check(await page.getByText(/6ES7131-6/).count() === 0, 'back on the S7-1200: the ET 200SP modules leave the selection');
   // Online: a plain sentence for an S7 (its own software monitors it), never CLICK's Modbus table.
@@ -294,7 +300,7 @@ async function s1500(browser) {
   // Shown: the I/O list's Siemens address column, by tag.
   const shown = await page.locator('tr', { has: page.locator('input[aria-label^="PLC address for"]') }).evaluateAll((rows) => rows.map((r) => {
     const id = r.querySelector('input[aria-label^="PLC address for"]').getAttribute('aria-label').replace('PLC address for ', '');
-    return [id, r.children[2].textContent.trim()];
+    return [id, r.children[1].textContent.trim()];
   }));
   const out = await page.evaluate(async () => {
     const { collectProject } = await import('/src/deliverables/collect.ts');

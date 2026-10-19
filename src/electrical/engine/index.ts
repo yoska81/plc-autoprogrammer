@@ -7,7 +7,7 @@
 import type { IOPoint } from '../../types/io';
 import type { AnalogSetupRow } from '../../plc/core/analog';
 import type { Region } from '../../standards/regions';
-import { enclosureText, powerText, SUPPLY_INFO } from '../../standards/regions';
+import { enclosureText, isIec, powerText, SUPPLY_INFO } from '../../standards/regions';
 import { DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
 import { enclosureFamily, enclosurePanelArea, enclosureRank, enclosureSize, enclosuresFor, panelLayout, SPARE_RULE, spareSpace, terminalCounts, motorFla, vendorTerminal, type DrawingContext } from '../derive';
 import { DC_LOAD_A } from '../../deliverables/docs/calcs';
@@ -21,6 +21,7 @@ import { devicesAndWiring, motorFor, OVER_TEMP_RE } from './devices';
 import { processLoads } from './process';
 import { num, Picker } from './select';
 import { controlInputAmps, motionDesign, motionDeviceType } from '../motion';
+import { commModulesFor } from '../commModule';
 
 export { defaultMachineModel, type MachineModel } from './machineModel';
 
@@ -136,6 +137,10 @@ export function generateDesign(input: EngineInput): EngineResult {
     const kind = /analog/i.test(p?.description ?? '') && !discrete ? 'Analog' : /snap-in/i.test(p?.description ?? '') ? 'Snap-in I/O' : 'I/O';
     plc.push(comp(`IO${i + 1}`, pn, 1, `${kind} module, slot ${i + 1}`));
   });
+  // The PLC-side module the touch panel needs to reach the PLC (src/electrical/commModule.ts): a part, never an I/O slot.
+  const comm = commModulesFor(input.hmiPartNumber, input.plc.cpuPartNumber, getPart, (p) => tags.next(p));
+  plc.push(...comm.components);
+  notes.push(...comm.notes);
 
   // Unitronics: the input type is set by wiring / a jumper, and some analog inputs are digital input terminals.
   const cpuPart = getPart(input.plc.cpuPartNumber);
@@ -242,7 +247,7 @@ export function generateDesign(input: EngineInput): EngineResult {
     if (hit) return hit;
     const sub = pk.byNumber(String(enc.ratings.subpanel ?? '')) ?? getPart(String(enc.ratings.subpanel ?? ''));
     const depth = num(enc.ratings.depthIn) ?? 8;
-    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth, proc.amps + motion.loadA);
+    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth, proc.amps + motion.loadA, !isIec(input.region));
     const head = [
       comp('ENC1', enc.partNumber, 1, `Main enclosure ${enc.ratings.heightIn}x${enc.ratings.widthIn}x${enc.ratings.depthIn} ${enclosureText(inputs.enclosureRating, input.region)}`),
       ...(sub ? [comp('SP1', sub.partNumber, 1, 'Back panel')] : []),

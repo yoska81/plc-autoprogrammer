@@ -77,3 +77,7 @@ assert.match(compareStrength(getPart('PSR-24-240')!, getPart('ABL8RPS24100')!, {
 assert.match(compareStrength(getPart('ABL8RPS24100')!, getPart('PSR-24-240')!, { feedVolts: 480 }).reason, /does not take the 480 V feed|^Different input/);
 assert.ok(compareStrength(getPart('PSR-24-240')!, getPart('PSN24-240')!, { feedVolts: 120 }).ok, 'same class, takes 120 V');
 console.log('power supply feed tests passed');
+
+// Disconnects: a UL 98 switch is never swapped for a UL 508 motor disconnect (Siemens 3LD).
+assert.match(compareStrength(getPart('22013003')!, getPart('3LD2203-0TK51')!).reason, /^UL 508 motor disconnect only/);
+console.log('disconnect UL listing tests passed');

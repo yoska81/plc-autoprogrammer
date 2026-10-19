@@ -119,7 +119,10 @@ export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProg
     if (deps.region && src.region !== undefined && fp.region !== undefined && src.region !== fp.region) reasons.push('the installation region changed');
     if (deps.hmi && src.hmiFp !== undefined && src.hmiFp !== fp.hmiFp) reasons.push('the HMI tags changed');
     // Screens scaled to another panel keep their layout problems until they are laid out for it.
-    if (deps.panel && src.panel && fp.panel && src.panel !== fp.panel) reasons.push(`the touch panel changed (the screens were laid out for ${src.panel}; Redesign screens lays them out for ${fp.panel})`);
+    if (deps.panel && src.panel && fp.panel && src.panel !== fp.panel) reasons.push(id === 'hmi'
+      ? `the touch panel changed (the screens were laid out for ${src.panel}; Redesign screens lays them out for ${fp.panel})`
+      // the electrical design holds what the panel needs on the PLC side (communication module, cutout, 24 V load)
+      : `the touch panel changed (the design was made for ${src.panel}; update it for ${fp.panel})`);
     return reasons.length ? { id, status: 'stale', reason: `Out of date: ${reasons.join(' and ')}.` } : { id, status: 'ready', reason: null };
   };
   return {
@@ -131,7 +134,7 @@ export function computeStages({ fp, sources, ioCount, hasDesign, hasHmi, hasProg
       : otherBrand && hasEquipment ? { id: 'equipment', status: 'stale', reason: `${otherBrand} Choose that brand on the Equipment page, or run Update all.` }
         : info('equipment', hasEquipment, { spec: true }),
     io: info('io', ioCount > 0, { spec: true }),
-    electrical: info('electrical', hasDesign, { spec: true, io: true, region: true }),
+    electrical: info('electrical', hasDesign, { spec: true, io: true, region: true, panel: true }),
     hmi: noHmi && !hasHmi ? { id: 'hmi', status: 'ready', reason: null } : info('hmi', hasHmi, { spec: true, io: true, panel: true }),
     program: info('program', hasProgram, { spec: true, io: true, hmi: true }),
   };

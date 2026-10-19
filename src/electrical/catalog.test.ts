@@ -6,7 +6,7 @@
  * Run with:  npx tsx src/electrical/catalog.test.ts
  */
 import assert from 'node:assert/strict';
-import { CATALOG } from './catalog';
+import { CATALOG, getPart } from './catalog';
 import { PRICES } from './prices';
 import { HMI_MODELS } from '../hmi/hmiCatalog';
 import { CLICK_CPUS } from '../plc/core/profiles/clickData';
@@ -137,7 +137,10 @@ test('part numbers are unique and look like real part numbers', () => {
   for (const p of CATALOG) {
     if (seen.has(p.partNumber)) bad.push(`${p.partNumber}: duplicate`);
     seen.add(p.partNumber);
-    if (!/^[A-Za-z0-9][A-Za-z0-9./#+\- ]{1,40}$/.test(p.partNumber) || /\b(TBD|XXX|N\/A|GENERIC|EXAMPLE)\b/i.test(p.partNumber)) bad.push(`${p.partNumber}: not a part number`);
+    // A kit (no single maker part number) is named by its real parts: 'A + B + C', exactly its kitParts.
+    const kit = p.ratings.kitParts !== undefined && p.partNumber === String(p.ratings.kitParts).split(',').map((x) => x.trim().replace(/ x\d+$/, '')).join(' + ');
+    if (p.ratings.kitParts !== undefined && !kit) bad.push(`${p.partNumber}: kit name must be its kitParts joined with ' + '`);
+    if (!kit && !/^[A-Za-z0-9][A-Za-z0-9./#+\- ]{1,40}$/.test(p.partNumber) || /\b(TBD|XXX|N\/A|GENERIC|EXAMPLE)\b/i.test(p.partNumber)) bad.push(`${p.partNumber}: not a part number`);
   }
   assert.deepEqual(bad, []);
 });
@@ -161,7 +164,8 @@ test('the source page is the page of that part', () => {
     const u = new URL(p.url);
     const last = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() ?? '').toLowerCase();
     if (isAdHost(p.url)) return last !== p.partNumber.toLowerCase() && !u.pathname.toLowerCase().includes(`/pn/${p.partNumber.toLowerCase()}`);
-    return !norm(decodeURIComponent(u.pathname + u.search)).includes(norm(p.partNumber)) && !isMakerDocument(u);
+    const names = p.ratings.kitParts !== undefined ? p.partNumber.split(' + ') : [p.partNumber];
+    return !names.some((n) => norm(decodeURIComponent(u.pathname + u.search)).includes(norm(n))) && !isMakerDocument(u);
   }).map((p) => `${p.partNumber}: ${p.url}`);
   assert.deepEqual(bad, []);
 });
@@ -249,6 +253,25 @@ test('operator devices write their contacts in one form: "(1) N.O." / "(1) N.C."
   const ONE = /^\(\d+\) N\.[OC]\.(\/\(\d+\) N\.[OC]\.)?$/;
   const bad = CATALOG.filter((p) => ['pushbutton', 'estop', 'selector'].includes(p.category) && p.ratings.contacts !== undefined
     && !/\dx \(/.test(String(p.ratings.contacts)) && !ONE.test(String(p.ratings.contacts))).map((p) => `${p.partNumber}: ${p.ratings.contacts}`);
+  assert.deepEqual(bad, []);
+});
+
+test('kits list real catalog parts: "PN xN" each, every one verified', () => {
+  const bad: string[] = [];
+  for (const p of CATALOG.filter((x) => x.ratings.kitParts !== undefined)) {
+    for (const item of String(p.ratings.kitParts).split(',').map((x) => x.trim())) {
+      const m = /^(\S+) x(\d+)$/.exec(item);
+      const part = m && getPart(m[1]);
+      if (!m || !part || !part.verified) bad.push(`${p.partNumber}: ${item}`);
+    }
+    if (!(Number(p.ratings.amps) > 0)) bad.push(`${p.partNumber}: kit needs its total current`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('every switching disconnect states its UL listing: 98, 489 or 508', () => {
+  // The main-disconnect pick (UL 508A) needs UL 98 / 489; a UL 508 part is a motor disconnect only. Handles and shafts carry no amps.
+  const bad = CATALOG.filter((p) => p.category === 'disconnect' && p.ratings.amps !== undefined && !/^(98|489|508)$/.test(String(p.ratings.ul ?? ''))).map((p) => `${p.partNumber}: ul ${p.ratings.ul}`);
   assert.deepEqual(bad, []);
 });
 
