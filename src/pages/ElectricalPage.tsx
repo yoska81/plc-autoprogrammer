@@ -38,7 +38,6 @@ import DrawingSet from '../electrical/drawings/DrawingSet';
 import { generateElectricalDesign } from '../lib/ai/electricalAI';
 import PanelBrandOfferBanner from '../electrical/PanelBrandOfferBanner';
 import { psFeedVolts } from '../electrical/psFeed';
-import { vendorById } from '../electrical/catalogs';
 import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
 import { markLegacyMotors } from '../electrical/engine/machineModel';
 import type { CatalogCategory, DesignInputs, EnclosureRating, MotorSpec, StarterType, SupplyVoltage } from '../electrical/types';
