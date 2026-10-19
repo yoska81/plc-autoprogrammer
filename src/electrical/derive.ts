@@ -799,7 +799,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const mw = effectiveMachine(ctx, io, motors);
 
   // groups
-  const modules = byCat(rc, 'plcModule');
+  // A CLICK PLUS option-slot module plugs into the CPU: its points are slot 0 (X001… / Y001…), the CPU's own.
+  const allModules = byCat(rc, 'plcModule');
+  const optionMod = allModules.find((mm) => isOptionSlotModule(mm.part));
+  const modules = allModules.filter((mm) => mm !== optionMod);
   const groups: IoGroup[] = [];
   for (const p of io) {
     let g = groups.find((x) => x.key === p.group);
@@ -809,7 +812,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
       let part: CatalogPart | undefined;
       let label: string;
       let devTag = plcTag;
-      if (slot === '0') { partNumber = ctx.plc.cpuPartNumber; part = plcPart; label = `CPU ${ctx.plc.cpuPartNumber}`; }
+      if (slot === '0' && optionMod) { partNumber = optionMod.partNumber; part = optionMod.part; devTag = optionMod.tag; label = `CPU ${ctx.plc.cpuPartNumber} OPTION SLOT ${optionMod.partNumber}`; }
+      else if (slot === '0') { partNumber = ctx.plc.cpuPartNumber; part = plcPart; label = `CPU ${ctx.plc.cpuPartNumber}`; }
       else if (slot) {
         const mod = modules.find((mm) => String(num(mm.part?.ratings, 'slot') ?? '') === slot)
           ?? modules.filter((mm) => num(mm.part?.ratings, 'slot') === undefined)[Number(slot) - 1];
@@ -3021,12 +3025,14 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (noWiring.length) w.push(`${noWiring.length} I/O point(s) without wiring info (${noWiring.slice(0, 6).map((p) => p.address).join(', ')}${noWiring.length > 6 ? '…' : ''}) — drawn as generic devices.`);
   const curtains = (m.safety.extraRelays ?? []).filter((x) => x.kind === 'light-curtain').map((x) => x.relay.tag);
   if (curtains.length && m.servos.some((a) => a.sto)) w.push(`${m.servos.filter((a) => a.sto).map((a) => a.drive.tag).join(', ')}: both STO channels come straight from the safety relay ${m.safety.relay?.tag ?? ''}, so a trip of the light curtain relay ${curtains.join(', ')} does not stop the servo. If the axis is in the guarded area, wire the light curtain into the safety relay's inputs (or use a relay with two safety outputs for each curtain).`);
+  for (const a of m.servos) for (const c of a.pinClashes ?? []) w.push(`ERROR — ${c}`);
   for (const a of m.servos.filter((x) => !x.sto && x.stoMissing)) {
     w.push(a.stoMissing === 'no-relay'
       ? `${a.drive.tag}: Safe Torque Off (STO) is not wired because the design has no safety relay — the servo drive cannot run without it. Add a safety relay with at least two N.O. safety outputs.`
       : `${a.drive.tag}: the safety relay ${m.safety.relay?.tag ?? ''} has no free N.O. safety output for the second STO channel — STO is not wired and the drive cannot run. Choose a safety relay with more safety outputs, or take the PLC status signal from its N.C. auxiliary contact.`);
   }
-  const slots = m.groups.flatMap((g) => { const n = Number(/:(\d+)$/.exec(g.key)?.[1]); return n > 0 ? [{ slot: n, part: g.partNumber ? ctx.getPart(g.partNumber) : undefined }] : []; });
+  // Slot 0 included: a CLICK PLUS option-slot module (where the pulse outputs are) is addressed there.
+  const slots = m.groups.flatMap((g) => { const n = Number(/:(\d+)$/.exec(g.key)?.[1]); return n >= 0 ? [{ slot: n, part: g.partNumber ? ctx.getPart(g.partNumber) : undefined }] : []; });
   w.push(...motionWarnings(ctx.getPart(ctx.plc.cpuPartNumber), ctx.plc.cpuPartNumber, m.io, slots));
   // Analog points (DF) are in ctx.io but not in the discrete m.io.
   const extra = ctx.design.ioWiring.filter((x) => !m.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase()) && !(/^DF\d+$/i.test(x.address) && ctx.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase())));
@@ -3207,7 +3213,12 @@ export interface PlcRackSlot {
   outputStyle: IoGroup['outputStyle'];
   /** True when the catalog gives the point counts (spare points can be listed). */
   known: boolean;
+  /** A CLICK PLUS option-slot module plugged into this CPU (slot 0): its I/O is slot 0's. */
+  option?: { tag: string; partNumber: string; part?: CatalogPart };
 }
+
+/** A CLICK PLUS option-slot module (plugs into the CPU, addressed as slot 0). */
+const isOptionSlotModule = (p?: CatalogPart) => /option slot/i.test(String(p?.ratings.moduleType ?? ''));
 
 /** CPU + discrete I/O modules in slot order, with point counts from the catalog. */
 export function plcRack(ctx: DrawingContext): PlcRackSlot[] {
@@ -3223,6 +3234,13 @@ export function plcRack(ctx: DrawingContext): PlcRackSlot[] {
   const modules = byCat(m.rc, 'plcModule');
   let free = 0;
   for (const mod of modules) {
+    // The option-slot module is slot 0 (it takes the CPU's place for I/O: a CLICK PLUS CPU has none of its own).
+    if (isOptionSlotModule(mod.part)) {
+      const i = ins(mod.part) ?? 0, o = outs(mod.part) ?? 0;
+      // The CPU stays slot 0's part (the rack still shows it); the option module is listed with it and gives its I/O.
+      out[0] = { ...out[0], description: `${out[0].description} + option slot ${mod.partNumber}`, inputs: out[0].inputs + i, outputs: out[0].outputs + o, outputStyle: outputStyleOf(mod.partNumber, mod.part), known: true, option: { tag: mod.tag, partNumber: mod.partNumber, part: mod.part } };
+      continue;
+    }
     const fixed = num(mod.part?.ratings, 'slot');
     const slot = fixed ?? ++free;
     const i = ins(mod.part), o = outs(mod.part);

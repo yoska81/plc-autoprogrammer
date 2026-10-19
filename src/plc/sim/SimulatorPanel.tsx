@@ -277,15 +277,16 @@ export default function SimulatorPanel({ program, io, wiring, labels, onHandle }
         </ResizablePane>
 
         <div className="flex min-w-[260px] flex-1 flex-col overflow-hidden rounded-lg border border-steel-200 bg-white shadow-sm">
-          <div className="flex items-center gap-1 border-b border-steel-200 px-2 pt-1.5">
+          {/* Wraps in a narrow pane (1366 px screens): the legend goes to its own line instead of being cut off. */}
+          <div className="flex flex-wrap items-center gap-1 border-b border-steel-200 px-2 pt-1.5">
             {(['live', 'drawing'] as const).map((v) => (
               <button key={v} type="button" onClick={() => setView(v)}
-                className={`-mb-px rounded-t border px-3 py-1 text-[13px] font-semibold ${view === v ? 'border-steel-200 border-b-white bg-white text-brand-800' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>
+                className={`-mb-px whitespace-nowrap rounded-t border px-3 py-1 text-[13px] font-semibold ${view === v ? 'border-steel-200 border-b-white bg-white text-brand-800' : 'border-transparent text-steel-500 hover:text-steel-700'}`}>
                 {v === 'live' ? 'Live logic' : 'Ladder drawing'}
               </button>
             ))}
             {view === 'live' && (
-              <div className="ml-auto flex items-center gap-3 pb-1 text-[11px] text-steel-500">
+              <div data-testid="live-legend" className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-0.5 pb-1 text-[11px] text-steel-500 [&>span]:whitespace-nowrap">
                 <span className="flex items-center gap-1"><span className="h-3 w-4 rounded-sm border border-emerald-500 bg-emerald-100" /> conducting</span>
                 <span className="flex items-center gap-1"><span className="h-3 w-4 rounded-sm border border-dashed border-emerald-400 bg-white" /> closed, no power</span>
                 <span className="flex items-center gap-1"><span className="h-3 w-4 rounded-sm border border-steel-300 bg-white" /> open</span>

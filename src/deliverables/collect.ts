@@ -8,6 +8,7 @@ import { useHmiStore } from '../store/useHmiStore';
 import { getCpu, getProfile } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
+import { ptoPointsFor } from '../electrical/highSpeedIo';
 import { analogSetup } from '../plc/core/analog';
 import { validateProgram } from '../plc/core/validate';
 import { getPart } from '../electrical/catalog';
@@ -66,7 +67,7 @@ export function collectProject() {
     ladder: program.ladder,
     stCode: program.generatedCode,
     // The neutral ladder is checked against the selected PLC (every vendor exports from it) and the project's HMI.
-    issues: program.ladder.rungs.length ? validateProgram(program.ladder, profile, ioAddressSet, hmi.design ?? undefined, { noPanel: noHmi }) : [],
+    issues: program.ladder.rungs.length ? validateProgram(program.ladder, profile, ioAddressSet, hmi.design ?? undefined, { noPanel: noHmi, ...(profile.id === 'click' ? { pulseOutputs: ptoPointsFor(cpu.id, modules) } : {}) }) : [],
     electrical: electrical.design,
     drawingCtx,
     hmi: hmi.design,

@@ -47,7 +47,8 @@ const dataKey = (id: string) => `plc-project-data:${id}`;
 function snapshot(): Snapshot {
   const out: Snapshot = {};
   for (const [key, store] of Object.entries(PROJECT_STORES) as [StoreKey, (typeof PROJECT_STORES)[StoreKey]][]) {
-    const partialize = store.persist.getOptions().partialize;
+    // Without browser storage (tests, a blocked profile) the persist API may be missing: save the whole state.
+    const partialize = store.persist?.getOptions().partialize;
     const state = store.getState();
     out[key] = partialize ? partialize(state as never) : state;
   }
@@ -68,9 +69,17 @@ export function runDerived(fn: () => void): void {
 /** The stores that hold the open project's own data (for change tracking). */
 export const PROJECT_STORE_LIST = Object.entries(PROJECT_STORES).map(([key, store]) => ({ key, store }));
 
+// Told after a project's data is in the stores (e.g. ioChange migrates an older address layout).
+const loadListeners = new Set<() => void>();
+export function onProjectLoaded(f: () => void): () => void {
+  loadListeners.add(f);
+  return () => { loadListeners.delete(f); };
+}
+
 function load(data: Snapshot | null) {
   loadingProject = true;
   try { loadInto(data); } finally { loadingProject = false; }
+  for (const l of loadListeners) l();
 }
 
 function loadInto(data: Snapshot | null) {
@@ -185,9 +194,9 @@ export function saveActiveProject(): void {
 }
 
 /** Copy of the open project, kept before anything is written over the stores. */
-export function backupActiveProject(reason: string): void {
+export function backupActiveProject(reason: string, projectName?: string): void {
   const { activeId, projects } = useProjectsStore.getState();
-  const name = projects.find((p) => p.id === activeId)?.name ?? useProgramStore.getState().projectName;
+  const name = projectName ?? projects.find((p) => p.id === activeId)?.name ?? useProgramStore.getState().projectName;
   try {
     const at = new Date().toISOString();
     appStorage.setItem(`${BACKUP_PREFIX}${at}`, JSON.stringify({ name, at, reason, projectId: activeId, data: snapshot() }));

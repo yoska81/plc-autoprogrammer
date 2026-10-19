@@ -31,6 +31,7 @@ import { ALL_PARTS, DEFAULT_PREFERENCE, partsFor, type VendorPreference } from '
 import { SUPPLY_INFO, type Region } from '../standards/regions';
 import type { CatalogPart, DesignComponent, FieldDeviceType, IOWiring, SupplyVoltage } from './types';
 import type { IOPoint } from '../types/io';
+import { pointsFromText } from './highSpeedIo';
 
 const num = (v: unknown): number | undefined => {
   const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
@@ -41,7 +42,7 @@ const kind = (p: CatalogPart) => String(p.ratings.kind ?? '');
 // ---------------------------------------------------------------------------------------------------------
 // Which I/O points are motion points
 
-export type ServoRole = 'pulse' | 'direction' | 'enable' | 'reset' | 'ready' | 'alarm' | 'inPosition' | 'homed' | 'zeroSpeed';
+export type ServoRole = 'pulse' | 'direction' | 'enable' | 'reset' | 'cam' | 'ready' | 'alarm' | 'inPosition' | 'homed' | 'zeroSpeed' | 'driveOutput';
 
 const SERVO_RE = /\bservo\b|\baxis\s*\d+\b/i;
 /** Axis limit / home sensors are field sensors (the device rules wire them), not drive signals. */
@@ -56,6 +57,8 @@ export function servoRole(p: Pick<IOPoint, 'type' | 'description'>): ServoRole |
     if (/\b(direction|dir|sign)\b/i.test(d)) return 'direction';
     if (/\b(reset|arst)\b/i.test(d)) return 'reset';
     if (/\b(servo on|enable|son)\b/i.test(d)) return 'enable';
+    // Electronic cam / gear engage ("U2 DI7 CAM engage"): the drive follows its master encoder while it is on.
+    if (/\be-?cam\b|\bcam\s+(engage|enable|on|start)\b|\belectronic\s+gear|\bgear(ing)?\s+(engage|in|on)\b|\bsync\w*\s+(engage|start|on)\b/i.test(d)) return 'cam';
     return null;
   }
   if (/\b(alarm|fault|alrm)\b/i.test(d)) return 'alarm';
@@ -63,17 +66,26 @@ export function servoRole(p: Pick<IOPoint, 'type' | 'description'>): ServoRole |
   if (/\b(in[ -]?position|tpos|target position)\b/i.test(d)) return 'inPosition';
   if (/\b(home|homing) (complete|completed|done)\b/i.test(d)) return 'homed';
   if (/\bzero speed\b/i.test(d)) return 'zeroSpeed';
+  // Any other programmable output of the drive into the PLC ("U2 cut (DO3)"): wired to that DO.
+  if (/\bDO\d\b/i.test(d)) return 'driveOutput';
   return null;
 }
 
-/** Axis key of a servo point: "Axis 2 …" → "2", else the servo's own name, else "1". */
+/** The drive's own tag when the description starts with it ("U2 DI1 SON", "U2 ready (DO1)"): one drive, not a new axis. */
+export const driveTagLead = (description: string) => /^(U|SD|SV|SVD|A)\d+\b/i.exec(description.trim())?.[0].toUpperCase() ?? null;
+
+/** Axis key of a servo point: the drive tag it starts with ("U2 …" → "U2"), "Axis 2 …" → "2", else the servo's own name, else "1". */
 export function axisKey(description: string): string {
+  const lead = driveTagLead(description);
+  if (lead) return lead;
   const m = /\baxis\s*(\d+)\b/i.exec(description) ?? /\bservo\s*(\d+)\b/i.exec(description);
   return m ? m[1] : '1';
 }
 
-export const isServoPoint = (p: IOPoint) => p.signal !== 'analog' && (p.category === 'Servo/Axis' || SERVO_RE.test(p.description))
-  && !AXIS_SENSOR_RE.test(p.description) && servoRole(p) !== null;
+// Operator devices (a Reset that also resets the servo alarm, the servo enable selector) are field devices, not drive signals.
+const OPERATOR_RE = /^(pushbutton|selector|estop|e-stop)/;
+export const isServoPoint = (p: IOPoint) => p.signal !== 'analog' && (p.category === 'Servo/Axis' || SERVO_RE.test(p.description) || driveTagLead(p.description) !== null && /\b(DI|DO)\d\b/i.test(p.description))
+  && !AXIS_SENSOR_RE.test(p.description) && !OPERATOR_RE.test(p.deviceType ?? '') && servoRole(p) !== null;
 export const isEncoderPoint = (p: IOPoint) => p.type === 'input' && p.signal !== 'analog' && ENCODER_RE.test(p.description);
 export const isUltrasonicPoint = (p: IOPoint) => p.type === 'input' && ULTRASONIC_RE.test(p.description);
 
@@ -102,6 +114,12 @@ export interface ServoPins {
   di: Partial<Record<ServoRole, string>>;
   /** Default DO function → [DO+, DO-]. */
   do: Partial<Record<ServoRole, [string, string]>>;
+  /** Every programmable DIn: its pin and the parameter that sets its function; DOn: [DO+, DO-]. */
+  diPins: Record<number, { pin: string; param: string }>;
+  doPins: Record<number, [string, string]>;
+  /** Factory functions of the DIs / DOs (a signal put on one of them repurposes it). */
+  diFactory: Record<number, string>;
+  doFactory: Record<number, string>;
   sto: { aPlus: string; aMinus: string; bPlus: string; bMinus: string; fbPlus: string; fbMinus: string };
   /** Max pulse frequency with open-collector outputs (kHz). */
   maxPulseKhzOC: number;
@@ -116,6 +134,12 @@ export const SUREServo2: ServoPins = {
   com: 'CN1-11',
   di: { enable: 'CN1-9', reset: 'CN1-33' },
   do: { ready: ['CN1-7', 'CN1-6'], zeroSpeed: ['CN1-5', 'CN1-4'], homed: ['CN1-3', 'CN1-2'], inPosition: ['CN1-1', 'CN1-26'], alarm: ['CN1-28', 'CN1-27'] },
+  // CN1 table and DI function parameters (manual ch. 3).
+  diPins: { 1: { pin: 'CN1-9', param: 'P2.010' }, 2: { pin: 'CN1-10', param: 'P2.011' }, 3: { pin: 'CN1-34', param: 'P2.012' }, 4: { pin: 'CN1-8', param: 'P2.013' }, 5: { pin: 'CN1-33', param: 'P2.014' },
+    6: { pin: 'CN1-32', param: 'P2.015' }, 7: { pin: 'CN1-31', param: 'P2.016' }, 8: { pin: 'CN1-30', param: 'P2.017' }, 9: { pin: 'CN1-29', param: 'P2.036' }, 10: { pin: 'CN1-38', param: 'P2.037' } },
+  doPins: { 1: ['CN1-7', 'CN1-6'], 2: ['CN1-5', 'CN1-4'], 3: ['CN1-3', 'CN1-2'], 4: ['CN1-1', 'CN1-26'], 5: ['CN1-28', 'CN1-27'] },
+  diFactory: { 1: 'SON (servo on)', 5: 'ARST (alarm reset)', 6: 'NL (negative limit)', 7: 'PL (positive limit)' },
+  doFactory: { 1: 'SRDY (servo ready)', 2: 'ZSPD (zero speed)', 3: 'HOME (homing done)', 4: 'TPOS (in position)', 5: 'ALRM (servo alarm)' },
   sto: { aPlus: 'CN10-3', aMinus: 'CN10-4', bPlus: 'CN10-5', bMinus: 'CN10-6', fbPlus: 'CN10-7', fbMinus: 'CN10-8' },
   maxPulseKhzOC: 200,
   source: 'SureServo2 User Manual 2nd Ed. Rev C, ch. 3 (3.4.1 CN1 pins, 3.4.2 default DI/DO, 3.10 CN10 STO)',
@@ -267,7 +291,8 @@ export function motionDesign(input: MotionInput): MotionResult {
       out.notes.push(`Axis ${key}: no servo drive in the catalog for ${watts} W at ${info.label} — select a servo drive and motor (pulse/direction input, STO).`);
     } else {
       const series = String(drive.ratings.series ?? drive.family ?? '');
-      const dt = input.nextTag('SVD');
+      // A drive already named in the drawings ("U2") keeps its tag.
+      const dt = /^\d+$/.test(key) ? input.nextTag('SVD') : key;
       axis.drive = dt;
       const motorTag = `AX${key}`;
       // Branch protection: the maker's recommended breaker, else 1.25 x the drive's input current.
@@ -321,7 +346,7 @@ export function motionDesign(input: MotionInput): MotionResult {
       out.ioWiring.push({ address: a, deviceTag: axis.drive || `SVD?${key}`, deviceType: 'servo-drive', description: p.description, location: 'Cabinet' });
     }
     const has = (r: ServoRole) => axis.signals.some((s) => s.role === r);
-    if (!has('pulse') || !has('direction')) out.notes.push(`Axis ${key}: no ${!has('pulse') ? 'pulse' : 'direction'} output in the I/O list — position control needs pulse and direction outputs (CLICK PLUS: a C2-14D1 option-slot module, pulses on its Y1 / Y3 / Y5 — Y101 / Y103 / Y105 in slot 1).`);
+    if (!has('pulse') || !has('direction')) out.notes.push(`Axis ${key}: no ${!has('pulse') ? 'pulse' : 'direction'} output in the I/O list — position control needs pulse and direction outputs (CLICK PLUS: a C2-14D1 option-slot module, pulses on its Y1 / Y3 / Y5 — Y001 / Y003 / Y005, the option slot is slot 0).`);
     out.axes.push(axis);
   }
 
@@ -376,14 +401,6 @@ export function motionDeviceType(p: IOPoint): FieldDeviceType | null {
 
 export interface PlcMotion { hsInputs: string[]; hsKhz?: number; pulseOutputs: string[]; note?: string }
 
-/** "X001-X004" → X001, X002, X003, X004; "X1-X8" on slot 1 → X101 … X108 (the app's CLICK addressing: slot digit + point). */
-function addressRange(text: string, slot = 0): string[] {
-  const m = /([XY])0*(\d+)\s*-\s*[XY]?0*(\d+)/i.exec(text);
-  if (!m) return [];
-  const [, k, a, b] = m;
-  return Array.from({ length: Number(b) - Number(a) + 1 }, (_, i) => `${k.toUpperCase()}${slot}${String(Number(a) + i).padStart(2, '0')}`);
-}
-
 /** A module in a PLC slot, as the electrical model groups the I/O (slot 1 = first module after the CPU). */
 export interface SlotPart { slot: number; part?: CatalogPart }
 
@@ -391,26 +408,25 @@ export interface SlotPart { slot: number; part?: CatalogPart }
  * High-speed inputs and pulse outputs of a CPU, from its catalog ratings (hscInputs / hscMaxKHz, ptoAxes /
  * ptoOutputs, ptoNote; source in hscSource). CLICK PLUS has none of its own: they are on the option-slot module
  * (C2-14D1 / C2-08D1-…: pulses on its Y1 / Y3 / Y5, high-speed inputs X1-X8), so they are read from that
- * module at the slot the app addresses it in (Y101 / Y103 / Y105 in slot 1). Without such a module there are
+ * module at the slot the app addresses it in (Y001 / Y003 / Y005, the option slot is slot 0). Without such a module there are
  * no pulse outputs. Null when the catalog says nothing about high-speed I/O for this CPU (not checked).
  */
 export function plcMotion(cpu: CatalogPart | undefined, slots: SlotPart[] = []): PlcMotion | null {
   const r = cpu?.ratings ?? {};
   if (r.hscInputs === undefined && r.ptoAxes === undefined && r.ptoNote === undefined) return null;
+  // The points come from the ratings text (highSpeedIo.ts reads it the same way): "Y1, Y3, Y5" on the module's slot.
   if (/option slot/i.test(String(r.hscInputs ?? r.ptoOutputs ?? ''))) {
     const opt = slots.find((x) => /option slot/i.test(String(x.part?.ratings.moduleType ?? '')));
     const mr = opt?.part?.ratings ?? {};
-    const axes = num(mr.ptoAxes) ?? 0;
     return {
-      hsInputs: opt ? addressRange(String(mr.hscInputs ?? ''), opt.slot) : [], hsKhz: num(mr.hscMaxKHz),
-      pulseOutputs: opt ? [1, 3, 5].slice(0, axes).map((n) => `Y${opt.slot}0${n}`) : [],
+      hsInputs: opt ? pointsFromText(String(mr.hscInputs ?? ''), 'X', opt.slot) : [], hsKhz: num(mr.hscMaxKHz),
+      pulseOutputs: opt ? pointsFromText(String(mr.ptoOutputs ?? ''), 'Y', opt.slot) : [],
       note: r.ptoNote ? String(r.ptoNote) : undefined,
     };
   }
-  const axes = num(r.ptoAxes) ?? 0;
   return {
-    hsInputs: addressRange(String(r.hscInputs ?? '')), hsKhz: num(r.hscMaxKHz),
-    pulseOutputs: ['Y001', 'Y003', 'Y005'].slice(0, axes), note: r.ptoNote ? String(r.ptoNote) : undefined,
+    hsInputs: pointsFromText(String(r.hscInputs ?? ''), 'X'), hsKhz: num(r.hscMaxKHz),
+    pulseOutputs: pointsFromText(String(r.ptoOutputs ?? ''), 'Y'), note: r.ptoNote ? String(r.ptoNote) : undefined,
   };
 }
 

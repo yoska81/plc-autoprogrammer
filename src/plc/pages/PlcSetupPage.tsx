@@ -1,14 +1,20 @@
 import { Link } from 'react-router-dom';
 import { PLC_PROFILES } from '../core/profiles';
 import { useProjectStore } from '../../store/useProjectStore';
+import { undoIoDelete, useIoUndo, withIoRemap } from '../core/ioChange';
+import { notify } from '../../store/useNoticeStore';
 import { usePlc } from '../core/usePlc';
 import { useIOStore } from '../../store/useIOStore';
 import { modulesToFit, platformOf } from '../core/fit';
 import { hardwareShortfall, needFromIo } from '../../spec/equipmentRules';
 
 export default function PlcSetupPage() {
-  const setPlc = useProjectStore((s) => s.setPlc);
-  const setModules = useProjectStore((s) => s.setModules);
+  // A PLC / CPU / module change renumbers the I/O: the program and the HMI follow it (one remap), and say so.
+  const storeSetPlc = useProjectStore((s) => s.setPlc);
+  const storeSetModules = useProjectStore((s) => s.setModules);
+  // The last PLC change (or I/O delete) stays undoable here until the next edit.
+  const undoLabel = useIoUndo((s) => s.label);
+  const remapped = (notes: string[]) => { if (notes.length) notify(`The I/O was renumbered for the new PLC; the program and the HMI followed. ${notes.join(' ')}`, { label: 'Undo', run: () => { undoIoDelete(); } }); };
   const modules = useProjectStore((s) => s.modules);
   const io = useIOStore((s) => s.projectIO);
   const { profile, cpu } = usePlc();
@@ -21,8 +27,10 @@ export default function PlcSetupPage() {
     const need = needFromIo(io, false, 0);
     const sameRack = plcId === profile.id && platformOf(cpuId)?.id === platformOf(cpu.id)?.id;
     const keep = sameRack ? modules : [];
-    setPlc(plcId, cpuId);
-    setModules(io.length ? modulesToFit(cpuId, keep, need) ?? keep : keep);
+    const next = io.length ? modulesToFit(cpuId, keep, need) ?? keep : keep;
+    // The new CPU and its rack in one step (one remap, one Undo): in between, the new CPU with the old rack's
+    // modules would leave points without an address there behind, on another point's terminal.
+    remapped(withIoRemap(() => { storeSetPlc(plcId, cpuId); storeSetModules(next); }, `PLC change to ${cpuId}`));
   };
   const chooseBrand = (plcId: string, defaultCpuId: string) => {
     const p = PLC_PROFILES.find((x) => x.id === plcId);
@@ -36,6 +44,11 @@ export default function PlcSetupPage() {
       <header className="px-4 py-2.5 bg-white border-b border-gray-200">
         <h2 className="text-base font-semibold text-gray-800">PLC Setup</h2>
         <p className="text-xs text-gray-400 mt-0.5">Choose the controller. The AI writes the program in that PLC's own language and addresses.</p>
+        {undoLabel && (
+          <button onClick={() => undoIoDelete()} title="Put back the PLC, the I/O addresses, the program and the HMI as they were" className="mt-2 px-3 py-1.5 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50">
+            Undo: {undoLabel}
+          </button>
+        )}
       </header>
 
       <div className="flex-1 overflow-auto bg-gray-50 p-6">

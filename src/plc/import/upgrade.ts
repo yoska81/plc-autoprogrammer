@@ -19,6 +19,7 @@ import { getPart } from '../../electrical/catalog';
 import { importedRange, materialize, nickOf, pretty } from './convert';
 import { programFindings } from './findings';
 import type { ImportedProgram, SourceFormat } from './types';
+import { rungAddresses } from '../core/ladder';
 
 /** Draft key (stored with the project) of the original program. */
 export const UPGRADE_KEY = 'upgrade.original';
@@ -168,6 +169,14 @@ function movedS7(imp: ImportedProgram, profile: PlcProfile, cpu: PlcProfile['cpu
   return out;
 }
 
+/** I/O addresses the program uses that no I/O point has: the checker reports them as errors, so say so up front. */
+function unassignedIo(program: LadderProgram, profile: PlcProfile, cpu: PlcProfile['cpuModels'][number], modules: string[], io: IOPoint[]): string[] {
+  const have = new Set([...resolveAddresses(profile, cpu, io, moduleSlots(modules)).values()].map((a) => a.toUpperCase()));
+  const used = [...new Set(program.rungs.flatMap(rungAddresses).map((a) => a.trim().toUpperCase()))]
+    .filter((a) => { const k = profile.parseAddress(a)?.kind; return (k === 'input' || k === 'output') && !have.has(a); });
+  return used.length ? [`The program uses I/O addresses no I/O point has: ${used.slice(0, 12).join(', ')}${used.length > 12 ? '…' : ''}. The checker reports each as an error (an address with no point behind it reads or drives whatever gets that address next): add the points to the I/O list, or change the rungs.`] : [];
+}
+
 export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = new Date()): UpgradePlan {
   const profile = targetPlc(imp.source.format, currentPlcId, `${imp.source.vendor} ${imp.source.controller}`);
   const { cpuId, modules } = originalCpu(profile, imp) ?? chooseCpu(profile, needOf(imp));
@@ -205,7 +214,7 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
     io: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type, category: p.category, ...(p.signal ? { signal: p.signal, analog: p.analog } : {}), ...(p.plcAddress ? { plcAddress: p.plcAddress } : {}) })),
     spec: describeProgram(imp),
     // Likely bugs (missing seal-in, interlock on another station's sensor) are asked before the general question.
-    questions: withFindings([...(cpuNote ? [cpuNote] : []), ...(embedded ? [embedded] : []), ...questionsFor(imp), ...assumedRanges(imp), ...movedS7(imp, profile, cpu, modules, m.io)], programFindings(program).map((f) => f.message)),
+    questions: withFindings([...(cpuNote ? [cpuNote] : []), ...(embedded ? [embedded] : []), ...questionsFor(imp), ...assumedRanges(imp), ...movedS7(imp, profile, cpu, modules, m.io), ...unassignedIo(program, profile, cpu, modules, m.io)], programFindings(program).map((f) => f.message)),
     original: {
       importedAt: now.toISOString(), source: imp.source, report: imp.report, io: imp.io, plcId: profile.id, cpuId: cpu.id, program, summary,
       ioList: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type })),

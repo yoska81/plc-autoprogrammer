@@ -12,6 +12,7 @@ import { collectProject } from '../../../deliverables/collect';
 import { exportContext } from '../../../deliverables/exportContext';
 import { useProjectStore } from '../../../store/useProjectStore';
 import { useIOStore } from '../../../store/useIOStore';
+import { withIoRemap } from '../../core/ioChange';
 import { getProfile } from '../../core/profiles';
 import { plcNameLookup } from './plcNames';
 import { withPlcNames } from './mnemonics';
@@ -72,7 +73,8 @@ assert.equal(s7TankUnused?.io, '%IW64', 'an unused analog input: its input word'
 }
 {
   // A stale contact on an address no point is on (X001 on an S7-1500 + ET 200SP, inputs from X101) gets no borrowed %I0.0.
-  useProjectStore.setState({ plcId: 'siemens-s7', cpuId: '6ES7511-1AL03-0AB0', modules: ['6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0'] });
+  // As the PLC page does it: the program follows its points to X101…
+  withIoRemap(() => useProjectStore.setState({ plcId: 'siemens-s7', cpuId: '6ES7511-1AL03-0AB0', modules: ['6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0'] }));
   const p = collectProject();
   assert.ok([...p.addresses.values()].includes('X101') && ![...p.addresses.values()].includes('X001'), 'the 1500 inputs start at X101');
   const program = { ...p.ladder, tags: [...p.ladder.tags, { address: 'X001', nickname: 'Old_Start', comment: '' }], rungs: [...p.ladder.rungs, { id: 'r-stale', comment: '', branches: [[{ type: 'NO' as const, address: 'X001' }]], outputs: [{ type: 'OUT' as const, address: 'C201' }] }] };

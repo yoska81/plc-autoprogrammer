@@ -1,5 +1,6 @@
 import { elementAddresses, motionWrites, rungAddresses, rungWrites, type LadderProgram, type RawInstruction, type Rung } from './ladder';
 import type { PlcProfile } from './profile';
+import { deletedAddress, isDeletedOperand } from './remapProgram';
 
 export interface ValidationIssue {
   rungId: string | null;
@@ -18,8 +19,12 @@ export function validateProgram(
   ioAddresses: Set<string>,
   /** The project's HMI: a tag the HMI shows that no rung writes, or a command no rung reads, is an error. */
   hmi?: { tags: { address: string; name: string; access: string }[] },
-  /** noPanel: the machine has no touch panel, so nothing writes the panel ranges C1001–C1300 / DS1001–DS1200 / DF101–DF200. */
-  opts: { noPanel?: boolean } = {},
+  /**
+   * noPanel: the machine has no touch panel, so nothing writes the panel ranges C1001–C1300 / DS1001–DS1200 / DF101–DF200.
+   * pulseOutputs: the outputs that can carry a pulse train on this CPU / option module (electrical/highSpeedIo.ts);
+   * a motion axis whose pulse is elsewhere is an error.
+   */
+  opts: { noPanel?: boolean; pulseOutputs?: string[] } = {},
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const outCoils = new Map<string, number>();
@@ -29,15 +34,25 @@ export function validateProgram(
       issues.push({ rungId: rung.id, severity, message });
     const a = address.trim();
     if (!a) return add('error', `${role} has no address.`);
+    if (isDeletedOperand(a)) return add('error', `${role} used ${deletedAddress(a)}, whose I/O point was deleted or has no address on this PLC — pick its new input / output (or delete the rung).`);
     const info = profile.parseAddress(a);
     if (!info) return add('error', `${role} "${a}" is not a valid ${profile.name} address.`);
     if (info.kind === 'constant' && !opts.valueOk) return add('error', `${role} cannot be a constant (${a}).`);
     if (opts.bit && !info.isBit) add('error', `${role} "${a}" is not a bit address.`);
     if (opts.write && (info.kind === 'input' || info.kind === 'system')) add('error', `${role} writes to read-only ${info.kind} "${a}".`);
     if ((info.kind === 'input' || info.kind === 'output') && !ioAddresses.has(a)) {
-      add('warning', `${a} is not assigned to any point in the I/O list.`);
+      // An error: an I/O address with no point behind it reads / drives whatever gets that address next.
+      add('error', `${a} is not assigned to any point in the I/O list.`);
     }
   };
+
+  // Pulse trains only come out of the PLC's pulse outputs (CLICK PLUS: Y001 / Y003 / Y005 of the option-slot module).
+  if (opts.pulseOutputs) {
+    const ok = new Set(opts.pulseOutputs.map((a) => a.toUpperCase()));
+    for (const ax of program.motion?.axes ?? []) {
+      if (!ok.has(ax.pulse.trim().toUpperCase())) issues.push({ rungId: null, severity: 'error', message: `${ax.name}: its pulse output ${ax.pulse} cannot make a pulse train on this PLC — ${ok.size ? `use ${[...ok].join(' / ')}` : 'it has no pulse-train outputs (CLICK PLUS needs a C2-14D1 / D2 / TTL or C2-08D1 / D2 module in its option slot)'}.` });
+    }
+  }
 
   for (const rung of program.rungs) {
     for (const extra of profile.checkRung?.(rung, { ioAddresses }) ?? []) issues.push({ rungId: rung.id, ...extra });

@@ -1,6 +1,34 @@
 # Dev 2 — program & simulation (`claude/isa-dev-program-sim`)
 
-Current: **the user's roll former (cn-rollformer-01), full drawn sequence on the simulator** — draft PR #88 → `claude/optimistic-maxwell-6nfcs6`. Motion slice and troubleshooter slice 2 are on the same branch. No blockers (real-AI scores still wait for an API key in the environment settings).
+Current: **QA fixes after #88**. Draft PR #100 → `claude/optimistic-maxwell-6nfcs6`: motion safety (b9500e6, in review), then the I/O delete remap, the QA list and CLICK PLUS pulse outputs. No blockers (real-AI scores still wait for an API key in the environment settings).
+
+## After #88 (coordinator's QA list, side manager's A–Z pass)
+
+- **Motion safety (#100, b9500e6).**
+  - "Homed" is set only on a fresh Home success. It is lost on a Safety OK / STO loss and not restored by re-enabling.
+  - Home and Move requests end on Complete's rising edge. Before this, a second Home / Move was cleared in the same scan.
+  - Roll-former notes fixed; Counter reset resets the counts; the fixture is 34 points (the CN5 encoder is not a PLC point).
+- **E-CAM role:** servoRole 'cam' for "U2 DI7 CAM engage".
+- **I/O delete (QA 1 + D12).**
+  - `src/plc/core/ioRemap.ts` (Dev 5's, byte-identical) and `remapProgram.ts`: rungs, motion, cycle waits and tags follow their points in one pass.
+  - A deleted point's operands become `?X004`; the checker errors on them and on any X/Y with no I/O point.
+  - `ioChange.ts`: the IO store's `onIoChange` hook, `ioUsesOf` (for the delete confirmation), `deletePointWithUndo` / `undoIoDelete`, and `registerIoParticipant` for the HMI (Dev 5).
+  - The I/O page's Delete asks first; the notice has Undo.
+- **QA 2:** the ladder element editor follows its element when the ladder scrolls.
+- **LOW items:**
+  - "Build program from my project" wording everywhere;
+  - undo history survives leaving the Program page;
+  - the Simulate legend wraps at 1366.
+  - Not done: "the editor stacks new elements at the centre" is the HMI editor (Dev 5).
+- **CLICK PLUS pulse outputs.**
+  - The option-slot module is slot 0 (X001… / Y001…).
+  - `src/electrical/highSpeedIo.ts` (ptoPointsFor / hsInputsFor) is the one source.
+  - Pulse outputs get Y001 / Y003 / Y005 automatically; the checker errors on a pulse off them.
+  - The drawings' slot mapping follows; Dev 4 switches the servo sheet to the helper.
+- **Follow-ups:**
+  - a CPU / module change also re-addresses I/O (not remapped yet);
+  - saved program versions are not remapped;
+  - "lock addresses" once a drawing revision is issued (coordinator: later).
 
 ## Roll former: the user's machine (coordinator + side manager; Debug 1's converted I/O at 8250d4f)
 

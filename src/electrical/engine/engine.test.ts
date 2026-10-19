@@ -698,8 +698,9 @@ for (const s of SCENARIOS) {
   assert.ok(!r.design.components.some((c) => /^VFD[2-9]/.test(c.tag)), 'no invented second drive');
   assert.ok(!(r.design.askUser ?? []).some((q) => /not in the motor list|assumed/i.test(q) && /U[12]/.test(q)), 'no invented-load question');
   const m = buildModel(ctx);
-  // U2 (the servo drive) on its DI7; U1 is the design's one VFD (VFD1): jog on a preset DI, run on FWD/DI1
-  for (const t of ['U2:DI7', 'VFD1:DI3', 'VFD1:DI1']) assert.ok(m.wires.some((w) => w.to === t), `wired to ${t}`);
+  // U2 (the servo drive) on its DI7 — CN1-31, the SureServo2 pin of DI7 (servoWiring maps a named DI to its real
+  // pin); U1 is the design's one VFD (VFD1): jog on a preset DI, run on FWD/DI1
+  for (const t of ['U2:CN1-31', 'VFD1:DI3', 'VFD1:DI1']) assert.ok(m.wires.some((w) => w.to === t), `wired to ${t}`);
 }
 
 // Dev 4's probe: the converted roll former's own I/O and motors. The oil pump contactor output drives M2's contactor
