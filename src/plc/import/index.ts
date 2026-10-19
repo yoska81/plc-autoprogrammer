@@ -30,6 +30,9 @@ export const NATIVE_FILES: { ext: RegExp; product: string; howTo: string }[] = [
   { ext: /\.vlp$|\.ulpr$|\.vlpx$/i, product: 'Unitronics project', howTo: 'Unitronics projects cannot be exported as text: print the ladder to PDF (File › Print) and upload the PDF.' },
   { ext: /\.ccwsln$|\.ccwarc$/i, product: 'Connected Components Workbench project', howTo: 'In CCW: export the programs as PLCopen XML (right-click the program › Export) and upload the .xml.' },
   { ext: /\.project$|\.projectarchive$/i, product: 'CODESYS project', howTo: 'In CODESYS: Project › Export PLCopenXML… and upload the .xml.' },
+  { ext: /\.mwt$|\.zwt$/i, product: 'Yaskawa MotionWorks IEC project', howTo: 'In MotionWorks IEC: open the project, then File › Export › PLCopen XML for the whole project, and upload the .xml.' },
+  { ext: /\.pcwex$/i, product: 'Yaskawa iCube Engineer / PLCnext Engineer project', howTo: 'In iCube Engineer: export the programs as PLCopen XML and upload the .xml. A printout of the ladder (PDF) also works, under "Or a printout of the program" below.' },
+  { ext: /\.jbi$/i, product: 'Yaskawa Motoman robot job (.JBI)', howTo: 'A robot job holds the robot\'s moves, not the machine\'s PLC program, and is not read here. Upload the PLC program that runs with the robot (with MotoLogix, the Studio 5000 .L5X or the Siemens project export).' },
 ];
 
 export function detectFormat(fileName: string, text: string): SourceFormat | null {

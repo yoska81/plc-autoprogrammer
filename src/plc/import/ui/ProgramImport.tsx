@@ -6,7 +6,7 @@ import { applyUpgrade } from './applyUpgrade';
 import PrintoutReader from './PrintoutReader';
 import type { UpgradePlan } from '../upgrade';
 
-const ACCEPT = '.l5x,.L5X,.l5k,.L5K,.xml,.st,.scl,.csv,.txt,.il,.sdf,.awl,.stl,.acd,.ACD,.rss,.ckp,.ap13,.ap14,.ap15,.ap16,.ap17,.ap18,.ap19,.ap20,.s7p,.gx3,.gxw,.isp,.vlp,.ulpr,.ccwsln,.project';
+const ACCEPT = '.l5x,.L5X,.l5k,.L5K,.xml,.st,.scl,.csv,.txt,.il,.sdf,.awl,.stl,.acd,.ACD,.rss,.ckp,.ap13,.ap14,.ap15,.ap16,.ap17,.ap18,.ap19,.ap20,.s7p,.gx3,.gxw,.isp,.vlp,.ulpr,.ccwsln,.project,.mwt,.zwt,.pcwex,.jbi,.JBI';
 
 /** Longest lists shown in full: a big program has thousands of I/O points and parts (all of them are used). */
 const SHOW_IO = 300;
