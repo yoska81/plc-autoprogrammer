@@ -64,6 +64,7 @@ BASE_URL=http://localhost:5203 node e2e/hmi-motion.e2e.cjs  # servo axes, encode
 BASE_URL=http://localhost:5203 node e2e/hmi-panel-switch.e2e.cjs  # changing the touch panel: the HMI stage says the screens were laid out for the old panel; back on it the screens are exactly as before
 BASE_URL=http://localhost:5203 node e2e/equipment-panel.e2e.cjs  # leaving an all-in-one PLC (UniStream) for a CLICK: the closest compatible panel is selected and the page says why; a compatible panel is kept
 BASE_URL=http://localhost:5203 node e2e/program-for-hmi.e2e.cjs  # after "Redesign screens" the HMI and Program pages say which HMI tags the program lacks; "Rebuild program" implements them (no checker errors)
+BASE_URL=http://localhost:5203 node e2e/hmi-address.e2e.cjs  # the HMI element editor flags "GARBAGE!!", X099 (not in the I/O list) and DS9999 (not on this PLC) in plain words
 BASE_URL=http://localhost:5203 node e2e/recover-list.e2e.cjs  # Project data, recover lists: no sideways scroll at 390 / 1366 px, texts clamped to 2 lines, buttons aligned, grouped by project, older versions folded
 BASE_URL=http://localhost:5203 node e2e/phone.e2e.cjs         # every page at 390 px: the page never scrolls sideways (only explicit overflow-x / data-scroll-x boxes may), headers fit, titles and buttons not squeezed
 BASE_URL=http://localhost:5203 node e2e/old-data.e2e.cjs   # projects saved by older versions (e2e/old-data/*.json) still open and export

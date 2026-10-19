@@ -248,5 +248,6 @@ export const siemensProfile: PlcProfile = {
   exporters: EXPORTERS,
   analogChannels: siemensAnalogChannels,
   mnemonics: SIEMENS_MNEMONICS,
-  ioTag: (a, modules) => siemensAddress(a, SIEMENS_CPUS[1], modules)?.address ?? null,
+  // The project's CPU, as the export (buildScl) uses it: the S7-1500 places module I/O differently from the 1200.
+  ioTag: (a, modules, cpuId) => siemensAddress(a, SIEMENS_CPUS.find((x) => x.id === cpuId) ?? SIEMENS_CPUS[1], modules)?.address ?? null,
 };
