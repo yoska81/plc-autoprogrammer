@@ -219,7 +219,7 @@ export function generateDesign(input: EngineInput): EngineResult {
   const ctxOf = (components: DesignComponent[], design: Partial<ElectricalDesign> = {}): DrawingContext => ({
     projectName: input.projectName ?? 'Machine',
     design: {
-      inputs: { ...inputs, motors: motorSpecs }, components, ioWiring: [...dev.ioWiring, ...motion.ioWiring], notes: [], machine: dev.machine,
+      inputs: { ...inputs, motors: motorSpecs, motorsMarked: true }, components, ioWiring: [...dev.ioWiring, ...motion.ioWiring], notes: [], machine: dev.machine,
       generatedAt: input.now ?? new Date().toISOString(), ...design,
     },
     getPart, plc: input.plc,
@@ -369,7 +369,7 @@ export function generateDesign(input: EngineInput): EngineResult {
 
   return {
     design: {
-      inputs: { ...inputs, motors: motorSpecs, enclosureRating: inputs.enclosureRating },
+      inputs: { ...inputs, motors: motorSpecs, motorsMarked: true, enclosureRating: inputs.enclosureRating },
       components: best.components,
       ioWiring: [...dev.ioWiring, ...motion.ioWiring],
       notes: [...askUser, ...notes],

@@ -40,6 +40,7 @@ import PanelBrandOfferBanner from '../electrical/PanelBrandOfferBanner';
 import { psFeedVolts } from '../electrical/psFeed';
 import { vendorById } from '../electrical/catalogs';
 import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
+import { markLegacyMotors } from '../electrical/engine/machineModel';
 import type { CatalogCategory, DesignInputs, EnclosureRating, MotorSpec, StarterType, SupplyVoltage } from '../electrical/types';
 import { Spinner, ReasoningPanel } from '../components/common';
 import StageBanner from '../components/StageBanner';
@@ -171,6 +172,7 @@ export default function ElectricalPage() {
     if (ask && el.design && !confirm('Replace the current electrical design?')) return;
     setError(null);
     const snap = { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, panel: hmiPartNumber || undefined };
+    const inputs = markLegacyMotors(el.inputs, el.design, el.source);
     void startAiJob({
       kind: 'electrical', label: full ? 'Electrical design (full AI)' : 'Electrical design', keepResult: true,
       run: async (h) => {

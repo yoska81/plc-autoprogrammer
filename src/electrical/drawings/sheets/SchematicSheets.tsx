@@ -108,6 +108,8 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   // each bus phase runs down to its own last tap (all of them on to the motor sheets): a phase line running past its
   // last tap ends on another phase's branch feed and reads as a connection (1L3 ending on a 2-pole tap's L2 feed)
   const phaseEnd = (k: number) => (m.motors.length ? busEnd : Math.max(2 + k, ...sp.branches.filter((b) => !(b.type === 'ps' && b.b.fromXfmr) && b.b.feedWires.length > k).map((b) => b.idx + k)));
+  // a phase nothing taps (no motors, only 2-pole taps on a 3-phase bus) ends at the disconnect as an unnumbered spare stub
+  const tapped = (k: number) => m.motors.length > 0 || sp.branches.some((b) => !(b.type === 'ps' && b.b.fromXfmr) && b.b.feedWires.length > k);
   const gy = y(sp.groundIdx);
   const pe = m.groundBar?.tag ?? 'PE BAR';
   const grounds = [
@@ -143,6 +145,17 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
       {m.incoming.map((w, k) => {
         if (w === 'N') return null;
         const yy = y(2 + k);
+        if (!tapped(k)) {
+          const x0 = m.mainBreaker ? mbX + 5 : dsX + 5;
+          return (
+            <g key={`b${k}`}>
+              {m.mainBreaker && <BreakerPole x={mbX} y={yy} />}
+              {m.mainBreaker && <Line x1={dsX + 5} y1={yy} x2={mbX - 5} y2={yy} />}
+              <Line x1={x0} y1={yy} x2={x0 + 6} y2={yy} />
+              <Txt x={x0 + 7.5} y={yy + 0.8} size={2.3}>SPARE</Txt>
+            </g>
+          );
+        }
         return (
           <g key={`b${k}`}>
             {m.mainBreaker && <BreakerPole x={mbX} y={yy} />}
