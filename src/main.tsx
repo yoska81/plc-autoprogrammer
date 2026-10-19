@@ -13,3 +13,6 @@ await loadAppStorage({ onFailure: (_err, key) => tellStorageFull(key) })
     if (valuesInIdbLeft()) notify('The app\'s project storage did not open, so a big project kept there is not shown now (it is not lost). Close the app and open it again.')
   })
 await import('./appMain')
+// The app has started (storage loaded, the stores made, the preview's example seeded): end-to-end tests that reach
+// into the stores wait for this (e2e/lib/appModule.cjs).
+;(globalThis as { __isaAppReady?: boolean }).__isaAppReady = true

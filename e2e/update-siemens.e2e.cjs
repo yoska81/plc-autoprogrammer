@@ -4,6 +4,7 @@
 // 6ES7 parts, the HMI is designed on a panel that talks to an S7, and the program exports for TIA Portal.
 //   npx vite --port 5205 &  ;  BASE_URL=http://localhost:5205 node e2e/update-siemens.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5205';
 const fails = [];
 const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', what); } else console.log('  ✓', what); };
@@ -59,6 +60,7 @@ async function scenario(browser, quick) {
   console.log(quick ? '• === equipment by the rules (no AI), from a CLICK project with a C-more panel' : '• === equipment by the AI');
   seen.equipment = null; seen.unknown = [];
   const page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
@@ -75,19 +77,19 @@ async function scenario(browser, quick) {
   });
   await page.goto(BASE + '/spec');
   const before = await page.evaluate(async ([text, quick]) => {
-    (await import('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: text });
+    (await appImport('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: text });
     if (quick) {
-      (await import('/src/store/useSettingsStore.ts')).useSettingsStore.getState().setStageMode('equipment', 'quick');
-      const { applyEquipment } = await import('/src/spec/equipment.ts');
+      (await appImport('/src/store/useSettingsStore.ts')).useSettingsStore.getState().setStageMode('equipment', 'quick');
+      const { applyEquipment } = await appImport('/src/spec/equipment.ts');
       applyEquipment({ cpuId: 'C0-12DD1E-D', modules: [], hmiPartNumber: 'CM5-T7W' }, null);
     }
-    const p = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState();
-    return `${p.plcId} ${p.cpuId} ${(await import('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber}`;
+    const p = (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState();
+    return `${p.plcId} ${p.cpuId} ${(await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber}`;
   }, [TEXT, quick]);
   console.log('• before:', before);
 
   const results = await page.evaluate(async () => {
-    const { runStages } = await import('/src/spec/updateRun.ts');
+    const { runStages } = await appImport('/src/spec/updateRun.ts');
     return (await runStages(['equipment', 'io', 'electrical', 'hmi', 'program'])).map((r) => `${r.step} ${r.status}: ${r.message}`);
   });
   for (const r of results) console.log('  ·', r.slice(0, 220));
@@ -102,14 +104,14 @@ async function scenario(browser, quick) {
   }
 
   const st = await page.evaluate(async () => {
-    const { useProjectStore } = await import('/src/store/useProjectStore.ts');
-    const { useHmiStore } = await import('/src/store/useHmiStore.ts');
-    const { useElectricalStore } = await import('/src/store/useElectricalStore.ts');
-    const { useProgramStore } = await import('/src/store/useProgramStore.ts');
-    const { getProfile, getCpu } = await import('/src/plc/core/profiles/index.ts');
-    const { moduleSlots } = await import('/src/plc/core/modules.ts');
-    const { resolveAddresses } = await import('/src/plc/core/profile.ts');
-    const { useIOStore } = await import('/src/store/useIOStore.ts');
+    const { useProjectStore } = await appImport('/src/store/useProjectStore.ts');
+    const { useHmiStore } = await appImport('/src/store/useHmiStore.ts');
+    const { useElectricalStore } = await appImport('/src/store/useElectricalStore.ts');
+    const { useProgramStore } = await appImport('/src/store/useProgramStore.ts');
+    const { getProfile, getCpu } = await appImport('/src/plc/core/profiles/index.ts');
+    const { moduleSlots } = await appImport('/src/plc/core/modules.ts');
+    const { resolveAddresses } = await appImport('/src/plc/core/profile.ts');
+    const { useIOStore } = await appImport('/src/store/useIOStore.ts');
     const p = useProjectStore.getState();
     const profile = getProfile(p.plcId);
     const cpu = getCpu(profile, p.cpuId);
@@ -122,7 +124,7 @@ async function scenario(browser, quick) {
     const prog = useProgramStore.getState();
     let files = [];
     try {
-      const { buildExports } = await import('/src/plc/core/exporters.ts').catch(() => ({}));
+      const { buildExports } = await appImport('/src/plc/core/exporters.ts').catch(() => ({}));
       files = buildExports ? buildExports().map((f) => f.fileName) : (profile.exporters ?? []).map((e) => e.label);
     } catch (e) { files = [`error ${e.message}`]; }
     return {
@@ -145,9 +147,9 @@ async function scenario(browser, quick) {
   // The .scl speaks TIA Portal's names: no CLICK operand outside the user's own I/O descriptions, no static named
   // after a CLICK register, no "_Y003"-style name.
   const scl = await page.evaluate(async () => {
-    const p = (await import('/src/deliverables/collect.ts')).collectProject();
-    const { exportContext } = await import('/src/deliverables/exportContext.ts');
-    const { buildScl } = await import('/src/plc/core/profiles/siemens.ts');
+    const p = (await appImport('/src/deliverables/collect.ts')).collectProject();
+    const { exportContext } = await appImport('/src/deliverables/exportContext.ts');
+    const { buildScl } = await appImport('/src/plc/core/profiles/siemens.ts');
     let text = buildScl(p.ladder, exportContext(p)).scl;
     for (const x of [...p.io].sort((a, b) => b.description.length - a.description.length)) text = text.split(x.description).join('');
     const ops = [...new Set(text.match(/\b(?:CTD|TD|CT|DS|DD|DH|DF|SC|SD|TXT|C|T|X|Y)\d+\b/g) ?? [])];
@@ -166,7 +168,7 @@ async function scenario(browser, quick) {
   // The brand rows and the CPU table follow the project's PLC (never the untouched CLICK / C-more default).
   const brandRow = async (g) => page.locator(`select[aria-label="Brand for ${g}"]`).inputValue();
   const shownBrands = [await brandRow('PLC and I/O'), await brandRow('Operator panel (HMI)')];
-  const hmiNow = await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber);
+  const hmiNow = await page.evaluate(async () => (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber);
   check(shownBrands[0] === 'siemens' && (!/^6AV/.test(hmiNow ?? '') || shownBrands[1] === 'siemens'), `Preferred brands show the S7 project's brands (${shownBrands.join(' / ')}, panel ${hmiNow})`);
   check(await page.locator(`input[aria-label="Choose ${CPU}"][type="radio"]`).isChecked(), `the project's ${CPU} is selected in the CPU table`);
   // An S7-1500 has no on-board I/O: its row fits with ET 200SP modules, and selecting it adds them.
@@ -206,6 +208,7 @@ async function scenario(browser, quick) {
 async function extras(browser) {
   console.log('• === unsupported brand, and the Brand preference card');
   const page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
@@ -213,11 +216,11 @@ async function extras(browser) {
   await page.evaluate(() => localStorage.clear());
   await page.goto(BASE + '/spec');
   const msg = await page.evaluate(async (io) => {
-    (await import('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: 'Bottle capper. The PLC is a Mitsubishi FX5U programmed in GX Works3.' });
-    (await import('/src/store/useSettingsStore.ts')).useSettingsStore.getState().setStageMode('equipment', 'quick');
-    const { useIOStore } = await import('/src/store/useIOStore.ts');
+    (await appImport('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: 'Bottle capper. The PLC is a Mitsubishi FX5U programmed in GX Works3.' });
+    (await appImport('/src/store/useSettingsStore.ts')).useSettingsStore.getState().setStageMode('equipment', 'quick');
+    const { useIOStore } = await appImport('/src/store/useIOStore.ts');
     useIOStore.getState().importPoints(io.map((p) => ({ description: p.description, type: p.type, category: p.category })), true);
-    const { runUpdateAll } = await import('/src/spec/updateAll.ts');
+    const { runUpdateAll } = await appImport('/src/spec/updateAll.ts');
     const out = [];
     await runUpdateAll(['equipment'], (r) => out.push(`${r.step} ${r.status}: ${r.message}`));
     return out.join(' | ');
@@ -226,8 +229,8 @@ async function extras(browser) {
   check(/^equipment done: Mitsubishi PLC isn't supported yet — using AutomationDirect CLICK \(/.test(msg), 'Mitsubishi: the step says it is not supported yet and which PLC is used');
   // A maker mentioned without saying it is the PLC: said, never a silent CLICK.
   const msg2 = await page.evaluate(async () => {
-    (await import('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: 'Bottle capper. The Siemens motor is started by the PLC.' });
-    const { runUpdateAll } = await import('/src/spec/updateAll.ts');
+    (await appImport('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: 'Bottle capper. The Siemens motor is started by the PLC.' });
+    const { runUpdateAll } = await appImport('/src/spec/updateAll.ts');
     const out = [];
     await runUpdateAll(['equipment'], (r) => out.push(`${r.step} ${r.status}: ${r.message}`));
     return out.join(' | ');
@@ -237,8 +240,8 @@ async function extras(browser) {
 
   // A Logix project; the user changes only the sensors' brand on the Equipment page.
   await page.evaluate(async () => {
-    (await import('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: 'Pick and place cell with two conveyors.' });
-    const { applyEquipment } = await import('/src/spec/equipment.ts');
+    (await appImport('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: 'Pick and place cell with two conveyors.' });
+    const { applyEquipment } = await appImport('/src/spec/equipment.ts');
     applyEquipment({ cpuId: '5069-L310ER', modules: ['5069-IB16', '5069-OB16'], hmiPartNumber: null }, null);
   });
   await page.goto(BASE + '/equipment');
@@ -248,8 +251,8 @@ async function extras(browser) {
   const sensors = page.locator('select[aria-label^="Brand for"]').filter({ has: page.locator('option[value="ifm"]') }).first();
   await sensors.selectOption('ifm');
   const after = await page.evaluate(async () => {
-    const p = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState();
-    const st = (await import('/src/spec/useStages.ts')).stagesNow().equipment;
+    const p = (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState();
+    const st = (await appImport('/src/spec/useStages.ts')).stagesNow().equipment;
     return { vendors: p.info.vendors, plcId: p.plcId, reason: st.reason ?? '' };
   });
   console.log('  ·', JSON.stringify(after));
@@ -259,8 +262,8 @@ async function extras(browser) {
   const plcSelect = page.locator('select[aria-label^="Brand for"]').first();
   await plcSelect.selectOption('automationdirect');
   const picked = await page.evaluate(async () => {
-    const p = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState();
-    return { chosen: p.info.plcChosen, reason: (await import('/src/spec/useStages.ts')).stagesNow().equipment.reason ?? '' };
+    const p = (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState();
+    return { chosen: p.info.plcChosen, reason: (await appImport('/src/spec/useStages.ts')).stagesNow().equipment.reason ?? '' };
   });
   check(picked.chosen === true && /Brand preference asks for AutomationDirect CLICK/.test(picked.reason), `an AutomationDirect pick is honoured (${picked.reason.slice(0, 80)})`);
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
@@ -274,6 +277,7 @@ async function s1500(browser) {
   // The AI answers with a C-more panel here: Update all must swap it for one that talks to the S7.
   EQUIP = { cpuId: '6ES7511-1AL03-0AB0', modules: ['6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0'], hmi: 'CM5-T7W' };
   const page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
@@ -290,8 +294,8 @@ async function s1500(browser) {
   });
   await page.goto(BASE + '/spec');
   const results = await page.evaluate(async (text) => {
-    (await import('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: text });
-    const { runStages } = await import('/src/spec/updateRun.ts');
+    (await appImport('/src/store/useSpecStore.ts')).useSpecStore.getState().setSections({ overview: text });
+    const { runStages } = await appImport('/src/spec/updateRun.ts');
     return (await runStages(['equipment', 'io', 'electrical', 'hmi', 'program'])).map((r) => `${r.step} ${r.status}: ${r.message}`);
   }, TEXT.replace('Siemens S7-1200', 'Siemens S7-1500 with ET 200SP I/O'));
   for (const r of results) console.log('  ·', r.slice(0, 160));
@@ -303,9 +307,9 @@ async function s1500(browser) {
     return [id, r.children[1].textContent.trim()];
   }));
   const out = await page.evaluate(async () => {
-    const { collectProject } = await import('/src/deliverables/collect.ts');
-    const { exportContext } = await import('/src/deliverables/exportContext.ts');
-    const { hmiTagRows } = await import('/src/deliverables/hmiTags.ts');
+    const { collectProject } = await appImport('/src/deliverables/collect.ts');
+    const { exportContext } = await appImport('/src/deliverables/exportContext.ts');
+    const { hmiTagRows } = await appImport('/src/deliverables/hmiTags.ts');
     const p = collectProject();
     const sdf = p.profile.exporters.find((e) => e.id === 'siemens-tags').build(p.ladder, exportContext(p));
     const exported = sdf.trim().split(/\r?\n/).map((l) => JSON.parse(`[${l}]`)).map(([name, address, type, , , , comment]) => ({ name, address, type, comment }));
@@ -314,7 +318,7 @@ async function s1500(browser) {
   });
   console.log('  ·', out.cpu, out.modules.join(', '), '|', shown.slice(0, 3).map((x) => x.join('=')).join(' '), '| export', out.exported.slice(0, 3).map((t) => `${t.name}=${t.address}`).join(' '));
   check(results.some((r) => /^equipment done: .*The CM5-T7W panel cannot talk to the 6ES7511-1AL03-0AB0: \S+ \(/.test(r)), 'AI path: a panel that cannot talk to the S7 is swapped, and said');
-  const hmiNow = await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber);
+  const hmiNow = await page.evaluate(async () => (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber);
   check(hmiNow && !/^CM5-/.test(hmiNow), `the project's panel talks to the S7 (${hmiNow})`);
   check(out.cpu === '6ES7511-1AL03-0AB0' && out.modules.length >= 2, `S7-1500 with ET 200SP modules (${out.cpu} ${out.modules.join(', ')})`);
   const exportedAt = new Set(out.exported.filter((t) => t.type === 'Bool').map((t) => t.address));

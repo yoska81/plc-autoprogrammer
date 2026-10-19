@@ -3,6 +3,7 @@
 // the S7 way (%I0.0 …). CLICK stays as it is (X001, C1001).
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/hmi-native-address.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const log = (...a) => console.log('•', ...a);
 const fails = [];
@@ -11,12 +12,13 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1366, height: 900 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('dialog', (d) => d.accept());
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
 
@@ -29,7 +31,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 
   // Siemens S7-1200: switch the PLC, then build the program and redesign the screens for it.
   await page.evaluate(async () => {
-    const { useProjectStore } = await import('/src/store/useProjectStore.ts');
+    const { useProjectStore } = await appImport('/src/store/useProjectStore.ts');
     useProjectStore.getState().setPlc('siemens-s7', '6ES7214-1AG40-0XB0');
     useProjectStore.setState({ modules: [] });
   });
@@ -40,7 +42,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.goto(BASE + '/hmi');
   await page.getByRole('button', { name: 'Redesign screens' }).click();
   await page.waitForFunction(async () => {
-    const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
+    const d = (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
     return Boolean(d?.screens.some((s) => s.elements.some((e) => /Siemens/.test(e.label ?? ''))));
   }, null, { timeout: 30000 }).catch(() => {});
   await page.locator('th', { hasText: /^Siemens address$/i }).first().waitFor({ timeout: 15000 });
@@ -54,12 +56,12 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(/Inputs \(CPU\) %I0\.0–%I0\.5/.test(shown), 'the inputs group title gives the S7 range');
   check(/%I0\.0 E-Stop OK/i.test(shown) && /%Q0\.0 /.test(shown) && !/X001 E-Stop OK/i.test(shown), 'input and output lamps are drawn %I0.0 … / %Q0.0 …');
   const saved = await page.evaluate(async () => {
-    const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
+    const d = (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
     return d.screens.flatMap((s) => s.elements.map((e) => e.label)).filter((l) => /^(X|%I)\S+ E-Stop/i.test(l ?? ''));
   });
   check(saved.length > 0 && saved.every((l) => /^X001 /.test(l)), `the saved design keeps X001 (${saved.join(', ')})`);
   // Back to CLICK without redesigning: the same screens are drawn with X001 again.
-  await page.evaluate(async () => { (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().setPlc('click', 'C0-10DD1E-D'); });
+  await page.evaluate(async () => { (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().setPlc('click', 'C0-10DD1E-D'); });
   await page.waitForTimeout(800);
   const back = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
   check(/X001 E-Stop OK/i.test(back) && !/%I0\.0/.test(back), 'on CLICK the same screens read X001 again');
