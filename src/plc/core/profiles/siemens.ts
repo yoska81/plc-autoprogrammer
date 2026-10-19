@@ -216,9 +216,10 @@ export function unusedIoTags(program: LadderProgram, ctx: ExportContext): Siemen
     const s = base ? siemensAddress(base, c, modules) : null;
     if (!s || at.has(s.address)) continue;
     const analog = p.signal === 'analog';
-    const name = logixName(p.description || base, used, base);
+    // The name as written (with _raw for an analog word) is the one reserved: no two tags share a name.
+    const name = logixName(analog ? `${p.description || base}_raw` : p.description || base, used, base);
     at.add(s.address);
-    out.push({ name: analog ? `${name}_raw` : name, address: s.address, type: analog ? 'Int' : 'Bool', comment: `${p.description || base} (not used by the program yet)`, inferred: s.inferred });
+    out.push({ name, address: s.address, type: analog ? 'Int' : 'Bool', comment: `${p.description || base} (not used by the program yet)`, inferred: s.inferred });
   }
   return out;
 }
