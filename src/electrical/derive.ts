@@ -1996,7 +1996,7 @@ export interface PanelLayout {
 /** Realistic default footprints (W x H mm) by category, used when the catalog has no dimensions. */
 const DEFAULT_DIMS: Partial<Record<CatalogCategory, [number, number]>> = {
   disconnect: [54, 90], breaker: [18, 90], fuse: [18, 85], motorProtector: [45, 90], contactor: [45, 75], overload: [45, 70],
-  vfd: [100, 180], powerSupply: [50, 125], plc: [60, 90], plcModule: [25, 90], relay: [16, 80], safetyRelay: [23, 100],
+  vfd: [100, 180], powerSupply: [50, 125], plc: [60, 90], plcModule: [25, 90], commModule: [30, 100], relay: [16, 80], safetyRelay: [23, 100],
   groundBar: [100, 25], other: [50, 50], terminal: [6.2, 50], hmi: [200, 150],
 };
 
@@ -2038,12 +2038,12 @@ const GAP = 4;
 const TALL_MM = 140;
 
 /** Layout group of a category (breakers / fuses together, PLC + modules together). */
-const grpOf = (c: CatalogCategory) => (c === 'breaker' || c === 'fuse' ? 'cb' : c === 'plc' || c === 'plcModule' ? 'plc' : c);
+const grpOf = (c: CatalogCategory) => (c === 'breaker' || c === 'fuse' ? 'cb' : c === 'plc' || c === 'plcModule' || c === 'commModule' ? 'plc' : c);
 
 /** Breakers sit side by side and CLICK modules snap onto the CPU: no gap inside those groups. */
 function gapBefore(prev: PlacedItem | undefined, it: PlacedItem): number {
   if (!prev) return 0;
-  const grp = (c: CatalogCategory) => (c === 'breaker' || c === 'fuse' ? 'cb' : c === 'plc' || c === 'plcModule' ? 'plc' : c);
+  const grp = (c: CatalogCategory) => (c === 'breaker' || c === 'fuse' ? 'cb' : c === 'plc' || c === 'plcModule' || c === 'commModule' ? 'plc' : c);
   if (grp(prev.category) === grp(it.category) && (grp(it.category) === 'cb' || grp(it.category) === 'plc')) return 0;
   if (prev.category === 'terminal' && it.category === 'terminal') return 10;
   return GAP;
@@ -2090,7 +2090,9 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
   const rows: PlacedItem[][] = [[], [], [], []];
   const groundBars: PlacedItem[] = [];
   const sortKey = (c: ResolvedComponent) => {
-    const order: CatalogCategory[] = ['disconnect', 'breaker', 'fuse', 'powerSupply', 'plc', 'plcModule', 'motorProtector', 'contactor', 'vfd', 'safetyRelay', 'relay', 'other'];
+    const order: CatalogCategory[] = ['disconnect', 'breaker', 'fuse', 'powerSupply', 'plc', 'plcModule', 'commModule', 'motorProtector', 'contactor', 'vfd', 'safetyRelay', 'relay', 'other'];
+    // A communication module mounted on the CPU's left (S7-1200 CM, FX5 adapter) goes just before the CPU.
+    if (c.category === 'commModule' && /left side/i.test(String(c.part?.ratings.forUse ?? ''))) return order.indexOf('plc') - 0.5;
     const i = order.indexOf(c.category);
     return i < 0 ? 99 : i;
   };
@@ -2100,10 +2102,11 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     if (used.has(c)) continue;
     used.add(c);
     if (c.category === 'fan') { unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: 'Enclosure side/door mounted' }); continue; }
+    if (c.category === 'commModule' && c.part?.ratings.inCpu === 'yes') { unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: 'Option board inside the PLC CPU' }); continue; }
     if (c.category === 'overload' && bp.some((x) => x.category === 'contactor' && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag)) continue;
     if (c.category === 'groundBar') groundBars.push(...expand(c));
     else if (['disconnect', 'breaker', 'fuse'].includes(c.category)) rows[0].push(...expand(c));
-    else if (['powerSupply', 'plc', 'plcModule'].includes(c.category)) rows[1].push(...expand(c));
+    else if (['powerSupply', 'plc', 'plcModule', 'commModule'].includes(c.category)) rows[1].push(...expand(c));
     else if (c.category === 'contactor') {
       const it = mk(c);
       const ol = bp.find((x) => x.category === 'overload' && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag);

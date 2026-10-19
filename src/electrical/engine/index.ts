@@ -21,6 +21,7 @@ import { devicesAndWiring, motorFor, OVER_TEMP_RE } from './devices';
 import { processLoads } from './process';
 import { num, Picker } from './select';
 import { controlInputAmps, motionDesign, motionDeviceType } from '../motion';
+import { commModulesFor } from '../commModule';
 
 export { defaultMachineModel, type MachineModel } from './machineModel';
 
@@ -136,6 +137,10 @@ export function generateDesign(input: EngineInput): EngineResult {
     const kind = /analog/i.test(p?.description ?? '') && !discrete ? 'Analog' : /snap-in/i.test(p?.description ?? '') ? 'Snap-in I/O' : 'I/O';
     plc.push(comp(`IO${i + 1}`, pn, 1, `${kind} module, slot ${i + 1}`));
   });
+  // The PLC-side module the touch panel needs to reach the PLC (src/electrical/commModule.ts): a part, never an I/O slot.
+  const comm = commModulesFor(input.hmiPartNumber, input.plc.cpuPartNumber, getPart, (p) => tags.next(p));
+  plc.push(...comm.components);
+  notes.push(...comm.notes);
 
   // Unitronics: the input type is set by wiring / a jumper, and some analog inputs are digital input terminals.
   const cpuPart = getPart(input.plc.cpuPartNumber);
