@@ -5,6 +5,7 @@
  * Run with:  npx tsx src/spec/updateAll.test.ts
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { setClaudeInterceptor } from '../lib/ai/anthropic';
 import { clearAiCache } from '../lib/ai/cache';
 import { runUpdateAll, type StepResult } from './updateAll';
@@ -141,6 +142,15 @@ await test('the I/O questions from Update all reach the one question list', asyn
   registerStageQuestions();
   assert.deepEqual(io().map((q) => q.text), ['Is the pump reversible?']);
   assert.equal(io()[0].assumption ?? undefined, undefined);
+  // a step skipped later (up to date) keeps them; once every one is answered they are no longer kept
+  await runUpdateAll(['io'], () => {});
+  assert.ok(useDraftStore.getState().drafts['io.updateQuestions'], 'kept while open');
+  useQuestionStore.getState().answer(useProjectsStore.getState().activeId, io()[0].id, 'No, one direction', 'answered');
+  assert.equal(useDraftStore.getState().drafts['io.updateQuestions'], null, 'dropped once answered');
+  registerStageQuestions();
+  assert.equal(io().length, 0, 'the answered question is not asked again');
+  // the I/O page's own reading replaces them
+  assert.match(readFileSync(new URL('../components/IOFromSpec.tsx', import.meta.url), 'utf8'), /setPlan\(\{[^\n]*\n[^\n]*\n\s*useDraftStore\.getState\(\)\.setDraft\('io\.updateQuestions', null\)/);
 });
 
 setClaudeInterceptor(null);

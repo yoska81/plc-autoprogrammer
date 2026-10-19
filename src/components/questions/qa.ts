@@ -132,6 +132,15 @@ export function registerStageQuestions(): void {
   }
 }
 
+/** Update all's I/O questions, once every one of them is answered (or dismissed / assumed): no longer kept. */
+function dropAnsweredIoUpdate(): void {
+  const kept = useDraftStore.getState().drafts['io.updateQuestions'] as { text: string }[] | null | undefined;
+  if (!kept?.length) return;
+  const io = listFor(useProjectsStore.getState().activeId).filter((q) => q.source === 'io');
+  const settled = kept.every((k) => io.some((q) => q.text === k.text && q.status !== 'open'));
+  if (settled) runDerived(() => useDraftStore.getState().setDraft('io.updateQuestions', null));
+}
+
 let installed = false;
 /** Keep the spec's Q&A in step with the question list and the open project. */
 export function installQaSync(): void {
@@ -139,6 +148,7 @@ export function installQaSync(): void {
   installed = true;
   setExternalKnowledge(decisionsNow);
   useQuestionStore.subscribe(syncQaIntoSpec);
+  useQuestionStore.subscribe(dropAnsweredIoUpdate);
   useProjectsStore.subscribe(syncQaIntoSpec);
   // A review decision answers the questions that ask the same thing, and is part of the Q&A.
   useReviewStore.subscribe((s, prev) => {

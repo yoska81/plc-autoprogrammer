@@ -13,7 +13,7 @@ import StageBanner from './StageBanner';
 import { Spinner } from './common';
 import AssumptionsUsed from './questions/AssumptionsUsed';
 import { useQuestions } from './questions/useQuestionStore';
-import { useDraft } from '../store/useDraftStore';
+import { useDraft, useDraftStore } from '../store/useDraftStore';
 
 /** Generate / update the I/O list from the spec, with a review step before applying. */
 export default function IOFromSpec({ children }: { children: (generateButton: ReactNode) => ReactNode }) {
@@ -45,6 +45,8 @@ export default function IOFromSpec({ children }: { children: (generateButton: Re
   };
   useTakeResult<Awaited<ReturnType<typeof generateIOFromSpec>>>('io', (r) => {
     setPlan({ ...planIOMerge(useIOStore.getState().projectIO, noTouchPanelNow() ? [...r.points, ...missingOperatorIo(r.points)] : r.points), explanation: r.explanation, questions: r.questions });
+    // this page's own reading replaces the questions an earlier Update all left (src/spec/updateAll.ts)
+    useDraftStore.getState().setDraft('io.updateQuestions', null);
   });
 
   const apply = () => {
