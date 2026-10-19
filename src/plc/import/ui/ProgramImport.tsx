@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FORMAT_LABEL, fileText as decodeFile, type ImportedProgram } from '../index';
 import { parseOffThread } from '../../../lib/parseWorker';
 import { programSummary } from '../upgrade';
+import { isUnreadBox } from '../mpe720';
 import { applyUpgrade } from './applyUpgrade';
 import PrintoutReader from './PrintoutReader';
 import type { UpgradePlan } from '../upgrade';
@@ -91,7 +92,7 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
                     {n.text.includes('\n')
                       ? <details className="inline"><summary className="inline cursor-pointer"><code>{n.text.split('\n')[0]}</code> … ({n.text.split('\n').length} lines)</summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-white/70 p-1 text-[11px]">{n.text}</pre></details>
                       : <code>{n.text}</code>}
-                    {' '}— {n.where}{n.kept ? ' (kept as it was: it goes back into the PLC, the simulator skips it)' : ' (left out)'}
+                    {' '}— {n.where}{isUnreadBox(n.text) ? ' (not read: it does nothing, rewrite it by hand)' : n.kept ? ' (kept as it was: it goes back into the PLC, the simulator skips it)' : ' (left out)'}
                   </li>
                 ))}
               </ul>

@@ -19,13 +19,17 @@
  * Checked on a real project against its own cross-reference: every drawing's node stack returns to
  * empty at END, and the registers and opcodes match the cross-reference steps.
  */
-import { findSevenZip, readSevenZip, type SevenZipEntry } from './sevenZip';
+import { DamagedData, findSevenZip, readSevenZip, type SevenZipEntry } from './sevenZip';
 import { and, el, not, or, toBranches, toRungs, TRUE, type Cond, type Driven } from './cond';
 import type { CompareOp, LadderOutput } from '../core/ladder';
 import type { ForeignProgram, ForeignRoutine, ForeignTag, ForeignType } from './types';
 import { hmiNotes, type HmiProject } from './emtp';
 
 export const YASKAWA_VENDOR = 'yaskawa';
+
+/** Start of the box text of an instruction the reader could not read (it does nothing in the program). */
+export const UNREAD = 'Unknown instruction';
+export const isUnreadBox = (text: string): boolean => text.startsWith(`${UNREAD} (step `);
 
 /** A .YMW7 file: the header is followed by a 7z archive within the first bytes. */
 export function isYmw7(name: string, bytes: Uint8Array): boolean {
@@ -138,7 +142,7 @@ export function decodeDrawing(id: string, title: string, list: Step[]): DrawingR
     unknown.push({ step: i, op: s.op });
     const args = [s, ...list.slice(i + 1).filter((x, k, xs) => x.op === 0xf0 && xs.slice(0, k).every((y) => y.op === 0xf0))]
       .filter((x) => x.data.length).map((x) => ((x.kind & 0x0f) === 1 ? reg(x).name : `#${constant(x)}`));
-    out(raw(`Unknown instruction (step ${i}, code 0x${s.op.toString(16).padStart(2, '0')})${args.length ? ` ${args.join(', ')}` : ''}`), TRUE);
+    out(raw(`${UNREAD} (step ${i}, code 0x${s.op.toString(16).padStart(2, '0')})${args.length ? ` ${args.join(', ')}` : ''}: not run, rewrite by hand`), TRUE);
     return args.length - (s.data.length ? 1 : 0);
   };
   // The branch bits shared by contacts, pulses and timers.
@@ -148,6 +152,15 @@ export function decodeDrawing(id: string, title: string, list: Step[]): DrawingR
     if (op & 0x02) { ors.push(A); A = nodes[nodes.length - 1] ?? TRUE; }
   };
   const endRow = () => { A = nodes.pop() ?? TRUE; };
+  // A condition that keeps growing (shared branch points nest it) gets a helper bit, so no rung's logic,
+  // nor the work to draw it, can grow without bound on a long or damaged drawing.
+  let links = 0;
+  const tame = () => {
+    if (condSize(A) <= MAX_COND) return;
+    const name = `${local}_LNK${++links}`;
+    driven.push({ cond: and(inIf(), A), out: { type: 'OUT', address: name } });
+    A = el({ type: 'NO', address: name });
+  };
 
   for (let i = 0; i < list.length; i++) {
     const s = list[i];
@@ -252,6 +265,7 @@ export function decodeDrawing(id: string, title: string, list: Step[]): DrawingR
     } else {
       i += unknownStep(i, s);
     }
+    tame();
   }
 
   const rungs = toDrawnRungs(driven, title ? `${id} ${title}` : id, `r_${local}`, notes);
@@ -263,6 +277,18 @@ export function decodeDrawing(id: string, title: string, list: Step[]): DrawingR
 }
 
 const FALSE_C: Cond = { k: 'false' };
+
+/** Largest condition (elements, counted as drawn) one step may leave before it gets a helper bit. */
+const MAX_COND = 400;
+const sizes = new WeakMap<Cond, number>();
+function condSize(c: Cond): number {
+  let n = sizes.get(c);
+  if (n === undefined) {
+    n = c.k === 'and' || c.k === 'or' ? c.xs.reduce((a, x) => a + condSize(x), 1) : c.k === 'not' ? 1 + condSize(c.x) : 1;
+    sizes.set(c, n);
+  }
+  return n;
+}
 
 /**
  * Conditions → rungs. A condition with more parallel paths than a rung holds is split: its largest
@@ -342,7 +368,11 @@ export interface Ymw7Summary { drawings: number; steps: number; decoded: number;
 export function readYmw7(bytes: Uint8Array, fileName = 'project.YMW7', hmi?: HmiProject): ForeignProgram & { summary: Ymw7Summary } {
   const at = findSevenZip(bytes, 0, 4096);
   if (at < 0) throw new Error('This .YMW7 file does not hold an MPE720 project (no packed project inside). Save the project again in MPE720 and upload it whole.');
-  const entries = readSevenZip(bytes, at);
+  let entries: SevenZipEntry[];
+  try { entries = readSevenZip(bytes, at); } catch (e) {
+    if (e instanceof DamagedData) throw new Error(`This Yaskawa file looks damaged: ${e.message}. Save the project again in MPE720 and upload the whole .YMW7 file.`, { cause: e });
+    throw e;
+  }
   const files = new Map<string, SevenZipEntry>();
   for (const e of entries) files.set(e.name.replace(/^[^/]*\//, ''), e); // drop "PLC_0001/"
   const text = (path: string) => { const f = files.get(path); return f ? latin1(f.data) : ''; };
@@ -393,7 +423,11 @@ export function readYmw7(bytes: Uint8Array, fileName = 'project.YMW7', hmi?: Hmi
       outside.push(`Drawing ${id}${title ? ` ${title}` : ''}: could not be read (${e instanceof Error ? e.message : String(e)}).`);
       continue;
     }
-    const r = decodeDrawing(id, title, list);
+    let r: DrawingResult;
+    try { r = decodeDrawing(id, title, list); } catch (e) {
+      outside.push(`Drawing ${id}${title ? ` ${title}` : ''}: could not be read (${e instanceof Error ? e.message : String(e)}).`);
+      continue;
+    }
     routines.push(r.routine);
     for (const [k, v] of r.used) if (!used.has(k) || used.get(k) === 'BOOL') used.set(k, v);
     notes.push(...r.notes);

@@ -6,6 +6,12 @@
  */
 
 const PROB_INIT = 1024;
+
+/** A damaged (or hostile) file: sizes or data that cannot be right. Readers turn it into a plain message. */
+export class DamagedData extends Error {}
+
+/** Most bytes one packed entry may unpack to. */
+export const MAX_UNPACKED = 256 * 1024 * 1024;
 const TOP = 1 << 24;
 
 class RangeDecoder {
@@ -16,11 +22,16 @@ class RangeDecoder {
   constructor(buf: Uint8Array, pos: number) {
     this.buf = buf;
     this.pos = pos;
-    if (buf[pos] !== 0) throw new Error('LZMA data is damaged (bad first byte).');
+    if (buf[pos] !== 0) throw new DamagedData('packed data does not start right');
     this.pos++;
     for (let i = 0; i < 4; i++) this.code = ((this.code << 8) | this.byte()) >>> 0;
   }
-  private byte(): number { return this.pos < this.buf.length ? this.buf[this.pos++] : 0; }
+  private byte(): number {
+    if (this.pos < this.buf.length) return this.buf[this.pos++];
+    // A few bytes past the end are normal for the last symbols; more means the data is cut short.
+    if (++this.pos > this.buf.length + 16) throw new DamagedData('packed data is cut short');
+    return 0;
+  }
   private norm() {
     if (this.range < TOP) { this.range = (this.range << 8) >>> 0; this.code = ((this.code << 8) | this.byte()) >>> 0; }
   }
@@ -74,8 +85,10 @@ class LenDecoder {
  * stores it with the coder; `outSize` is the unpacked size (7-Zip always knows it).
  */
 export function lzmaDecode(props: Uint8Array, data: Uint8Array, outSize: number, offset = 0): Uint8Array {
+  if (!Number.isSafeInteger(outSize) || outSize < 0 || outSize > MAX_UNPACKED) throw new DamagedData(`an entry claims ${outSize} bytes`);
+  if (props.length < 5) throw new DamagedData('packing settings are missing');
   let d = props[0];
-  if (d >= 9 * 5 * 5) throw new Error('LZMA properties are not valid.');
+  if (d >= 9 * 5 * 5) throw new DamagedData('packing settings are not valid');
   const lc = d % 9; d = Math.floor(d / 9);
   const lp = d % 5; const pb = Math.floor(d / 5);
   const out = new Uint8Array(outSize);
@@ -120,7 +133,7 @@ export function lzmaDecode(props: Uint8Array, data: Uint8Array, outSize: number,
     }
     let len: number;
     if (rc.bit(isRep, state)) {
-      if (!pos) throw new Error('LZMA data is damaged.');
+      if (!pos) throw new DamagedData('packed data is not valid');
       if (!rc.bit(isRepG0, state)) {
         if (!rc.bit(isRep0Long, (state << 4) + posState)) {
           state = state < 7 ? 9 : 11;
@@ -153,7 +166,7 @@ export function lzmaDecode(props: Uint8Array, data: Uint8Array, outSize: number,
         rep0 = dist >>> 0;
         if (rep0 === 0xffffffff) break; // end marker
       }
-      if (rep0 >= pos) throw new Error('LZMA data is damaged (distance beyond the start).');
+      if (rep0 >= pos) throw new DamagedData('packed data points before its start');
     }
     len += 2;
     const from = pos - rep0 - 1;

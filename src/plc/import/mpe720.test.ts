@@ -10,7 +10,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findSevenZip, readSevenZip } from './sevenZip';
+import { DamagedData, findSevenZip, readSevenZip } from './sevenZip';
+import { lzmaDecode } from './lzma';
 import { decodeDrawing, isYmw7, readComments, readYmw7, register, steps } from './mpe720';
 import { readEmtp } from './emtp';
 import { importProgramFiles } from './index';
@@ -55,6 +56,8 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   assert.equal(fp.controller, 'CPU-DEMO(4axes)');
   assert.deepEqual(fp.modules, [{ slot: 0, catalog: 'DEMOCPU' }, { slot: 2, catalog: 'DEMOIO' }]);
   assert.equal(fp.summary.drawings, 2);
+  // a drawing with a cut-short operand is listed, the others are read
+  assert.ok(fp.outside?.some((o) => /^Drawing H03 Damaged demo: could not be read/.test(o)));
   assert.ok(fp.notes.some((n) => /SGDEMO-AMP01 with motor SGMDEMO-MOT01/.test(n)));
   assert.match(fp.notes[0], /2 ladder drawings, \d+ steps; \d+ read into rungs .*0xaf ×1/);
   assert.ok(fp.routines.some((r) => r.name === 'MPM001 motion program' && /MOV \[A1\]1000/.test(r.untranslated[0])));
@@ -70,7 +73,7 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
     ' => MW00011:=MW00010 + 1',
     'IB00003 => OUT H01_DB000000',
     'RISE:H01_DB000000 => SET MB002000',
-    ' => {SEE H01.01}, {Unknown instruction (step 25, code 0xaf) MW00020, MW00030, #5}',
+    ' => {SEE H01.01}, {Unknown instruction (step 25, code 0xaf) MW00020, MW00030, #5: not run, rewrite by hand}',
   ]);
   const sub = fp.routines.find((r) => r.origin?.routine === 'H01.01')!;
   // two rungs that share the branch point after "Run"
@@ -134,6 +137,37 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   assert.ok(program.report.notes.some((n) => /3 PLC addresses: 1 of them appear in the ladder/.test(n)));
   assert.throws(() => importProgramFiles([{ name: 'panel.emtp', text: '', bytes }]), /touch-panel project/);
   console.log('emtp: ok');
+}
+
+// damaged or hostile files fail at once with a plain message, never allocate wildly or hang
+{
+  const damaged = /This Yaskawa file looks damaged/;
+  const fast = (what: string, f: () => unknown) => {
+    const t = Date.now();
+    assert.throws(f, damaged, what);
+    assert.ok(Date.now() - t < 2000, `${what}: failed in ${Date.now() - t} ms`);
+  };
+  fast('cut short', () => readYmw7(ymw.slice(0, 300), 'cut.YMW7'));
+  fast('cut in the packed data', () => readYmw7(ymw.slice(0, ymw.length - 40), 'cut.YMW7'));
+  // a header that claims a 1 TB entry, or a billion files
+  const archive = (header: number[]) => {
+    const packed = [0, 0, 0, 0, 0];
+    const u64 = (v: number) => Array.from({ length: 8 }, (_, i) => Math.floor(v / 2 ** (8 * i)) & 0xff);
+    return Uint8Array.from([
+      0x01, 0x00, 0x20, 0x00, ...new Array<number>(34).fill(0),
+      ...SIG, 0, 4, 0, 0, 0, 0, ...u64(packed.length), ...u64(header.length), 0, 0, 0, 0,
+      ...packed, ...header,
+    ]);
+  };
+  const SIG = [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c];
+  const folder = (size: number[]) => [0x04, 0x06, 0x00, 0x01, 0x09, 0x05, 0x00, 0x07, 0x0b, 0x01, 0x00, 0x01, 0x23, 0x03, 0x01, 0x01, 0x05, 0x5d, 0, 0, 1, 0, 0x0c, ...size, 0x00, 0x00];
+  fast('a 1 TB entry', () => readYmw7(archive([0x01, ...folder([0xff, 0, 0, 0, 0, 0, 1, 0, 0]), 0x00]), 'big.YMW7'));
+  fast('a billion files', () => readYmw7(archive([0x01, ...folder([0x05]), 0x05, 0xe0, 0x3b, 0x9a, 0xca, 0x00, 0x00, 0x00]), 'many.YMW7'));
+  assert.throws(() => lzmaDecode(Uint8Array.from([0x5d, 0, 0, 1, 0]), new Uint8Array(16), 2 ** 40), DamagedData);
+  assert.throws(() => readSevenZip(ymw.slice(0, 200), 38), DamagedData);
+  // a .ymw file without a packed project inside keeps its own message
+  assert.throws(() => readYmw7(new Uint8Array(100), 'empty.YMW7'), /no packed project inside/);
+  console.log('damaged files: ok');
 }
 
 console.log('mpe720: all ok');

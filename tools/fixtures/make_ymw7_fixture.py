@@ -66,6 +66,8 @@ files = {
     'PLC_0001/PRG/IOMAP/$SVP0101': b'\x00' * 8 + b'SGDEMO-AMP01\x00\x00\x00\x00SGMDEMO-MOT01\x00',
     'PLC_0001/PRG/DWGH/$GH01': drawing('Demo conveyor', h01),
     'PLC_0001/PRG/DWGH/$GH01_01': drawing('Demo sub', h0101),
+    # a damaged drawing: its last operand is cut short (the reader lists it and goes on)
+    'PLC_0001/PRG/DWGH/$GH03': drawing('Damaged demo', bytes([0x24, 1, 3, 0, 100, 0, 0x40, 0x02, 0x05])),
     'PLC_0001/Motion/$MPM001.txt.tmp': 'MPM001 "DEMO";\r\nMOV [A1]1000;\r\nend;\r\n',
 }
 # MPE720 packs the archive's header with LZMA too (py7zr would use LZMA2)
