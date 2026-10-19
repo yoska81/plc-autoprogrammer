@@ -7,7 +7,7 @@ import { looksLeftOver } from '../../../spec/leftovers';
 import { ArrowsPointingInIcon, ArrowsPointingOutIcon, ArrowsRightLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, MagnifyingGlassMinusIcon, MagnifyingGlassPlusIcon, PrinterIcon } from '@heroicons/react/20/solid';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useReviewStore } from '../../../review/useReviewStore';
-import { useProgramStore } from '../../../store/useProgramStore';
+import { replaceProgramQuestion, useProgramStore } from '../../../store/useProgramStore';
 import { changeScope, generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../ai/ladderAI';
 import { generateRuleBasedProgram } from '../../ai/cycleAI';
 import SequenceTable from './SequenceTable';
@@ -262,7 +262,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
    */
   const handleGenerate = (full = false) => {
     if (full && !machineText.trim()) return;
-    if (ladder.rungs.length && !programLeftOver.leftOver && !confirm('Build a new program from your project? (The current one is kept in History.)')) return;
+    if (ladder.rungs.length && !programLeftOver.leftOver && !confirm(replaceProgramQuestion(useProgramStore.getState()))) return;
     setTab('describe');
     if (!full) {
       return runAI('program', 'PLC program', (signal) => generateRuleBasedProgram({
