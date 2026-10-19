@@ -201,6 +201,8 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         plan.added.map(generatedToPoint),
         plan.removed.map((p) => p.id),
       );
+      // What the reading left open goes to the one question list (Machine description page, src/components/questions/qa.ts).
+      useDraftStore.getState().setDraft('io.updateQuestions', r.questions.map((text) => ({ text })));
       if (ioFingerprint(ioNow()) !== before) ctx.changed.add('io');
       mark('io', { specFp, spec, ioFp: ioFingerprint(ioNow()) });
       // The real I/O list may need more than the equipment step's estimate: add modules, or stop with a clear error.

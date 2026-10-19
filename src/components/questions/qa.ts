@@ -103,11 +103,14 @@ export function specQuestionItems(sections: SpecSections, aiQuestions: string[])
 function stageQuestions(): Record<Exclude<QuestionSource, 'review'>, Item[] | null> {
   const ladder = useProgramStore.getState().ladder;
   const plan = useDraftStore.getState().drafts['io.plan'] as { questions?: string[] } | null | undefined;
+  const ioUpdate = useDraftStore.getState().drafts['io.updateQuestions'] as { text: string; assumption?: string }[] | undefined;
   const el = useElectricalStore.getState().design;
   const hmi = activeHmiDesign();
   return {
     spec: specQuestionItems(useSpecStore.getState().sections, useSpecStore.getState().questions),
-    io: plan?.questions ? plan.questions.map((text) => ({ text, topic: foundWhile('io') })) : null,
+    // the I/O page's own reading, else the one Update all made (src/spec/updateAll.ts)
+    io: plan?.questions ? plan.questions.map((text) => ({ text, topic: foundWhile('io') }))
+      : ioUpdate ? ioUpdate.map((q) => ({ ...q, topic: foundWhile('io') })) : null,
     electrical: el ? userNotes(el).map((n) => ({ text: n, assumption: n, topic: foundWhile('electrical') })) : null,
     hmi: hmi ? userNotes(hmi).map((n) => ({ text: n, assumption: n, section: 'operator' as const, topic: foundWhile('hmi') })) : null,
     program: ladder.rungs.length ? (ladder.sequence?.questions ?? []).map((text) => ({ text, section: 'sequence' as const, topic: foundWhile('program') })) : null,

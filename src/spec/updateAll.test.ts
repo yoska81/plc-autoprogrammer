@@ -13,6 +13,10 @@ import { useSpecStore } from '../store/useSpecStore';
 import { useIOStore } from '../store/useIOStore';
 import { useSettingsStore, type StageMode } from '../store/useSettingsStore';
 import { useProgramStore } from '../store/useProgramStore';
+import { useDraftStore } from '../store/useDraftStore';
+import { useProjectsStore } from '../store/useProjectsStore';
+import { installQaSync, registerStageQuestions } from '../components/questions/qa';
+import { useQuestionStore } from '../components/questions/useQuestionStore';
 
 let passed = 0;
 const failures: string[] = [];
@@ -120,6 +124,23 @@ await test('Cancel during the AI stops the run (no fallback, no proposal)', asyn
   assert.ok(!rs.some((r) => r.status === 'done' && !r.provisional), JSON.stringify(rs));
   assert.equal(useProgramStore.getState().proposal, null);
   assert.equal(useProgramStore.getState().ladder.rungs.length, 0);
+});
+
+await test('the I/O questions from Update all reach the one question list', async () => {
+  installQaSync();
+  const io = () => (useQuestionStore.getState().byProject[useProjectsStore.getState().activeId ?? 'default'] ?? []).filter((q) => q.source === 'io' && q.status === 'open');
+  machine('ai');
+  useIOStore.getState().importPoints([] as never, true);
+  useDraftStore.getState().setDraft('io.plan', null);
+  useSpecStore.setState({ sections: { ...EMPTY_SECTIONS, overview: 'Pump skid: a centrifugal pump on a VFD and a discharge pressure transmitter.' }, questions: [] });
+  // AI: its questions, as asked
+  await clearAiCache();
+  setClaudeInterceptor(async () => ({ reasoning: null, text: JSON.stringify({ points: [{ type: 'output', description: 'Pump motor VFD run', category: 'Motor', deviceType: 'other', signal: 'discrete', analog: null }], questions: ['Is the pump reversible?'] }) }));
+  useSpecStore.setState({ sections: { ...useSpecStore.getState().sections, overview: `${useSpecStore.getState().sections.overview} The pump has a flushing cycle.` } });
+  await runUpdateAll(['io'], () => {});
+  registerStageQuestions();
+  assert.deepEqual(io().map((q) => q.text), ['Is the pump reversible?']);
+  assert.equal(io()[0].assumption ?? undefined, undefined);
 });
 
 setClaudeInterceptor(null);
