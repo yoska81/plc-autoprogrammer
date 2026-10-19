@@ -34,7 +34,11 @@ const NEMA_ORDER = ['1', '12', '4', '4X'];
 export interface Strength { ok: boolean; reason: string; better: boolean }
 
 /** Where the part sits in the design: the motor branch it protects, if any. */
-export interface StrengthContext { motor?: { tag: string; fla: number; iec: boolean } }
+export interface StrengthContext {
+  motor?: { tag: string; fla: number; iec: boolean };
+  /** AC volts feeding a power supply (the line, or the control transformer's secondary): candidates must accept it. */
+  feedVolts?: number;
+}
 
 const num = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) ? Number(v) : null);
 
@@ -80,14 +84,29 @@ export function motorBranchMaxA(p: CatalogPart, fla: number): number | null {
  * 1/2-phase up to 480 V L-L (the highest AC volts in `inputVolts`, DC ranges ignored), DC in, or '' for the usual
  * 1-phase 100-240 V universal input.
  */
+/** The AC parts of an input rating, with any DC ranges taken out: '90~264VAC / 127~370VDC' → '90~264VAC'. */
+const acText = (txt: string) => txt.replace(/[\d.\s\-~…]+V\s?DC/gi, ' ');
+
 export function supplyInputClass(r: CatalogPart['ratings']): string {
   const txt = String(r.inputVolts ?? '');
-  const ac = txt.replace(/[\d.\s\-…]+V\s?DC/gi, ' ').match(/\d+(?:\.\d+)?(?=\s*(?:V\s?AC|VAC|V\b|L-L|L-N))|\d+(?=\s*[-…]\s*\d)/gi);
+  const ac = acText(txt).match(/\d+(?:\.\d+)?(?=\s*(?:V\s?AC|VAC|V\b|L-L|L-N))|\d+(?=\s*[-~…]\s*\d)/gi);
   const max = Math.max(0, ...(ac ?? []).map(Number).filter((x) => x >= 24));
   if (String(r.phases ?? '').includes('3')) return ' 3-phase in';
   if (max > 300) return ' up to 480 V L-L in';
   if (!max && /dc/i.test(txt)) return ' DC in';
   return '';
+}
+
+/**
+ * Does a supply's AC input take this feed? Ranges ("85-264 VAC", "90~264VAC", "3 x 340-575 VAC", "200-500VAC L-L")
+ * must hold it; listed values ("120/230 VAC", "120/240VAC") within 10 %. undefined when the rating gives no AC volts.
+ */
+export function acceptsFeed(r: CatalogPart['ratings'], volts: number): boolean | undefined {
+  const ac = acText(String(r.inputVolts ?? ''));
+  const ranges = [...ac.matchAll(/(\d+(?:\.\d+)?)\s*V?\s*[-~…]\s*(\d+(?:\.\d+)?)\s*V/gi)].map((m) => [Number(m[1]), Number(m[2])]);
+  if (ranges.length) return ranges.some(([lo, hi]) => lo <= volts && volts <= hi);
+  const values = (ac.match(/\d+(?=\s*(?:\/|V\s?AC|VAC))/gi) ?? []).map(Number).filter((x) => x >= 24);
+  return values.length ? values.some((x) => Math.abs(volts - x) <= x * 0.1) : undefined;
 }
 
 /**
@@ -110,6 +129,10 @@ export function compareStrength(current: CatalogPart, candidate: CatalogPart, ct
     if (a[m.key] !== undefined && b[m.key] !== undefined && String(a[m.key]) !== String(b[m.key])) {
       return { ok: false, reason: `Different ${m.label} (${b[m.key]} instead of ${a[m.key]})`, better: false };
     }
+  }
+  // Power supplies: the candidate must accept the feed the design gives it, when known.
+  if (candidate.category === 'powerSupply' && ctx.feedVolts && acceptsFeed(b, ctx.feedVolts) === false) {
+    return { ok: false, reason: `Input ${b.inputVolts} does not take the ${ctx.feedVolts} V feed`, better: false };
   }
   // Power supplies: the candidate must take the same feed. A 480 V L-L supply can stand in for a 1-phase universal
   // or a 3-phase one; nothing else crosses input classes (a 90-264 VAC supply cannot be fed 480 V).
