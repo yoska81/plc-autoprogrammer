@@ -38,6 +38,8 @@ import { useDraft } from '../../../store/useDraftStore';
 import { useUi } from '../../../store/useUiStore';
 import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
 import VoiceTextarea from '../../../voice/VoiceTextarea';
+import { collectProject } from '../../../deliverables/collect';
+import { addComments } from '../../tidy/comments';
 import SpeakButton from '../../../voice/SpeakButton';
 import { usePlcNames } from '../ladder/plcNames';
 import { useProjectStore } from '../../../store/useProjectStore';
@@ -283,6 +285,25 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     });
   };
 
+  /**
+   * Add comments: every blank rung comment, block description and tag comment in plain words (the AI's with a key,
+   * else from the I/O names and the cross-reference). Only comments change; it comes as a proposal to approve.
+   */
+  const handleComments = (rewrite: boolean) => {
+    if (rewrite && !confirm('Rewrite every comment of the program, also the ones already there? You approve the result first, and the current program is kept in History.')) return;
+    setTab('fix');
+    return runAI('program-revise', rewrite ? 'Rewrite all comments' : 'Add comments', (signal) => addComments(collectProject(), { ai: ready && ai.apiKey ? { ...ai, signal } : undefined, rewrite }), (r) => {
+      const st = useProgramStore.getState();
+      const n = r.rungs + r.blocks + r.tags;
+      st.addChat({ role: 'user', text: rewrite ? 'Rewrite all comments.' : 'Add comments.' });
+      if (!n) { st.addChat({ role: 'assistant', text: 'Every rung, block and tag already has a comment.', outcome: 'no-change' }); return; }
+      const parts = [`${r.rungs} rung comment${r.rungs === 1 ? '' : 's'}`, r.blocks ? `${r.blocks} block description${r.blocks === 1 ? '' : 's'}` : '', r.tags ? `${r.tags} tag comment${r.tags === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ');
+      const text = `Comments ${rewrite ? 'rewritten' : 'added'}: ${parts}${r.byAi ? ` (${r.byAi} written by the AI, the rest from the I/O names and the cross-reference)` : ' (from the I/O names and the cross-reference)'}. Only comments change: the logic and the addresses are the same${rewrite ? '' : ', and the comments already there are kept'}.${r.notes.length ? `\n${r.notes.join('\n')}` : ''}`;
+      st.addChat({ role: 'assistant', text });
+      st.setProposal({ program: r.program, explanation: text, reasoning: null });
+    }, false);
+  };
+
   const handleRevise = (text: string, specUpdate = false) => {
     const req = text.trim();
     if (!req || proposal) return;
@@ -468,6 +489,16 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               >
                 Ask AI to fix the {issues.length} checker issue{issues.length !== 1 && 's'}
               </button>
+            )}
+            {!proposal && ladder.rungs.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Tidy up">
+                <button onClick={() => handleComments(false)} disabled={isGenerating}
+                  title="Fill in every missing rung comment, block description and tag comment in plain words; the logic is not changed"
+                  className="flex-1 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Add comments</button>
+                <button onClick={() => handleComments(true)} disabled={isGenerating}
+                  title="Write every comment again, also the ones already there (you approve the result first)"
+                  className="py-1.5 px-2 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Rewrite all comments</button>
+              </div>
             )}
             <VoiceTextarea
               value={request}
