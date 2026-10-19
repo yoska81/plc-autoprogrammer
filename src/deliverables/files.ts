@@ -1,4 +1,5 @@
 import { hmiReadme, hmiTagCsv, needsHmiTagList } from './hmiTags';
+import { weintekMpFamily, weintekReadme, weintekTagCsv } from './weintekMp';
 import { exportContext, hmiExtraTags } from './exportContext';
 import { sheetOnPaper } from '../standards/regions';
 import { backPanelDxf, doorDxf, enclosureFaceDxfs } from '../electrical/dxf';
@@ -253,7 +254,10 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
     // Panels of other makers: the tag list bound to the PLC program's tags and how to rebuild the screens.
     if (needsHmiTagList(p)) {
       zip.file(`hmi/${p.fileBase}_hmi_tags.csv`, hmiTagCsv(p));
-      zip.file('hmi/README.txt', hmiReadme(p));
+      // A Weintek / Maple panel on a Yaskawa MP: the tags as EasyBuilder Pro driver addresses too.
+      const mp = weintekMpFamily(p);
+      if (mp) zip.file(`hmi/${p.fileBase}_weintek_tags.csv`, weintekTagCsv(p, mp));
+      zip.file('hmi/README.txt', [hmiReadme(p), ...(mp ? weintekReadme(p, mp) : [])].join('\r\n'));
     }
   }
   onProgress?.('Engineering package');
