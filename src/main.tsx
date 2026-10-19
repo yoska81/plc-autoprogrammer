@@ -7,6 +7,7 @@ import { seedSampleProject } from './preview/sampleProject'
 import './index.css'
 import App from './App.tsx'
 import { installQaSync } from './components/questions/qa'
+import { installStorageFullNotice } from './lib/storageFull'
 import Notice from './components/Notice.tsx'
 import {
   IOPage, ProgramPage, ExportPage, SettingsPage, ProjectDataPage, PlcSetupPage, PrintPage, ImportPage, ElectricalPage, PrintElectricalPage, SpecPage, HmiPage, ReviewPage, SimulatePage, OnlinePage, EquipmentPage, NewProjectPage, SourcingPage, EngineerPage, CommissioningPage, RedlinesPage,
@@ -28,6 +29,8 @@ if (IS_PREVIEW) {
 
 // Questions & answers are part of the spec (sections.qa), kept in step with the question list.
 installQaSync()
+// A project too big for the browser's storage is said, not lost quietly.
+installStorageFullNotice()
 
 // The start page's chunk first: the first render shows it (no blank step), as before pages were split.
 await preloadRoute(IS_PREVIEW ? window.location.hash : window.location.pathname).catch(() => {})

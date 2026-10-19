@@ -417,9 +417,12 @@ export default function LadderView({
   const closeEditor = useCallback(() => setEditing(null), []);
 
   const blocks = program.blocks ?? [];
-  const blockOf = (r: Rung) => (r.block && blocks.some((b) => b.id === r.block) ? r.block : '');
-  const cols = Math.max(MIN_COLS, ...program.rungs.map((r) => Math.max(0, ...r.branches.map((b) => b.length))));
-  const globalIssues = issues.filter((i) => !i.rungId || !program.rungs.some((r) => r.id === i.rungId));
+  // Looked up by id, and widest rung by a loop: a big program has thousands of blocks and 100,000+ rungs.
+  const blockById = new Map(blocks.map((b) => [b.id, b]));
+  const blockOf = (r: Rung) => (r.block && blockById.has(r.block) ? r.block : '');
+  const cols = program.rungs.reduce((n, r) => r.branches.reduce((m, b) => Math.max(m, b.length), n), MIN_COLS);
+  const rungIds = new Set(program.rungs.map((r) => r.id));
+  const globalIssues = issues.filter((i) => !i.rungId || !rungIds.has(i.rungId));
   const issuesOf = useMemo(() => {
     const m = new Map<string, ValidationIssue[]>();
     for (const i of issues) if (i.rungId) m.set(i.rungId, [...(m.get(i.rungId) ?? []), i]);
@@ -484,8 +487,8 @@ export default function LadderView({
             <div className="flex sticky left-0">
               <div className="shrink-0" style={{ width: GUTTER_W }} />
               <div className="flex items-baseline gap-2 px-3 py-1.5 bg-[#e9edef] border-y border-slate-300" style={{ width: diagramWidth(cols) }}>
-                <span className="text-xs font-semibold text-slate-800">{blocks.find((b) => b.id === blockOf(rung))?.name ?? 'General'}</span>
-                <span className="text-[11px] text-slate-500 truncate">{blocks.find((b) => b.id === blockOf(rung))?.description ?? 'Rungs without a block'}</span>
+                <span className="text-xs font-semibold text-slate-800">{blockById.get(blockOf(rung))?.name ?? 'General'}</span>
+                <span className="text-[11px] text-slate-500 truncate">{blockById.get(blockOf(rung))?.description ?? 'Rungs without a block'}</span>
               </div>
             </div>
           )}
