@@ -155,7 +155,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     const next = nearestPanel(cpuId, need, was ? { w: was.widthPx, h: was.heightPx } : null, hmiMakers);
     const why = builtIn ? `The ${old} screen is built into that PLC, so it goes with it.` : `The ${old} cannot talk to the ${cpuId}.`;
     setPanelNote(next
-      ? `${why} ${next.partNumber} (${next.sizeIn}", ${next.widthPx}×${next.heightPx}) is selected instead: the closest touch panel that can. Designed screens are kept and scaled to it; pick another below if you prefer.`
+      ? `${why} ${next.partNumber} (${next.sizeIn}", ${next.widthPx}×${next.heightPx}) is selected instead: the closest touch panel that can. Designed screens are kept and scaled to it; pick another below if you prefer.${(() => { const n = hmiFit(next, need, cpuId).note; return n ? ` ${n}.` : ''; })()}`
       : `${why} Choose a touch panel for the ${cpuId} below; designed screens are kept and scaled to it.`);
     return { cpuId, hmiPartNumber: next?.partNumber ?? null };
   };
