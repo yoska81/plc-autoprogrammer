@@ -10,6 +10,7 @@ import { useProjectStore } from '../store/useProjectStore';
 import { getCpu, getProfile, PLC_PROFILES } from '../plc/core/profiles';
 import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
+import { screenIoName } from '../hmi/nativeIo';
 import { validateProgram } from '../plc/core/validate';
 import { fingerprint, specToText, changedSections } from './types';
 import { ioFingerprint, hmiFingerprint } from './useStages';
@@ -264,6 +265,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       const input = {
         io, addresses: resolveAddresses(profile, cpu, io, slots), spec: specToText(spec), machineName: useProgramStore.getState().projectName,
         electrical: useElectricalStore.getState().design, panel: model, plcText: `${profile.vendor} ${cpu.label} · HMI ${model.partNumber}`,
+        ioName: screenIoName(profile, cpu, slots),
         existingHmi: existing, program: useProgramStore.getState().ladder,
         upgradeRoles: projectUpgradeRoles(useDraftStore.getState().drafts, useProgramStore.getState().ladder),
       };

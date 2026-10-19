@@ -157,7 +157,7 @@ const hmiState = (page) => page.evaluate(async () => (await appImport('/src/stor
   await ab.page.waitForTimeout(1200);
   await ab.page.getByRole('button', { name: /^Tags/ }).click();
   const tagsTab = await ab.page.locator('main').innerText();
-  check(/PLC tag \(memory\)/i.test(tagsTab), 'AB: Tags tab headed with the PLC tag');
+  check(/Allen-Bradley address/i.test(tagsTab), 'AB: Tags tab headed with the PLC\'s own address');
   const firstRow = (await ab.page.locator('main table tbody tr').first().locator('td').first().innerText()).replace(/\s+/g, ' ');
   log('AB: first tag cell:', firstRow);
   check(/^[A-Za-z_][\w.]* [CDXYT]/.test(firstRow), 'AB: tag name shown above the memory address');
