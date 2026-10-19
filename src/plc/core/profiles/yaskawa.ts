@@ -272,6 +272,15 @@ const KNOWLEDGE = (c: CpuModel) => `Target: Yaskawa ${c.label}, programmed in MP
 - Servo axes are MECHATROLINK network axes (motion registers, not pulse outputs): never use pulse / direction outputs for them.
 - SC1 = SB000004 (always ON), SC2 = SB000001 (first scan), SC7 = SB000012 (1 s clock). No other SC / SD bits.`;
 
+/**
+ * MPE720 instruction names for the app's elements, only those the MP3000 Ladder Programming Manual names
+ * (SIEP C880725 13: TON / TOFF timers, COUNTER, STORE, ON / OFF pulse); the others keep the app's names.
+ */
+export const YASKAWA_MNEMONICS: Record<string, string> = {
+  NO: '-| |-', NC: '-|/|-', RISE: 'ON-PULSE', FALL: 'OFF-PULSE', OUT: '-( )-', SET: '-(S)-', RST: '-(R)-',
+  TMR_ON_DELAY: 'TON', TMR_OFF_DELAY: 'TOFF', CNT_UP: 'COUNTER', CNT_DOWN: 'COUNTER', COPY: 'STORE',
+};
+
 export const yaskawaProfile: PlcProfile = {
   id: YASKAWA_PROFILE_ID,
   vendor: 'Yaskawa',
@@ -295,6 +304,7 @@ export const yaskawaProfile: PlcProfile = {
   dataTypeOf: (a) => neutralType(a),
   simSemantics: { alwaysOn: 'SC1', firstScan: 'SC2', clock1s: 'SC7', retentive: clickRetentive },
   analogChannels: yaskawaAnalogChannels,
+  mnemonics: YASKAWA_MNEMONICS,
   // I / O only (memory needs the project's layout: see yaskawaName and the PLC names lookup).
   ioTag: (a, modules, cpuId) => yaskawaIo(a, cpuOf(cpuId), modules)?.register ?? null,
 };

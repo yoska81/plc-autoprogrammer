@@ -87,4 +87,26 @@ assert.equal(named('C1500')?.name, 'MB001000', 'the program\'s own register');
 assert.equal(named('DS1')?.name, 'MW01000');
 assert.equal(named('C1')?.name, yaskawaMemory('C1', layout));
 
+// The rules engine builds the same neutral program on Yaskawa as on CLICK (the example's points are X001–X006 /
+// Y001–Y003 on both an MP2300 and the CLICK CPU): the safety logic (E-stop chain, a reset that never restarts) is the
+// one already tested, and the checker finds nothing (SC2 = SB000001, SC7 = SB000012 are mapped).
+{
+  const { seedSampleProject } = await import('../../../preview/sampleProject');
+  const { collectProject } = await import('../../../deliverables/collect');
+  const { useProjectStore } = await import('../../../store/useProjectStore');
+  const { generateRuleBasedProgram } = await import('../../ai/cycleAI');
+  seedSampleProject();
+  const build = async () => {
+    const p = collectProject();
+    const r = await generateRuleBasedProgram({ ctx: { profile: p.profile, cpu: p.cpu, io: p.io, addresses: p.addresses, wiring: new Map() }, spec: '', electrical: null, hmi: p.hmi, noPanel: false });
+    return { p, program: r.program };
+  };
+  const click = await build();
+  useProjectStore.getState().setPlc('yaskawa-mp', 'JEPMC-MP2300-E');
+  const mp = await build();
+  assert.deepEqual([...mp.p.addresses.values()], [...click.p.addresses.values()], 'the same neutral addresses');
+  assert.deepEqual(mp.program.rungs, click.program.rungs, 'the same program as on CLICK');
+  assert.deepEqual(validateProgram(mp.program, mp.p.profile, new Set([...mp.p.addresses.values()]), mp.p.hmi ?? undefined).filter((i) => i.severity === 'error').map((i) => i.message), [], 'no checker errors on Yaskawa');
+}
+
 console.log('yaskawa profile tests passed');
