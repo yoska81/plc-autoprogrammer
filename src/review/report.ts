@@ -1,6 +1,6 @@
 /** Design review result for the deliverables: fresh checks + the stored AI review, with resolved/ignored marks. */
 import type { ProjectSnapshot } from '../deliverables/collect';
-import { checksFor } from './actions';
+import { aiFindingsShown, checksFor } from './actions';
 import { statusOf, useReviewStore } from './useReviewStore';
 import { AREA_LABEL, SEVERITY_LABEL, sortFindings, type FindingStatus } from './types';
 import { currentEdits } from '../edits/useEditsStore';
@@ -25,7 +25,9 @@ export interface ReviewRow {
 export function reviewRows(p: ProjectSnapshot): ReviewRow[] {
   const { ai, marks } = useReviewStore.getState();
   const { notes } = currentEdits();
-  const findings = sortFindings([...checksFor(p), ...(ai?.findings ?? [])]);
+  const findings = sortFindings([...checksFor(p), ...aiFindingsShown(p, ai?.findings)]);
+  // A mark saved under a finding's old (address) id counts until the next check run moves it.
+  const markOf = (f: (typeof findings)[number]) => marks[f.id] ?? (f.legacyId ? marks[f.legacyId] : undefined);
   return findings.map((f, i) => ({
     id: `DR-${String(i + 1).padStart(2, '0')}`,
     severity: SEVERITY_LABEL[f.severity],
@@ -34,9 +36,9 @@ export function reviewRows(p: ProjectSnapshot): ReviewRow[] {
     title: f.title.endsWith('…') ? f.detail : f.title,
     fix: f.fix,
     source: f.source === 'ai' ? 'AI review' : 'Check',
-    status: statusOf(marks, f.id),
-    reason: marks[f.id]?.reason ?? '',
-    date: marks[f.id]?.at.slice(0, 10) ?? '',
+    status: markOf(f)?.status ?? statusOf(marks, f.id),
+    reason: markOf(f)?.reason ?? '',
+    date: markOf(f)?.at.slice(0, 10) ?? '',
     note: notes[reviewNoteKey(f.id)] ?? '',
   }));
 }
