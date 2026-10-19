@@ -28,7 +28,7 @@ import { generateRuleBasedHmi } from '../lib/ai/hmiContentAI';
 import { useDraftStore } from '../store/useDraftStore';
 import { projectUpgradeRoles } from '../plc/import/ui/applyUpgrade';
 import { mergeRegenerated } from '../hmi/engine/regenerate';
-import { reviseLadder } from '../plc/ai/ladderAI';
+import { changeScope, reviseLadder } from '../plc/ai/ladderAI';
 import { generateRuleBasedProgram } from '../plc/ai/cycleAI';
 import { getHmi } from '../hmi/hmiCatalog';
 import { rulesEquipment } from './equipmentRules';
@@ -326,6 +326,12 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         onStep({ step, status: 'proposal', message: `${why ? `${why}: a` : 'A'} rules program (${q.program.rungs.length} rungs, default cycle) is waiting for your approval on the PLC Program page.${replaced}` });
         return true;
       };
+      // A program too big for the AI to write back whole (a big imported one) is not replaced by the rules' program.
+      const scope = changeScope(prog.ladder, ctxP, null, '');
+      if ('tooBig' in scope) {
+        onStep({ step, status: 'skipped', message: `The program (${prog.ladder.rungs.length} rungs) is too big to update in one go: on the PLC Program page, choose a block and ask for the change there.` });
+        return true;
+      }
       if (mode === 'quick') return rulesProposal(null);
       if (!aiCfg.apiKey) return rulesProposal('No API key — built from rules');
       const changed = changedSections(useStageStore.getState().sources.program?.spec ?? null, spec);

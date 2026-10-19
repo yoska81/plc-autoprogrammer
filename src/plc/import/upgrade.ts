@@ -276,36 +276,48 @@ export function describeProgram(imp: ImportedProgram): Partial<Record<SpecSectio
   const where = [s.vendor, s.controller].filter(Boolean).join(' ');
   out.overview = [
     `Existing machine program "${s.projectName}" read from ${s.fileName}${where ? ` (${where})` : ''}.`,
-    `It has ${imp.program.rungs.length} rungs in ${blocks.length} part${blocks.length === 1 ? '' : 's'}: ${blocks.map((b) => b.name).join(', ')}.`,
+    `It has ${imp.program.rungs.length} rungs in ${blocks.length} part${blocks.length === 1 ? '' : 's'}: ${capped(blocks.map((b) => b.name), MAX_LINES.parts, (n) => `and ${n} more`).join(', ')}.`,
     `${imp.io.filter((p) => p.type === 'input').length} inputs and ${imp.io.filter((p) => p.type === 'output').length} outputs are wired to the PLC.`,
     'Written from the program: check it and add what the program cannot show (the product, the speed, the line).',
   ].join('\n');
 
   // Rung comments, part by part, are the sequence the original programmer described.
   const seq: string[] = [];
+  // A big program is described by its first lines of each kind (the description goes into every AI request).
   const byBlock = rungsByBlock(imp);
-  for (const b of blocks) {
+  const partsShown = blocks.slice(0, MAX_LINES.parts);
+  for (const b of partsShown) {
     const comments = (byBlock.get(b.id) ?? []).filter((r) => r.comment.trim()).map((r) => `  - ${r.comment.trim()}`);
-    if (comments.length) seq.push(`${b.name}:`, ...comments);
+    if (comments.length) seq.push(`${b.name}:`, ...capped(comments, MAX_LINES.perPart, (n) => `  - … and ${n} more rung comments`));
   }
+  if (blocks.length > partsShown.length) seq.push(`… and ${blocks.length - partsShown.length} more parts (see the PLC program).`);
   const timers = imp.program.rungs.flatMap((r) => r.outputs).flatMap((o) => (o.type === 'TMR' ? [o] : []));
   const nick = new Map(imp.program.tags.map((t) => [t.address, t.nickname]));
-  if (timers.length) seq.push('Timers:', ...timers.map((t) => `  - ${nick.get(t.address) ?? t.address}: ${t.preset} ${t.unit}${t.mode === 'OFF_DELAY' ? ' off-delay' : ''}${t.accumulate ? ' (retentive)' : ''}`));
+  if (timers.length) seq.push('Timers:', ...capped(timers.map((t) => `  - ${nick.get(t.address) ?? t.address}: ${t.preset} ${t.unit}${t.mode === 'OFF_DELAY' ? ' off-delay' : ''}${t.accumulate ? ' (retentive)' : ''}`), MAX_LINES.list, (n) => `  - … and ${n} more timers`));
   const counters = imp.program.rungs.flatMap((r) => r.outputs).flatMap((o) => (o.type === 'CNT' ? [o] : []));
-  if (counters.length) seq.push('Counters:', ...counters.map((c) => `  - ${nick.get(c.address) ?? c.address}: counts to ${c.preset}`));
+  if (counters.length) seq.push('Counters:', ...capped(counters.map((c) => `  - ${nick.get(c.address) ?? c.address}: counts to ${c.preset}`), MAX_LINES.list, (n) => `  - … and ${n} more counters`));
   if (seq.length) out.sequence = seq.join('\n');
 
+  const moreIo = (n: number) => `- … and ${n} more (all are on the I/O list)`;
   for (const k of KIND) {
     const pts = imp.io.filter((p) => k.re.test(`${p.name} ${p.description}`) && KIND.find((x) => x.re.test(`${p.name} ${p.description}`)) === k);
-    if (pts.length) out[k.section] = pts.map(ioLine).join('\n');
+    if (pts.length) out[k.section] = capped(pts.map(ioLine), MAX_LINES.list, moreIo).join('\n');
   }
   const rest = imp.io.filter((p) => !KIND.some((k) => k.re.test(`${p.name} ${p.description}`)));
-  if (rest.length) out.other = `Other I/O:\n${rest.map(ioLine).join('\n')}`;
+  if (rest.length) out.other = `Other I/O:\n${capped(rest.map(ioLine), MAX_LINES.list, moreIo).join('\n')}`;
 
   const blockName = new Map(blocks.map((b) => [b.id, b.name]));
   const alarms = imp.program.rungs.filter((r) => /alarm|fault|jam|timeout|overload/i.test(`${r.comment} ${(r.block && blockName.get(r.block)) ?? ''}`));
-  if (alarms.length) out.alarms = [...new Set(alarms.map((r) => `- ${r.comment.trim() || 'Alarm rung'}`))].join('\n');
+  if (alarms.length) out.alarms = capped([...new Set(alarms.map((r) => `- ${r.comment.trim() || 'Alarm rung'}`))], MAX_LINES.list, (n) => `- … and ${n} more alarm rungs`).join('\n');
   return out;
+}
+
+/** Most lines of each kind in the description written from a program. */
+const MAX_LINES = { parts: 40, perPart: 15, list: 150 };
+
+/** The first `max` lines, then one line saying how many more there are. */
+function capped(lines: string[], max: number, more: (n: number) => string): string[] {
+  return lines.length > max ? [...lines.slice(0, max), more(lines.length - max)] : lines;
 }
 
 /** What the program cannot tell: asked on the Machine description page. */

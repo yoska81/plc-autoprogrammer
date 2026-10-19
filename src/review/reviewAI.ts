@@ -9,6 +9,8 @@ import type { ProjectSnapshot } from '../deliverables/collect';
 import { billOfMaterials, wireNumbers } from '../electrical/derive';
 import { calculations } from '../deliverables/docs/calcs';
 import { clickRungListing } from '../plc/core/clickExport';
+import { rungAddresses, rungWrites, type Rung } from '../plc/core/ladder';
+import { approxTokens, INPUT_TOKENS, programParts, programSlice } from '../lib/ai/budget';
 import { specToText } from '../spec/types';
 import { callClaude } from '../lib/ai/anthropic';
 import { callOpenAI } from '../lib/ai/openai';
@@ -65,13 +67,26 @@ Rules:
 - "page" and "item": where to fix it in the app — page is one of project, spec, equipment, io, electrical, hmi, program, simulate; item is the rung id, address, device tag or HMI screen id it concerns ("" if none).
 - If the design is sound in an area, say nothing about it; 5–20 findings is typical. "summary": 2–3 sentences overall verdict.`;
 
-/** Compact, readable text of the whole project for the reviewer. */
-export function projectSummary(p: ProjectSnapshot, deterministic: Finding[]): string {
+/**
+ * Which part of a big program a summary covers: `rungs` lists only those rungs (with the I/O they use and a
+ * `note` on top); `outline` lists no rungs, only the program's size and blocks.
+ */
+export interface SummaryScope { rungs?: Rung[]; outline?: boolean; note?: string }
+
+/** Most deterministic findings listed (a big imported program can have thousands of checker messages). */
+const MAX_DETERMINISTIC = 150;
+
+/** Compact, readable text of the whole project (or of one part of its program) for the reviewer. */
+export function projectSummary(p: ProjectSnapshot, deterministic: Finding[], scope: SummaryScope = {}): string {
   const parts: string[] = [];
+  if (scope.note) parts.push(scope.note);
   parts.push(`# Project: ${p.projectName}\nRegion: ${byRegion(p.info.region, 'US (NFPA 79, UL 508A, NEC)', 'Canada (CSA C22.2 No. 14, CEC)', `${regionSpec(p.info.region).label} (${regionSpec(p.info.region).codes.short})`)} · Standards: ${(p.info.standards ?? []).join(', ') || '—'}`);
   parts.push(`# Specification\n${specToText(p.spec) || '(empty)'}`);
   const wiring = new Map((p.electrical?.ioWiring ?? []).map((w) => [w.address.toUpperCase(), w]));
-  parts.push(`# I/O list (address, type, category, description, field device)\n${p.io.map((pt) => {
+  // A part of the program comes with the I/O it uses.
+  const usedByPart = scope.rungs && new Set(scope.rungs.flatMap((r) => [...rungAddresses(r), ...rungWrites(r)]).map((a) => a.toUpperCase()));
+  const io = usedByPart ? p.io.filter((pt) => usedByPart.has((p.addresses.get(pt.id) ?? '').toUpperCase())) : p.io;
+  parts.push(`# I/O list (address, type, category, description, field device)${usedByPart ? ` — only the ${io.length} points this part of the program uses (${p.io.length} in all)` : ''}\n${io.map((pt) => {
     const a = p.addresses.get(pt.id) ?? '';
     const w = wiring.get(a.toUpperCase());
     return `${a || '(unassigned)'}\t${pt.type}\t${pt.category}\t${pt.description}${w ? `\t${w.deviceTag} ${w.deviceType} @ ${w.location}` : ''}`;
@@ -86,9 +101,15 @@ export function projectSummary(p: ProjectSnapshot, deterministic: Finding[]): st
     parts.push(`Calculations:\n${calcs.map((c) => `${c.title}: ${c.result} ${c.ok ? '(OK)' : '(CHECK)'}`).join('\n')}`);
     if (p.electrical.notes.length) parts.push(`Designer notes:\n${p.electrical.notes.map((n) => `- ${n}`).join('\n')}`);
   } else parts.push('# Control panel\n(no electrical design yet)');
-  if (p.profile.language === 'ladder' && p.ladder.rungs.length) {
-    const blocks = (p.ladder.blocks ?? []).map((b) => `${b.id} = ${b.name}`).join(', ');
-    parts.push(`# PLC program (${p.ladder.rungs.length} rungs${blocks ? `; blocks: ${blocks}` : ''}; rung ids listed after the rungs)\n${clickRungListing(p.ladder, p.labels, '')}\nRung ids in order: ${p.ladder.rungs.map((r, i) => `${i + 1}=${r.id}`).join(', ')}`);
+  if (p.profile.language === 'ladder' && p.ladder.rungs.length && scope.outline) {
+    const blocks = (p.ladder.blocks ?? []).map((b) => b.name);
+    parts.push(`# PLC program\n${p.ladder.rungs.length} rungs in ${blocks.length} blocks${blocks.length ? ` (${blocks.slice(0, 40).join(', ')}${blocks.length > 40 ? `, and ${blocks.length - 40} more` : ''})` : ''}. The rungs are too many to list here; the design review reads them in parts.`);
+  } else if (p.profile.language === 'ladder' && p.ladder.rungs.length) {
+    const shown = scope.rungs ? programSlice(p.ladder, scope.rungs) : p.ladder;
+    const number = new Map(p.ladder.rungs.map((r, i) => [r.id, i + 1]));
+    const blocks = (shown.blocks ?? []).map((b) => `${b.id} = ${b.name}`).join(', ');
+    const which = scope.rungs ? `${shown.rungs.length} of the program's ${p.ladder.rungs.length} rungs (numbers ${number.get(shown.rungs[0]?.id) ?? 0}–${number.get(shown.rungs[shown.rungs.length - 1]?.id) ?? 0})` : `${p.ladder.rungs.length} rungs`;
+    parts.push(`# PLC program (${which}${blocks ? `; blocks: ${blocks}` : ''}; rung ids listed after the rungs)\n${clickRungListing(shown, p.labels, '')}\nRung ids in order: ${shown.rungs.map((r) => `${number.get(r.id)}=${r.id}`).join(', ')}`);
   } else if (p.stCode) parts.push(`# PLC program (Structured Text)\n${p.stCode}`);
   else parts.push('# PLC program\n(none yet)');
   if (p.hmi) {
@@ -97,7 +118,9 @@ export function projectSummary(p: ProjectSnapshot, deterministic: Finding[]): st
     const devices = operatorDevices(p);
     parts.push(`# Operator interface\nNo touch panel, by the customer's choice: the operator uses pushbuttons, selector switches and lamps (operator station). Do not report the missing HMI. Do check that every operator command the program needs (start, stop, reset, mode) has a physical device, and that faults are shown on a lamp.\nOperator station:\n${devices.map((d) => `${d.tag}\t${d.kind}\t${d.description}\t${d.location}\t${d.address || '-'}`).join('\n') || '(no devices in the electrical design yet)'}`);
   } else parts.push('# HMI\n(none)');
-  parts.push(`# Deterministic findings already reported (do not repeat)\n${deterministic.map((f) => `- [${f.severity}] ${f.title}`).join('\n') || '(none)'}`);
+  const listed = deterministic.slice(0, MAX_DETERMINISTIC).map((f) => `- [${f.severity}] ${f.title}`);
+  if (deterministic.length > MAX_DETERMINISTIC) listed.push(`- … and ${deterministic.length - MAX_DETERMINISTIC} more`);
+  parts.push(`# Deterministic findings already reported (do not repeat)\n${listed.join('\n') || '(none)'}`);
   return parts.join('\n\n');
 }
 
@@ -112,9 +135,44 @@ function uniqueIds(list: Finding[]): Finding[] {
   });
 }
 
-/** Ask Claude for the review. AI findings get ids from their content, so a mark carries over when a re-run raises the same finding. */
+/** Most parts of a big program the AI reads in one review (each is a full request). */
+export const MAX_REVIEW_PARTS = 6;
+
+/**
+ * Ask Claude for the review. AI findings get ids from their content, so a mark carries over when a re-run raises
+ * the same finding. A program too big for one request is reviewed in parts (whole blocks together, each part
+ * with the I/O it uses), at most MAX_REVIEW_PARTS of them; the summary says so.
+ */
 export async function runAiReview(ai: AIConfig, p: ProjectSnapshot, deterministic: Finding[]): Promise<AiReview> {
-  const messages = [{ role: 'user' as const, content: projectSummary(p, deterministic) }];
+  const whole = projectSummary(p, deterministic);
+  if (approxTokens(whole) <= INPUT_TOKENS || p.profile.language !== 'ladder' || !p.ladder.rungs.length) return reviewOnce(ai, whole);
+  // Each rung costs about its listing plus the I/O lines it brings; the listing is measured once against the rung data.
+  const base = approxTokens(projectSummary(p, deterministic, { rungs: [], note: PART_NOTE(1, 1, '') }));
+  const perChar = clickRungListing(p.ladder, p.labels, '').length / Math.max(1, JSON.stringify(p.ladder.rungs).length);
+  const cost = (r: Rung) => 1.4 * approxTokens(JSON.stringify(r)) * perChar;
+  const parts = programParts(p.ladder, cost, Math.max(10_000, INPUT_TOKENS - base));
+  const read = parts.slice(0, MAX_REVIEW_PARTS);
+  const number = new Map(p.ladder.rungs.map((r, i) => [r.id, i + 1]));
+  const span = (rs: Rung[]) => `rungs ${number.get(rs[0].id)}–${number.get(rs[rs.length - 1].id)}`;
+  const results: AiReview[] = [];
+  for (const [k, rungs] of read.entries()) {
+    results.push(await reviewOnce(ai, projectSummary(p, deterministic, { rungs, note: PART_NOTE(k + 1, parts.length, span(rungs)) })));
+  }
+  const left = parts.slice(read.length).flat();
+  return {
+    summary: [
+      `The program (${p.ladder.rungs.length} rungs) is too big to review in one request: the AI read it in ${parts.length} part${parts.length === 1 ? '' : 's'}${left.length ? `, the first ${read.length} of them (${span(read.flat())}); rungs ${number.get(left[0].id)}–${p.ladder.rungs.length} were checked by the rule checks only` : ''}.`,
+      ...results.map((r, k) => `Part ${k + 1} (${span(read[k])}): ${r.summary}`),
+    ].join('\n'),
+    findings: uniqueIds(results.flatMap((r) => r.findings)),
+  };
+}
+
+const PART_NOTE = (k: number, n: number, span: string) =>
+  `This is part ${k} of ${n} of a big program (${span}), reviewed one part at a time: review this part with the rest of the project. Rungs of other parts are not shown, so do not report an address as unused or never written only because this part does not use it.`;
+
+async function reviewOnce(ai: AIConfig, content: string): Promise<AiReview> {
+  const messages = [{ role: 'user' as const, content }];
   const text = ai.provider === 'anthropic'
     ? (await callClaude({ ...ai, task: 'review', system: SYSTEM, messages, schema: REVIEW_SCHEMA })).text
     : await callOpenAI({ ...ai, system: SYSTEM, messages, schema: REVIEW_SCHEMA });
