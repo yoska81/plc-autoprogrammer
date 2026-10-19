@@ -342,7 +342,9 @@ export function devicesAndWiring(pk: Picker, tags: Tags, model: MachineModel, br
   }
 
   if (stack.tag) {
-    const st = pk.pick('stackLight', (p) => (stack.buzzer ? /yes/i : /no/i).test(String(p.ratings.buzzer ?? 'no')) && /direct/i.test(String(p.ratings.mounting ?? 'direct')))
+    // the preferred panel brand's light with the buzzer asked for; direct (enclosure-top) mounting only chooses
+    // between that brand's parts (a Siemens 8WD44 kit mounts on a bracket and is still the Siemens panel's light)
+    const st = pk.pick('stackLight', (p) => (stack.buzzer ? /yes/i : /no/i).test(String(p.ratings.buzzer ?? 'no')), (p) => (/direct/i.test(String(p.ratings.mounting ?? 'direct')) ? 0 : 1))
       ?? pk.pick('stackLight');
     if (st) add(comp(stack.tag, st.partNumber, 1, 'Stack light (top of the enclosure)'));
   }
