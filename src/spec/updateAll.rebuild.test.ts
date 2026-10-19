@@ -10,6 +10,9 @@ import { LADDER, seedSampleProject } from '../preview/sampleProject';
 import { useProgramStore } from '../store/useProgramStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useStageStore } from '../store/useStageStore';
+import { setClaudeInterceptor } from '../lib/ai/anthropic';
+import { clearAiCache } from '../lib/ai/cache';
+import { rebuildProgramForHmi } from '../plc/programForHmi';
 
 const warn = console.warn;
 console.warn = (...a: unknown[]) => { if (!String(a[0]).includes('zustand persist')) warn(...a); };
@@ -62,6 +65,66 @@ async function runProgram(): Promise<StepResult | undefined> {
   useProgramStore.getState().setGeneratedLadder(useProgramStore.getState().ladder, 'Recovered.', null, 'user');
   const r3 = await runProgram();
   assert.equal(r3?.status, 'proposal');
+}
+
+// Who made it, through every way a program changes.
+{
+  example();
+  const st = () => useProgramStore.getState();
+  const prog = st().ladder;
+  st().setProposal({ program: prog, explanation: 'Asked on the Change tab.', reasoning: null });
+  st().applyProposal();
+  assert.equal(st().ladderOrigin, 'user', 'a change the user asked for and approved makes it theirs');
+  example();
+  st().setProposal({ program: st().ladder, explanation: 'Update all.', reasoning: null, specUpdate: true });
+  st().applyProposal();
+  assert.equal(st().ladderOrigin, 'app', "an Update all proposal leaves the origin as it was");
+  st().saveVersion('v');
+  st().restoreVersion(st().versions.at(-1)!.id);
+  assert.equal(st().ladderOrigin, 'user', 'a restored version is the user\'s');
+  st().clearLadder();
+  assert.equal(st().ladderOrigin, undefined, 'cleared: nobody made it');
+  // Rebuilt for the HMI with the cycle kept: the user's program stays the user's, the app's the app's.
+  example();
+  st().editLadder(st().ladder);
+  await rebuildProgramForHmi();
+  assert.equal(st().ladderOrigin, 'user');
+  example();
+  await rebuildProgramForHmi();
+  assert.equal(st().ladderOrigin, 'app');
+}
+
+// Rebuilt by the rules alone: the program's cycle is kept.
+{
+  example();
+  await runProgram();
+  const seq = useProgramStore.getState().ladder.sequence;
+  assert.ok(seq, 'the rules program has a cycle');
+  // The AI's cycle, as a previous run left it.
+  useProgramStore.setState({ ladder: { ...useProgramStore.getState().ladder, sequence: { ...seq, source: 'ai', questions: ['the AI cycle'] } }, ladderOrigin: 'app' });
+  const r = await runProgram();
+  assert.match(r?.message ?? '', /the cycle kept/, JSON.stringify(r));
+  assert.deepEqual(useProgramStore.getState().ladder.sequence?.questions, ['the AI cycle']);
+}
+
+// Edited by hand while the AI writes the cycle: the AI's program is only proposed, the edit stays.
+{
+  await clearAiCache();
+  example();
+  useSettingsStore.setState({ anthropicApiKey: 'k', stageModes: { ...useSettingsStore.getState().stageModes, program: 'ai' } });
+  useStageStore.setState((st) => ({ sources: { ...st.sources, program: { ...st.sources.program, ioFp: 'before the redesign', at: '' } as never } }));
+  setClaudeInterceptor(async () => {
+    const pr = useProgramStore.getState();
+    pr.editLadder({ ...pr.ladder, rungs: pr.ladder.rungs.map((x, i) => (i === 0 ? { ...x, comment: 'Edited meanwhile' } : x)) });
+    throw Object.assign(new Error('Request was aborted.'), { name: 'AbortError' });
+  });
+  const rs: StepResult[] = [];
+  await runUpdateAll(['program'], (x) => rs.push(x));
+  setClaudeInterceptor(null);
+  const r = rs.filter((x) => x.step === 'program' && !x.provisional).at(-1);
+  assert.equal(r?.status, 'proposal', JSON.stringify(rs));
+  assert.equal(useProgramStore.getState().ladder.rungs[0].comment, 'Edited meanwhile', 'the edit is kept');
+  assert.ok(useProgramStore.getState().proposal);
 }
 
 console.log('update all rebuild tests passed');

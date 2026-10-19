@@ -1,3 +1,4 @@
+import type { LadderProgram } from '../plc/core/ladder';
 import { bindProgress, finishProgress } from '../lib/ai/progress';
 import { useSpecStore } from '../store/useSpecStore';
 import { useIOStore } from '../store/useIOStore';
@@ -327,7 +328,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       const ctxP: PlcContext = { profile, cpu, io, addresses, wiring, hmi };
       const aiCfg: AIConfig = { ...ai, provider: settings.provider };
       const mode = stageMode('program');
-      const rulesProgram = (withAi: boolean) => generateRuleBasedProgram({ ai: withAi && aiCfg.apiKey ? aiCfg : undefined, ctx: ctxP, spec: specToText(spec), electrical: useElectricalStore.getState().design, hmi: hmi ?? null, noPanel: noTouchPanelNow() });
+      const rulesProgram = (withAi: boolean, keepSequence?: LadderProgram['sequence']) => generateRuleBasedProgram({ ai: withAi && aiCfg.apiKey ? aiCfg : undefined, ctx: ctxP, spec: specToText(spec), electrical: useElectricalStore.getState().design, hmi: hmi ?? null, noPanel: noTouchPanelNow(), ...(keepSequence ? { keepSequence } : {}) });
       const markProgram = () => mark('program', { specFp, spec, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(hmi ?? null) });
       // A program the app generated and nobody changed since is rebuilt for the new design (the previous one is kept as
       // a version), so every HMI tag stays implemented; one edited by hand, imported or restored only gets a proposal.
@@ -336,13 +337,24 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       if (!prog.ladder.rungs.length || rebuild) {
         // Standard blocks from the rules (every HMI tag implemented); the AI writes only the cycle block.
         if (mode !== 'ai' || !aiCfg.apiKey) {
-          const q = await rulesProgram(false);
+          // Rules only: a rebuilt program keeps the cycle it had (the AI's steps); the AI, when asked below, writes a new one.
+          const final = mode === 'quick' || !aiCfg.apiKey;
+          const seq = final && rebuild ? prog.ladder.sequence : undefined;
+          const q = await rulesProgram(false, seq);
           prog.setGeneratedLadder(q.program, q.explanation, q.reasoning);
           markProgram();
-          if (mode === 'quick' || !aiCfg.apiKey) { onStep({ step, status: 'done', message: `${q.program.rungs.length} rungs written (rules, default cycle, ${secs(aiNow() - t0)}).${kept}` }); return true; }
+          if (final) { onStep({ step, status: 'done', message: `${q.program.rungs.length} rungs written (rules, ${seq ? 'the cycle kept' : 'default cycle'}, ${secs(aiNow() - t0)}).${kept}` }); return true; }
           onStep({ step, status: 'done', provisional: true, message: `Rules program ready (${q.program.rungs.length} rungs, default cycle, ${secs(aiNow() - t0)}): the AI is writing the cycle steps…` });
         }
+        // The program as it is while the AI writes the cycle: edited by hand meanwhile (the editor stays open), the
+        // AI's program is only proposed, never written over the edit.
+        const written = useProgramStore.getState().ladder;
         const r = await rulesProgram(true);
+        if (useProgramStore.getState().ladder !== written) {
+          useProgramStore.getState().setProposal({ program: r.program, explanation: r.explanation, reasoning: r.reasoning, specUpdate: true });
+          onStep({ step, status: 'proposal', message: `The program was changed while the AI wrote the cycle: its program (${r.program.rungs.length} rungs) is waiting for your approval on the PLC Program page.` });
+          return true;
+        }
         useProgramStore.getState().setGeneratedLadder(r.program, r.explanation, r.reasoning);
         markProgram();
         onStep({ step, status: 'done', message: `${r.program.rungs.length} rungs written.${kept}` });
