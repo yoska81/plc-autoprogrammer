@@ -19,7 +19,7 @@ import { safetyFunctionTable, safetyFunctions } from './docs/safety';
 import { fatProcedure, satChecklist, satTable, testTable } from './docs/fat';
 import { pmSchedule, sparePartsTable } from './docs/maintenance';
 import { isGroup, type DocTable } from './docs/table';
-import { cableKey, noteOf, wireKeys } from '../edits/lists';
+import { cableKey, noteOf, wireNoteKeys } from '../edits/lists';
 
 /** Deep blue: title rows (white text) and dark text. */
 const BRAND = 'FF0B2A5C';
@@ -206,7 +206,7 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
       { header: 'Color', key: 'c', width: 8 }, { header: 'Size', key: 's', width: 10 }, { header: 'Function', key: 'fn', width: 40 }, { header: 'Note', key: 'n', width: 40 },
     ]);
     const wireList = wireNumbers(p.drawingCtx);
-    const keys = wireKeys(wireList);
+    const keys = wireNoteKeys(p.drawingCtx);
     wireList.forEach((w, i) => wires.addRow({ w: w.wire, f: w.from, t: w.to, c: w.color, s: w.size, fn: w.function, n: noteOf(keys[i]) }));
     wrapCells(wires);
 

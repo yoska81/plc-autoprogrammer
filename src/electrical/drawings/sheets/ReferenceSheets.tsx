@@ -3,6 +3,8 @@ import { isIec, NEMA_TO_IP, regionSpec } from '../../../standards/regions';
 import { IEC_LETTERS } from '../../../standards/iecText';
 import type { ReactNode } from 'react';
 import { codeRefs, isFuseCartridge, panelNameplate } from '../../derive';
+import { renamePin, renameWire } from '../../ioNames';
+import { useIoLabel } from '../wireNames';
 import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
 import type { DrawingPlan, PlannedSheet, SheetSpec } from '../plan';
 import {
@@ -80,7 +82,7 @@ const SYMBOLS: SymbolDef[] = [
         <rect x={x - 6} y={y - 5} width={12} height={10} strokeWidth={0.45} fill="#fff" />
         <rect x={x - 5.7} y={y + 0.3} width={11.4} height={4.4} fill="#d9d9d9" stroke="none" />
         <Line x1={x - 6} y1={y} x2={x + 6} y2={y} w={LW_THIN} dash="0.8 0.8" />
-        <Txt x={x} y={y - 1.6} size={1.9} mono bold anchor="middle">X001</Txt>
+        <FirstInput x={x} y={y - 1.6} />
         <Txt x={x} y={y + 3.4} size={1.9} mono bold anchor="middle">COM</Txt>
         <TermPt x={x - 6} y={y - 2.5} /><TermPt x={x - 6} y={y + 2.5} />
         <Line x1={x - 11} y1={y - 2.5} x2={x - 6.7} y2={y - 2.5} />
@@ -438,7 +440,7 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
         const p = model.io.find((x) => x.signalTerminal);
         const term = p?.signalTerminal ?? `${stripTag(plan.ctx.designations, 1)}-1`;
         const cut = term.lastIndexOf('-'); // "TB2-4", IEC "-X2-4"
-        const ex = { strip: term.slice(0, cut), n: Number(term.slice(cut + 1)) || 1, wire: p?.wire ?? '24+', to: p ? `${model.plcTag}:${p.address}` : `${model.plcTag}:24V` };
+        const ex = { strip: term.slice(0, cut), n: Number(term.slice(cut + 1)) || 1, wire: renameWire(model.ioNames, p?.wire ?? '24+'), to: p ? renamePin(model.ioNames, `${model.plcTag}:${p.address}`) : `${model.plcTag}:24V` };
         const iy = convEnd + 6;
         const ix = TX + 4;
         const ly0 = iy + 16;
@@ -480,4 +482,10 @@ export function LabelSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
       })()}
     </g>
   );
+}
+
+/** The legend's PLC terminal in the PLC's own naming (%I0.0 on an S7, X001 on a CLICK). */
+function FirstInput({ x, y }: { x: number; y: number }) {
+  const lbl = useIoLabel();
+  return <Txt x={x} y={y} size={1.9} mono bold anchor="middle" maxW={11}>{lbl('X001')}</Txt>;
 }

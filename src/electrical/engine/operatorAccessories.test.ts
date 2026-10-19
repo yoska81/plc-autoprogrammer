@@ -9,6 +9,9 @@ import { generateDefaultDesign } from './index';
 import { exampleInput } from '../improve/testDesign';
 import { getPart } from '../catalog';
 import { normalizePreference } from '../catalogs';
+import { getCpu, getProfile } from '../../plc/core/profiles';
+import { resolveAddresses } from '../../plc/core/profile';
+import { moduleSlots } from '../../plc/core/modules';
 
 const accessoriesOf = (d: ReturnType<typeof generateDefaultDesign>['design']) => d.components
   .filter((c) => /^ES\d+$/.test(c.tag))
@@ -37,4 +40,16 @@ for (const { es, parts } of sAcc) {
   if (!hasNc) assert.ok(siemens.notes.some((n) => n.includes(op.partNumber) && /N\.C\. contact block/.test(n)), 'no Siemens NC block: a note');
   if (!hasLegend) assert.ok(siemens.notes.some((n) => n.includes(op.partNumber) && /legend plate/.test(n)), 'no Siemens legend: a note');
 }
+// the stack light too: the Siemens 8WD44 kit (bracket mount), not another brand's direct-mount light
+const withStack = (pref?: Parameters<typeof normalizePreference>[0]) => {
+  const base = exampleInput('480VAC-3PH');
+  const io = [...base.io, ...['Stack light red', 'Stack light green', 'Stack light buzzer'].map((description, i) => ({ id: `stk${i}`, category: 'Operator/HMI', description, type: 'output' as const, deviceType: 'stack-light' as const }))] as typeof base.io;
+  const profile = getProfile('click');
+  const input = { ...base, io, addresses: resolveAddresses(profile, getCpu(profile, base.plc.cpuPartNumber), io, moduleSlots([])) };
+  return generateDefaultDesign(pref ? { ...input, pref: normalizePreference(pref) } : input).design;
+};
+const stk = (d: typeof siemens) => d.components.filter((c) => getPart(c.partNumber)?.category === 'stackLight');
+const sStk = stk(withStack({ panel: ['siemens'] })), aStk = stk(withStack());
+assert.ok(sStk.length === 1 && getPart(sStk[0].partNumber)?.vendor === 'siemens' && /yes/.test(String(getPart(sStk[0].partNumber)?.ratings.buzzer)), `Siemens panel: the Siemens kit with a buzzer (${sStk.map((c) => c.partNumber).join(', ')})`);
+assert.ok(aStk.length === 1 && (getPart(aStk[0].partNumber)?.vendor ?? 'automationdirect') !== 'siemens', `default brand: not Siemens (${aStk.map((c) => c.partNumber).join(', ')})`);
 console.log(`operator accessory tests passed (Siemens: ${sAcc[0].parts.map((p) => p.partNumber).join(', ') || 'notes only'})`);

@@ -14,6 +14,8 @@ import { resolveAddresses } from '../../plc/core/profile';
 import { moduleSlots } from '../../plc/core/modules';
 import type { IOPoint } from '../../types/io';
 import type { DesignInputs } from '../types';
+import { defaultMachineModel, markLegacyMotors } from './machineModel';
+import { applyEdits } from '../../redlines/fieldChange';
 
 const profile = getProfile('click');
 const cpu = getCpu(profile, 'C0-10DD1E-D');
@@ -40,5 +42,28 @@ assert.ok(!B.design.inputs.motors.some((m) => aWords.test(m.description)), 'nor 
 const typed = { ...A.design.inputs, motors: A.design.inputs.motors.map((m) => ({ ...m, fromDesign: undefined })) };
 const C = await design(pumpSpec, pumpIo, typed);
 assert.ok(C.design.notes.some((n) => /Belt conveyor motor .* left out of the design/.test(n)), 'a typed motor that is not in this machine is asked about');
+
+// a dropped design motor's tag is free again: B's pump motor is M1, not M3
+assert.deepEqual(B.design.inputs.motors.map((m) => m.tag), ['M1'], `B's motor tags: ${B.design.inputs.motors.map((m) => m.tag).join(', ')}`);
+// a typed left-over motor keeps its tag, so the note never names a different motor
+assert.ok(!defaultMachineModel(pumpIo, typed, pumpSpec).motors.some((m) => typed.motors.some((t) => t.tag === m.tag)), 'new tags skip a typed left-over motor\'s tag');
+
+// a project saved before the marks: its motor list is still exactly the generated design's, so those are the design's
+const unmark = (i: DesignInputs): DesignInputs => ({ ...i, motorsMarked: undefined, motors: i.motors.map((m) => ({ ...m, fromDesign: undefined })) });
+const old = { ...A.design, inputs: unmark(A.design.inputs) };
+const legacy = markLegacyMotors(unmark(A.design.inputs), old, 'generated');
+assert.ok(legacy.motors.every((m) => m.fromDesign), 'older project: the design\'s motors are marked');
+const D = await design(pumpSpec, pumpIo, legacy);
+assert.deepEqual(D.design.notes.filter((n) => aWords.test(n)), [], 'older project: design B keeps none of A\'s notes');
+// … but not once the designer changed the list, nor on an imported design, nor on marked inputs
+const edited = { ...unmark(A.design.inputs), motors: unmark(A.design.inputs).motors.map((m, i) => (i ? m : { ...m, hp: m.hp + 1 })) };
+assert.equal(markLegacyMotors(edited, old, 'generated'), edited, 'a changed motor list is the designer\'s');
+assert.equal(markLegacyMotors(unmark(A.design.inputs), old, 'imported').motors.some((m) => m.fromDesign), false, 'an imported design\'s motors are not marked');
+assert.equal(markLegacyMotors(typed, A.design, 'generated'), typed, 'inputs written after the marks are left as they are');
+
+// a field change (redline) makes the motor the designer's
+const tag = A.design.inputs.motors[0].tag;
+const red = applyEdits([{ kind: 'motor-hp', tag, hp: 7.5 }], { design: A.design, inputs: A.design.inputs, io: [], addresses: new Map() });
+assert.ok(!red.inputs.motors.find((m) => m.tag === tag)!.fromDesign && !red.design!.inputs.motors.find((m) => m.tag === tag)!.fromDesign, 'a redlined motor is no longer the design\'s');
 
 console.log('redesign.test: ok');

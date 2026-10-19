@@ -5,9 +5,10 @@
  *
  * Line references use the "sheet.line" notation ("5.04" = sheet 5, line 4).
  */
+import { ioLabel } from '../ioNames';
 import {
   limitRelayPins,
-  billOfMaterials, buildModel, designWarnings, drawingPrefix, naturalCompare, panelLayout, plcRack, revisionState,
+  billOfMaterials, nativeModel, designWarnings, drawingPrefix, naturalCompare, panelLayout, plcRack, revisionState,
   backPanelDrilling, doorDrilling, dualDim, dualSize, type DrillingPlan, type PlcRackSlot, type RevisionState,
   type AuxBranch, type Cable, type CableCore, type JbTerminal, type JunctionBoxPlan, type MachineDevice, type BomLine, type DrawingContext, type ElectricalModel, type IoGroup, type IoPoint,
   type MotorModel, type PanelLayout, type XfmrBranch, type PsBranch, type Terminal, type TerminalStrip,
@@ -296,8 +297,8 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
     const ch = p.coilChain!;
     // sourcing output: output → chain → coil → 0V; sinking output: output supply → chain → coil → output
     out.push({
-      start: ch.sink ? { kind: 'node', label: s.outputSupply } : { kind: 'xref', label: `${p.address} FROM {=io:${p.address}}` },
-      end: ch.sink ? { kind: 'xref', label: `${p.address} TO {=io:${p.address}}` } : rail,
+      start: ch.sink ? { kind: 'node', label: s.outputSupply } : { kind: 'xref', label: `${ioLabel(model.ioNames, p.address)} FROM {=io:${p.address}}` },
+      end: ch.sink ? { kind: 'xref', label: `${ioLabel(model.ioNames, p.address)} TO {=io:${p.address}}` } : rail,
       // a reversing starter's shared overload on sourcing outputs sits in the coil's return, after the coil
       els: [...ch.devices.map((d) => ({ t: 'contact' as const, nc: d.nc, tag: d.tag, term: d.terminals, dev: d.kind === 'ol' ? 'ol' as const : 'relay' as const })), { t: 'coil', tag: p.deviceTag || '?' },
         ...(ch.returnVia ? [{ t: 'contact' as const, nc: true, tag: ch.returnVia.tag, term: ch.returnVia.terminals, dev: 'ol' as const }] : [])],
@@ -339,7 +340,7 @@ function ioBlocks(ctx: DrawingContext, model: ElectricalModel): { group: IoGroup
 }
 
 export function planDrawings(ctx: DrawingContext): DrawingPlan {
-  const model = buildModel(ctx);
+  const model = nativeModel(ctx);
   const layout = panelLayout(ctx);
   const specs: { title: string; spec: SheetSpec }[] = [];
 
@@ -421,7 +422,8 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
     const pages = Math.max(1, Math.ceil(blk.rows.length / IO_PER_SHEET));
     for (let i = 0; i < Math.max(1, blk.rows.length); i += IO_PER_SHEET) {
       const rows = blk.rows.slice(i, i + IO_PER_SHEET);
-      const range = rows.length > 1 ? `${rows[0].address}–${rows[rows.length - 1].address}` : rows[0]?.address ?? '';
+      const nm = (a: string) => ioLabel(model.ioNames, a);
+      const range = rows.length > 1 ? `${nm(rows[0].address)}–${nm(rows[rows.length - 1].address)}` : rows[0] ? nm(rows[0].address) : '';
       specs.push({
         title: `PLC ${g.type === 'input' ? 'INPUTS' : 'OUTPUTS'} — ${g.devTag} ${g.label} (${range})`,
         spec: { kind: 'io', group: g, rows, points: rows.flatMap((r) => (r.point ? [r.point] : [])), first: i === 0, last: i + IO_PER_SHEET >= blk.rows.length, rack: blk.rack, page: i / IO_PER_SHEET + 1, pages },

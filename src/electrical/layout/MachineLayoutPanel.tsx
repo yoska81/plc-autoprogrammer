@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { loadPdfjs } from '../../lib/pdfjs';
-import { buildModel, type DrawingContext } from '../derive';
+import { nativeModel, type DrawingContext } from '../derive';
 import { useElectricalStore } from '../../store/useElectricalStore';
 import { useProjectsStore } from '../../store/useProjectsStore';
 import { TO_M, unitsPerMeter, type Pt } from './geometry';
@@ -101,7 +101,7 @@ export default function MachineLayoutPanel({ ctx }: { ctx: DrawingContext | null
   // position while dragging; saved to the layout when the pointer is released
   const [dragAt, setDragAt] = useState<{ key: string; p: Pt } | null>(null);
 
-  const model = useMemo(() => (ctx ? buildModel(ctx) : null), [ctx]);
+  const model = useMemo(() => (ctx ? nativeModel(ctx) : null), [ctx]);
   const k = L.scale?.unitsPerMeter ?? 0; // canvas units per metre
   const toM = (u: number) => (k ? u / k : 0);
   const fmtLen = (m: number) => (L.display === 'ft' ? `${(m / 0.3048).toFixed(1)} ft` : `${m.toFixed(1)} m`);

@@ -1,5 +1,6 @@
 /** Cover, notes, terminal plan and bill of materials sheets (tabular). */
 import { WIRE_NUMBERING_NOTES, codeRefs, ratingText, supplyText } from '../../derive';
+import { renameWire } from '../../ioNames';
 import { AREA, AREA_B, AREA_R, LW, LW_HEAVY, LW_THIN, wrapText } from '../geometry';
 import { TERM_ROWS, type DrawingPlan, type PlannedSheet, type SheetSpec } from '../plan';
 import { Line, Txt } from '../symbols';
@@ -85,7 +86,9 @@ export function CoverSheet({ plan }: { plan: DrawingPlan; sheet: PlannedSheet })
   const ny = cy + 5.5 + colors.length * 3.6 + 5;
   const numLines: { text: string; y: number; bullet: boolean }[] = [];
   let yy = ny + 5.5;
-  for (const n of WIRE_NUMBERING_NOTES) {
+  // the examples in the PLC's own naming (I0.0 / Q0.0 on an S7)
+  const ex = (a: string) => renameWire(model.ioNames, a);
+  for (const n of WIRE_NUMBERING_NOTES.map((t) => t.replace(/\bY001A\b/g, ex('Y001A')).replace(/\bX001\b/g, ex('X001')).replace(/\bY001\b/g, ex('Y001')))) {
     wrapText(n, W - 4, 2.3).forEach((t, k) => { numLines.push({ text: t, y: yy, bullet: k === 0 }); yy += 3.1; });
     yy += 0.8;
   }

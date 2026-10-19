@@ -1,4 +1,5 @@
 /** Power distribution, motor circuits and 24VDC control/safety ladder sheets. */
+import { ioLabel } from '../../ioNames';
 import { powerText, isIec } from '../../../standards/regions';
 import { isFusedDisconnect, ratingText, upstreamOcpd, supplyText, type AuxBranch, type MotorModel, type ResolvedComponent, type XfmrBranch } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW_THIN, lineNo } from '../geometry';
@@ -107,6 +108,8 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   // each bus phase runs down to its own last tap (all of them on to the motor sheets): a phase line running past its
   // last tap ends on another phase's branch feed and reads as a connection (1L3 ending on a 2-pole tap's L2 feed)
   const phaseEnd = (k: number) => (m.motors.length ? busEnd : Math.max(2 + k, ...sp.branches.filter((b) => !(b.type === 'ps' && b.b.fromXfmr) && b.b.feedWires.length > k).map((b) => b.idx + k)));
+  // a phase nothing taps (no motors, only 2-pole taps on a 3-phase bus) ends at the disconnect as an unnumbered spare stub
+  const tapped = (k: number) => m.motors.length > 0 || sp.branches.some((b) => !(b.type === 'ps' && b.b.fromXfmr) && b.b.feedWires.length > k);
   const gy = y(sp.groundIdx);
   const pe = m.groundBar?.tag ?? 'PE BAR';
   const grounds = [
@@ -142,6 +145,17 @@ export function PowerSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
       {m.incoming.map((w, k) => {
         if (w === 'N') return null;
         const yy = y(2 + k);
+        if (!tapped(k)) {
+          const x0 = m.mainBreaker ? mbX + 5 : dsX + 5;
+          return (
+            <g key={`b${k}`}>
+              {m.mainBreaker && <BreakerPole x={mbX} y={yy} />}
+              {m.mainBreaker && <Line x1={dsX + 5} y1={yy} x2={mbX - 5} y2={yy} />}
+              <Line x1={x0} y1={yy} x2={x0 + 6} y2={yy} />
+              <Txt x={x0 + 7.5} y={yy + 0.8} size={2.3}>SPARE</Txt>
+            </g>
+          );
+        }
         return (
           <g key={`b${k}`}>
             {m.mainBreaker && <BreakerPole x={mbX} y={yy} />}
@@ -394,7 +408,7 @@ function MotorBranch({ plan, m, idx, y, BX }: { plan: DrawingPlan; m: MotorModel
           {ys.map((yy, k) => <Txt key={`o${k}`} x={203} y={yy + 0.9} size={2.2} mono anchor="end">{`T${k + 1}`}</Txt>)}
           <Txt x={165} y={ys[0] + 1} size={2.8} mono bold anchor="middle">{m.vfd.tag}</Txt>
           <Txt x={165} y={ys[1] + 0.9} size={2.3} anchor="middle">{`AC DRIVE ${ratingText(m.vfd)}`}</Txt>
-          {ph > 2 && <Txt x={165} y={ys[2] + 0.9} size={2.2} anchor="middle" maxW={60}>{ioRun ? `RUN: ${ioRun.address} /${plan.xref.get(`io:${ioRun.address}`) ?? ''}` : 'RUN CMD: SEE I/O'}</Txt>}
+          {ph > 2 && <Txt x={165} y={ys[2] + 0.9} size={2.2} anchor="middle" maxW={60}>{ioRun ? `RUN: ${ioLabel(plan.model.ioNames, ioRun.address)} /${plan.xref.get(`io:${ioRun.address}`) ?? ''}` : 'RUN CMD: SEE I/O'}</Txt>}
           <Txt x={165} y={ys[ph - 1] + 9} size={2.2} anchor="middle">STO/ENABLE PER DRIVE MANUAL</Txt>
         </g>
       ) : (
