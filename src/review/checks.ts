@@ -111,19 +111,19 @@ function programChecks({ p }: ReviewInput): Finding[] {
     const a = (p.addresses.get(pt.id) ?? '').toUpperCase();
     if (!a) continue;
     if (pt.type === 'input' && !reads.has(a)) {
-      out.push(finding(`in-unused:${a}`, 'minor', 'program', 'program', '', `Input ${a} "${pt.description}" is not used by the program`,
-        'The input is wired but no rung reads it, so the machine ignores this device.', 'Use the input in the logic (or remove it from the I/O list if it is not needed).'));
+      out.push({ ...finding(`in-unused:${pt.id}`, 'minor', 'program', 'program', '', `Input ${a} "${pt.description}" is not used by the program`,
+        'The input is wired but no rung reads it, so the machine ignores this device.', 'Use the input in the logic (or remove it from the I/O list if it is not needed).'), legacyId: `in-unused:${a}` });
     }
     if (pt.type === 'output' && !writes.has(a)) {
-      out.push(finding(`out-undriven:${a}`, 'major', 'program', 'program', '', `Output ${a} "${pt.description}" is never driven`,
-        'No rung writes this output, so the device can never turn on.', 'Add the output rung (one OUT coil) to the program.'));
+      out.push({ ...finding(`out-undriven:${pt.id}`, 'major', 'program', 'program', '', `Output ${a} "${pt.description}" is never driven`,
+        'No rung writes this output, so the device can never turn on.', 'Add the output rung (one OUT coil) to the program.'), legacyId: `out-undriven:${a}` });
     }
     if (pt.type === 'output' && !isAnalog(pt) && writes.has(a) && safetyInputs.length && !NON_MOTION_RE.test(pt.description)) {
       const deps = dependsOn(p.ladder, a);
       if (!safetyInputs.some((s) => deps.has(s.toUpperCase()))) {
-        out.push(finding(`out-unsafe:${a}`, 'critical', 'safety', 'program', '', `Output ${a} "${pt.description}" is not gated by Safety OK`,
+        out.push({ ...finding(`out-unsafe:${pt.id}`, 'critical', 'safety', 'program', '', `Output ${a} "${pt.description}" is not gated by Safety OK`,
           `Nothing in the logic that drives ${a} depends on the safety input${safetyInputs.length > 1 ? 's' : ''} (${safetyInputs.join(', ')}), so the PLC could energize it with the safety circuit open.`,
-          'Put the Safety OK bit in series in every rung (auto and manual) that drives this output, and drop the output when safety is lost.'));
+          'Put the Safety OK bit in series in every rung (auto and manual) that drives this output, and drop the output when safety is lost.'), legacyId: `out-unsafe:${a}` });
       }
     }
   }
