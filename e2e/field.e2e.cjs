@@ -43,9 +43,47 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await items.nth(1).getByRole('textbox').blur();
   await page.getByLabel('Sign-off name').fill('J. Tech');
   await page.getByLabel('Typed signature').fill('J. Tech');
+  check(/1 of \d+ done/.test(await page.getByTestId('comm-progress').innerText()), 'a failed item is not done');
+  check(await page.getByRole('button', { name: 'Sign', exact: true }).isDisabled() && /1 failed item/.test(await page.getByTestId('comm-sign-blocked').innerText()), 'a failure blocks the sign-off');
+  // fixed and tested again
+  await items.nth(1).getByRole('button', { name: 'Pass' }).click();
   await page.getByRole('button', { name: 'Sign', exact: true }).click();
   check(/2 of \d+ done/.test(await page.getByTestId('comm-progress').innerText()), 'progress counts the ticks');
   check(await page.getByTestId('comm-signed').count() === 1, 'signed');
+  // a failure after the sign-off voids it, on the record and with a notice
+  await items.nth(0).getByRole('button', { name: 'Fail' }).click();
+  check(await page.getByTestId('comm-signed').count() === 0 && /^Voided sign-off: J\. Tech signed .+; voided .+ failed\.$/.test(await page.getByTestId('comm-voided').innerText()), 'a later failure voids the sign-off and records it');
+  check(/is void: a failure was recorded after it/.test(await page.locator('body').innerText()), 'the user is told');
+  await items.nth(0).getByRole('button', { name: 'Pass' }).click();
+  await page.getByRole('button', { name: 'Sign', exact: true }).click();
+  check(await page.getByTestId('comm-signed').count() === 1 && await page.getByTestId('comm-voided').count() === 1, 'signed again; the voided one stays on the record');
+  // the record survives the project file (.isap): saved, opened as a new project, the same record; a malformed one is cleaned
+  const isap = await page.evaluate(async () => {
+    const pf = await import('/src/project/projectFile.ts');
+    const { useCommissioningStore } = await import('/src/commissioning/useCommissioningStore.ts');
+    const { useProjectsStore } = await import('/src/store/useProjectsStore.ts');
+    const id = useProjectsStore.getState().activeId ?? 'default';
+    const before = useCommissioningStore.getState().byProject[id];
+    const opened = await pf.openProjectFile((await pf.buildProjectFile()).blob);
+    const after = useCommissioningStore.getState().byProject[opened.id];
+    useProjectsStore.getState().openProject(id);
+    return { before, after };
+  });
+  const sameRecord = require('node:util').isDeepStrictEqual(isap.before, isap.after);
+  if (!sameRecord) log('isap before:', JSON.stringify(isap.before), '\nisap after:', JSON.stringify(isap.after));
+  check(sameRecord && isap.after?.voided?.length === 1, 'the voided sign-off survives save and open (the whole record, deep-equal)');
+  // a failed result whose item was removed (its I/O point deleted) gets its own row: dismiss it, then sign again
+  await page.evaluate(async () => {
+    const { useCommissioningStore } = await import('/src/commissioning/useCommissioningStore.ts');
+    const { useProjectsStore } = await import('/src/store/useProjectsStore.ts');
+    useCommissioningStore.getState().setResult(useProjectsStore.getState().activeId, 'io:gone', { status: 'fail', note: 'I/O point deleted' });
+  });
+  await page.getByTestId('comm-orphan').waitFor({ timeout: 5000 }).catch(() => {});
+  check(await page.getByTestId('comm-orphan').count() === 1 && await page.getByRole('button', { name: 'Sign', exact: true }).isDisabled(), 'an orphaned failure is shown and blocks the sign-off');
+  await page.getByTestId('comm-orphan').getByRole('button', { name: 'Dismiss' }).click();
+  check(await page.getByTestId('comm-orphan').count() === 0 && /^Failed result of io:gone, failed by J\. Tech .*, note: I\/O point deleted: no longer in the checklist, dismissed .+ by J\. Tech\.$/.test(await page.getByTestId('comm-dismissed').innerText()), 'dismissed, on the record');
+  await page.getByRole('button', { name: 'Sign', exact: true }).click();
+  check(await page.getByTestId('comm-signed').count() === 1, 'signed again after the dismissal');
   for (const [btn, ext] of [['PDF', 'pdf'], ['Excel', 'xlsx']]) {
     const [d] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: btn, exact: true }).click()]);
     const f = path.join(OUT, d.suggestedFilename());

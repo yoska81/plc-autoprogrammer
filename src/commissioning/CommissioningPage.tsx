@@ -9,7 +9,7 @@ import { useElectricalStore } from '../store/useElectricalStore';
 import { useUi } from '../store/useUiStore';
 import { useDraft } from '../store/useDraftStore';
 import { notify } from '../store/useNoticeStore';
-import { commissioningItems, progress, SECTION_TITLE, type CommItem, type CommResult, type CommSection } from './checklist';
+import { commissioningItems, dismissedText, orphanFails, progress, returnedDismissed, SECTION_TITLE, signBlock, voidedText, type CommItem, type CommResult, type CommSection } from './checklist';
 import { nowStamp, useCommissioningStore } from './useCommissioningStore';
 import { commissioningPdf, commissioningXlsx } from './export';
 
@@ -29,7 +29,7 @@ function useItems(): CommItem[] {
   return useMemo(() => commissioningItems(collectProject()), [io, ladder, design, hmi]);
 }
 
-function Item({ it, r, onSet }: { it: CommItem; r: CommResult | undefined; onSet: (patch: Partial<CommResult>) => void }) {
+function Item({ it, r, onSet, returned }: { it: CommItem; r: CommResult | undefined; onSet: (patch: Partial<CommResult>) => void; returned: boolean }) {
   const [note, setNote] = useDraft(`comm.note.${it.id}`, r?.note ?? '');
   return (
     <li className={`rounded-sm border bg-white px-3 py-2 ${r?.status === 'fail' ? 'border-red-300' : 'border-steel-200'}`} data-comm-item={it.id}>
@@ -38,6 +38,7 @@ function Item({ it, r, onSet }: { it: CommItem; r: CommResult | undefined; onSet
           <p className="text-sm font-medium text-steel-900">{it.title}{it.device && <span className="ml-2 text-xs font-normal text-steel-500">{it.device}</span>}</p>
           <p className="text-xs text-steel-600"><span className="font-semibold">Do: </span>{it.procedure}</p>
           <p className="text-xs text-steel-700"><span className="font-semibold">Expect: </span>{it.expected}</p>
+          {returned && <p className="text-xs font-semibold text-red-700" data-testid="comm-returned">Failed before, dismissed while it was removed: test it again (only a Pass clears it).</p>}
         </div>
         <div className="flex shrink-0 gap-1" role="group" aria-label={`Result of ${it.title}`}>
           {(['pass', 'fail', 'na'] as const).map((st) => (
@@ -88,7 +89,7 @@ function SignaturePad({ value, onChange }: { value?: string; onChange: (png: str
 export default function CommissioningPage() {
   const projectId = useProjectsStore((s) => s.activeId);
   const rec = useCommissioningStore((s) => s.byProject[projectId ?? 'default'] ?? EMPTY);
-  const { tech, setTech, setResult, sign } = useCommissioningStore();
+  const { tech, setTech, setResult, sign, unsign, dismiss } = useCommissioningStore();
   const items = useItems();
   const [section, setSection] = useUi<CommSection | 'all'>('comm.section', 'all');
   const [todo, setTodo] = useUi('comm.todo', false);
@@ -98,6 +99,10 @@ export default function CommissioningPage() {
   const [drawn, setDrawn] = useState<string | undefined>(rec.signoff?.drawn);
   const [busy, setBusy] = useState<'pdf' | 'xlsx' | null>(null);
   const s = progress(items, rec.results);
+  const blocked = signBlock(items, rec.results, rec.dismissed);
+  const ids = items.map((it) => it.id);
+  const back = returnedDismissed(ids, rec);
+  const noName = !tech.trim();
   const base = useProgramStore((st) => st.projectName).trim().replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'project';
   const shown = items.filter((it) => (section === 'all' || it.section === section) && (!todo || !rec.results[it.id]?.status));
 
@@ -148,12 +153,28 @@ export default function CommissioningPage() {
               <section key={k} aria-label={SECTION_TITLE[k]} className="space-y-1.5">
                 <h3 className="text-sm font-semibold text-steel-800">{SECTION_TITLE[k]}</h3>
                 <ol className="space-y-1.5">
-                  {shown.filter((i) => i.section === k).map((it) => <Item key={it.id} it={it} r={rec.results[it.id]} onSet={(patch) => setResult(projectId, it.id, patch)} />)}
+                  {shown.filter((i) => i.section === k).map((it) => <Item key={it.id} it={it} r={rec.results[it.id]} returned={back.includes(it.id)} onSet={(patch) => setResult(projectId, it.id, { ...patch, title: it.title })} />)}
                 </ol>
               </section>
             ))}
+            {orphanFails(items, rec.results).length > 0 && (
+              <section aria-label="Failed results of removed items" className="space-y-1.5 rounded border border-red-300 bg-red-50 p-3">
+                <h3 className="text-sm font-semibold text-red-800">Failed results of items no longer in the checklist</h3>
+                <p className="text-xs text-red-800">Their I/O point or alarm was removed or renamed since they were tested. Dismiss each one (it stays on the record, with your name as Technician) to sign off.</p>
+                {orphanFails(items, rec.results).map((id) => (
+                  <div key={id} className="flex flex-wrap items-center gap-2 text-xs" data-testid="comm-orphan">
+                    <span className="font-mono">{id}</span>
+                    <span className="text-steel-600">{[rec.results[id].note, rec.results[id].by && `${rec.results[id].by} ${rec.results[id].date}`].filter(Boolean).join(' — ')}</span>
+                    <button type="button" disabled={noName} title={noName ? 'Enter your name as Technician first' : undefined} onClick={() => dismiss(projectId, id, ids, tech)}
+                      className="rounded border border-red-400 bg-white px-2 py-0.5 text-red-800 hover:bg-red-100 disabled:opacity-40">Dismiss</button>
+                  </div>
+                ))}
+              </section>
+            )}
             <section aria-label="Sign-off" className="space-y-2 rounded border border-steel-200 bg-white p-3">
               <h3 className="text-sm font-semibold text-steel-800">Sign-off</h3>
+              {rec.voided?.map((v, i) => <p key={i} className="text-xs text-red-800" data-testid="comm-voided">{v.reason === 'failed' ? 'Voided' : v.reason === 'removed' ? 'Removed' : 'Replaced'} sign-off: {voidedText(v, items)}</p>)}
+              {rec.dismissed?.map((d, i) => <p key={`d${i}`} className="text-xs text-steel-600" data-testid="comm-dismissed">{dismissedText(d)}</p>)}
               {rec.signoff && <p className="text-xs text-green-800" data-testid="comm-signed">Signed by {rec.signoff.name}{rec.signoff.company ? ` (${rec.signoff.company})` : ''} on {rec.signoff.date}.</p>}
               <div className="grid gap-2 sm:grid-cols-3">
                 <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" aria-label="Sign-off name" className="rounded border border-steel-300 px-2 py-1 text-sm" />
@@ -162,12 +183,13 @@ export default function CommissioningPage() {
               </div>
               <SignaturePad value={drawn} onChange={setDrawn} />
               <div className="flex flex-wrap items-center gap-2">
-                <button type="button" disabled={!name.trim() || !(signature.trim() || drawn)}
-                  onClick={() => sign(projectId, { name: name.trim(), company: company.trim(), signature: signature.trim(), drawn, date: nowStamp() })}
+                <button type="button" disabled={Boolean(blocked) || !name.trim() || !(signature.trim() || drawn)} title={blocked ?? undefined}
+                  onClick={() => { if (!sign(projectId, { name: name.trim(), company: company.trim(), signature: signature.trim(), ...(drawn ? { drawn } : {}), date: nowStamp() }, ids)) notify('The checklist cannot be signed while an item has failed.'); }}
                   className="rounded bg-brand-600 px-3 py-1 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{rec.signoff ? 'Sign again' : 'Sign'}</button>
-                {rec.signoff && <button type="button" onClick={() => sign(projectId, null)} className="text-sm text-steel-500 underline">Remove signature</button>}
+                {rec.signoff && <button type="button" disabled={noName} title={noName ? 'Enter your name as Technician first' : undefined} onClick={() => unsign(projectId, tech)} className="text-sm text-steel-500 underline disabled:opacity-40">Remove signature</button>}
+                {(rec.signoff || orphanFails(items, rec.results).length > 0) && noName && <span className="text-xs text-steel-500">Enter your name as Technician to remove the signature or dismiss a result.</span>}
                 {s.done < s.total && <span className="text-xs text-amber-800">{s.total - s.done} item{s.total - s.done === 1 ? '' : 's'} not done yet.</span>}
-                {s.fail > 0 && <span className="text-xs font-semibold text-red-700">{s.fail} failed item{s.fail === 1 ? '' : 's'} — list them on the punch list.</span>}
+                {blocked && <span className="text-xs font-semibold text-red-700" data-testid="comm-sign-blocked">Sign-off blocked: {blocked}</span>}
               </div>
             </section>
           </>

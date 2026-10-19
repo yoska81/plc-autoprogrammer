@@ -162,6 +162,13 @@ async function png(page, shade) {
   await addDev('PLC CPU', 'PLC1', 'C0-10DD1E-D', '1', '1', 'Y1=2001');
   await addDev('Contactor', 'K1', 'SC-E02PG-24VDC', '1', '2', 'A1=2001');
   check(/2 confirmed/.test(await page.getByTestId('photos-counts').innerText()), 'devices added by hand are confirmed');
+  // a device needs a tag, and one not already in the review
+  const addForm = page.getByTestId('photos-add');
+  await addForm.getByLabel('Tag of the new device').fill('');
+  check(await addForm.getByRole('button', { name: 'Add' }).isDisabled(), 'no device without a tag');
+  await addForm.getByLabel('Tag of the new device').fill('k1');
+  check(await addForm.getByRole('button', { name: 'Add' }).isDisabled() && /k1 is already in the review/.test(await page.getByTestId('photos-add-problem').innerText()), 'no second device with the same tag');
+  await addForm.getByLabel('Tag of the new device').fill('');
   check(/2001: PLC1:Y1 – K1:A1/.test(await page.getByTestId('photos-traced').innerText()), 'hand-entered wires are traced too');
   await page.getByRole('button', { name: 'Make the as-built panel layout and BOM' }).click();
   await page.getByTestId('photos-applied').waitFor();
