@@ -236,7 +236,8 @@ function controlRungs(model: ElectricalModel): Omit<Rung, 'idx'>[] {
           // The relay terminals are named at the start (the right rail may run past the rung's end).
           ? { start: { kind: 'node', label: `${t} IN1/IN2` }, end: { kind: 'node', label: '' }, els: [{ t: 'box', tag: d, left: 'BTN1', right: 'BTN2', label: '' }], wires: [`${t}-1`, `${t}-2`],
             desc: [`TWO-HAND STATION ${d}: BOTH BUTTONS (N.O. + N.C. EACH)`, `WIRES ${t}-1 / ${t}-2, 0.5 S, ISO 13851 TYPE IIIC`] }
-          : { start: { kind: 'node', label: `${t} S12/S22` }, end: { kind: 'node', label: '' }, els: [{ t: 'box', tag: d, left: 'OSSD1', right: 'OSSD2', label: '' }], wires: ['OSSD1', 'OSSD2'],
+          // no light curtain found for the relay: its box is drawn, but no wire numbers the wire list does not have
+          : { start: { kind: 'node', label: `${t} S12/S22` }, end: { kind: 'node', label: '' }, els: [{ t: 'box', tag: d, left: 'OSSD1', right: 'OSSD2', label: '' }], wires: d === '?' ? ['', ''] : ['OSSD1', 'OSSD2'],
             desc: [`LIGHT CURTAIN ${d}: OSSD1 / OSSD2`, 'TYPE 4, SELF-TESTING (IEC 61496)'] });
       }
     }

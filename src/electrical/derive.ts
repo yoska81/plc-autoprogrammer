@@ -704,7 +704,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const appOf = (c: ResolvedComponent) => `${str(c.part?.ratings, 'application') ?? ''} ${c.comp.function}`;
   const isTwoHand = (c: ResolvedComponent) => /two-hand/i.test(appOf(c));
   const isCurtain = (c: ResolvedComponent) => /light[- ]curtain/i.test(appOf(c)) && !/e-?stop/i.test(appOf(c).split('—')[0]);
-  const srs = byCat(rc, 'safetyRelay');
+  // a converted machine's own safety relay (relay logic kept, e.g. MSR1) is drawn and wired on its ladder sheets, never
+  // as one of the panel's E-stop / two-hand / light-curtain relays
+  const ladderTags = new Set((ctx.design.inputs.relayLogic?.devices ?? []).map((d) => d.tag));
+  const srs = byCat(rc, 'safetyRelay').filter((c) => !ladderTags.has(c.tag));
   const relay = srs.find((c) => !isTwoHand(c) && !isCurtain(c)) ?? srs[0];
   const estopTags = byCat(rc, 'estop').map((c) => c.tag);
   const guardTags = byCat(rc, 'sensor').filter((c) => /safety interlock switch/i.test(String(c.part?.ratings.type ?? ''))).map((c) => c.tag);

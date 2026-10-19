@@ -128,4 +128,15 @@ for (const s of rp.sheets.filter((x) => x.spec.kind === 'ladder')) {
 }
 assert.ok(designWarnings({ ...ctx, design: { ...ctx.design, inputs: { ...ctx.design.inputs, relayLogic: roll } } }).some((w) => /^Relay logic: Terminal numbers not read/.test(w)));
 
+// the converted machine's own safety relay (MSR1, an IDEM Viper whose catalog application names light curtains) is on
+// its ladder, never one of the panel's light-curtain relays (whose OSSD wires it would draw without a wire list)
+{
+  const msr = { tag: 'MSR1', partNumber: 'SCR73-280005', quantity: 1, function: 'Safety relay (kept from the relay logic)' };
+  const lc = { ...ctx, design: { ...ctx.design, components: [...ctx.design.components, msr], inputs: { ...ctx.design.inputs, relayLogic: { ...LOGIC, devices: [...(LOGIC.devices ?? []), { tag: 'MSR1', category: 'safetyRelay', description: 'Safety relay', partNumber: 'SCR73-280005' }] } } } } as DrawingContext;
+  const mm = buildModel(lc);
+  assert.ok(!(mm.safety.extraRelays ?? []).some((x) => x.relay.tag === 'MSR1') && mm.safety.relay?.tag !== 'MSR1', 'MSR1 is not a panel safety relay');
+  const drawn = planDrawings(lc).sheets.flatMap((s) => (s.spec.kind === 'control' ? s.spec.rungs.flatMap((r) => r.wires) : []));
+  assert.ok(drawn.every((w) => !w || mm.wires.some((x) => x.wire === w)), `every control wire number is in the wire list: ${drawn.filter((w) => w && !mm.wires.some((x) => x.wire === w)).join(', ')}`);
+}
+
 console.log('relayLogic.test: ok');
