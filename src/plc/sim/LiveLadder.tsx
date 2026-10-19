@@ -68,6 +68,10 @@ function useNamed(labelOf: (a: string) => string) {
   return {
     of,
     name: (a: string) => of?.(a)?.name ?? a,
+    /** A timer / counter box is headed by its instance (#Push_Timeout), not its done bit (#Push_Timeout.Q). */
+    instance: (a: string) => (of?.(a)?.name ?? a).replace(/\.(Q|DN)$/, ''),
+    /** Long PLC names are cut to the chip; CLICK operands always fit and keep their layout. */
+    cut: of ? 'truncate ' : '',
     sub: (a: string) => { const n = of?.(a); const label = labelOf(a); return n ? [a, n.io, label && label !== n.name ? `· ${label}` : ''].filter(Boolean).join(' ') : label; },
   };
 }
@@ -82,7 +86,7 @@ function ElementChip({ el, conducting, closed, words, labelOf }: {
   if (el.type === 'CMP') {
     const val = (a: string) => (/^[-+]?\d/.test(a.trim()) ? '' : `=${fmt(words.get(normAddress(a)) ?? 0)}`);
     return (
-      <div className={`flex h-[42px] w-[124px] shrink-0 flex-col justify-center rounded border px-1.5 ${cls}`} title={`${withPlcNames(`${el.left} ${el.op} ${el.right}`, nm.of)} (${el.left} ${el.op} ${el.right})`}>
+      <div className={`flex h-[42px] w-[124px] shrink-0 flex-col justify-center rounded border px-1.5 ${cls}`} title={nm.of ? `${withPlcNames(`${el.left} ${el.op} ${el.right}`, nm.of)} (${el.left} ${el.op} ${el.right})` : `${el.left} ${el.op} ${el.right}`}>
         <div className="truncate font-mono text-[11px] font-bold">{withPlcNames(`${el.left} ${el.op} ${el.right}`, nm.of)}</div>
         <div className="truncate font-mono text-[10px] text-steel-500">{el.left}{val(el.left)} {val(el.right) && `${el.right}${val(el.right)}`}</div>
       </div>
@@ -132,7 +136,7 @@ function OutputChip({ o, rungOn, bits, words, timers, counters, labelOf }: {
         <div className={box(on)} title={`${o.type} ${nm.name(o.address)}${label ? ` — ${label}` : ''}`}>
           <div className="flex items-baseline gap-1.5">
             <span className="font-mono text-[12px] font-bold">{sym}</span>
-            <span className="truncate font-mono text-[11.5px] font-bold">{nm.name(o.address)}</span>
+            <span className={`${nm.cut}font-mono text-[11.5px] font-bold`}>{nm.name(o.address)}</span>
             <span className={`ml-auto text-[9.5px] font-bold ${on ? 'text-emerald-700' : 'text-steel-400'}`}>{on ? 'ON' : 'OFF'}</span>
           </div>
           <div className="truncate text-[10px] leading-tight text-steel-500">{label || ' '}</div>
@@ -147,7 +151,7 @@ function OutputChip({ o, rungOn, bits, words, timers, counters, labelOf }: {
       return (
         <div className={box(done)} title={`${o.mode} timer ${o.address}`}>
           <div className="flex items-baseline gap-1">
-            <span className="truncate font-mono text-[11px] font-bold">TMR {nm.name(o.address)}</span>
+            <span className={`${nm.cut}font-mono text-[11px] font-bold`}>TMR {nm.instance(o.address)}</span>
             <span className="truncate text-[9.5px] text-steel-500">{o.mode === 'ON_DELAY' ? 'on-delay' : 'off-delay'}{o.accumulate ? ' retentive' : ''}</span>
             <span className={`ml-auto text-[9.5px] font-bold ${done ? 'text-emerald-700' : 'text-steel-400'}`}>{done ? 'DONE' : ''}</span>
           </div>
@@ -167,7 +171,7 @@ function OutputChip({ o, rungOn, bits, words, timers, counters, labelOf }: {
       return (
         <div className={box(done)} title={`${o.direction} counter ${o.address}`}>
           <div className="flex items-baseline gap-1">
-            <span className="truncate font-mono text-[11px] font-bold">CNT {nm.name(o.address)}</span>
+            <span className={`${nm.cut}font-mono text-[11px] font-bold`}>CNT {nm.instance(o.address)}</span>
             <span className="text-[9.5px] text-steel-500">{o.direction === 'UP' ? 'up' : 'down'}</span>
             <span className={`ml-auto text-[9.5px] font-bold ${done ? 'text-emerald-700' : 'text-steel-400'}`}>{done ? 'DONE' : ''}</span>
           </div>
@@ -181,15 +185,15 @@ function OutputChip({ o, rungOn, bits, words, timers, counters, labelOf }: {
     case 'COPY':
       return (
         <div className={box(rungOn)} title="COPY">
-          <div className="truncate font-mono text-[11px] font-bold">COPY {nm.name(o.source)} → {nm.name(o.dest)}</div>
-          <div className="truncate font-mono text-[10px] text-steel-500">{nm.name(o.dest)} = {fmt(words.get(normAddress(o.dest)) ?? 0)}</div>
+          <div className={`${nm.cut}font-mono text-[11px] font-bold`}>COPY {nm.name(o.source)} → {nm.name(o.dest)}</div>
+          <div className={`${nm.cut}font-mono text-[10px] text-steel-500`}>{nm.name(o.dest)} = {fmt(words.get(normAddress(o.dest)) ?? 0)}</div>
         </div>
       );
     case 'MATH':
       return (
         <div className={box(rungOn)} title={`MATH ${o.dest} = ${o.expression}`}>
           <div className="truncate font-mono text-[11px] font-bold">{nm.name(o.dest)} = {withPlcNames(o.expression, nm.of)}</div>
-          <div className="truncate font-mono text-[10px] text-steel-500">{nm.name(o.dest)} = {fmt(words.get(normAddress(o.dest)) ?? 0)}</div>
+          <div className={`${nm.cut}font-mono text-[10px] text-steel-500`}>{nm.name(o.dest)} = {fmt(words.get(normAddress(o.dest)) ?? 0)}</div>
         </div>
       );
   }
