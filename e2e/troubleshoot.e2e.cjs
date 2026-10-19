@@ -28,7 +28,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await bar.waitFor({ timeout: 15000 });
   const lit = (a) => page.evaluate((a) => {
     const row = [...document.querySelectorAll('span.font-mono.w-11')].find((s) => s.textContent.trim() === a)?.parentElement;
-    return Boolean(row?.querySelector('span.rounded-full')?.className.match(/bg-(brand|emerald|violet)-500/));
+    return Boolean(row?.querySelector('span.rounded-full')?.className.match(/bg-(brand|sky|emerald|violet)-500/));
   }, a);
   const before = await lit('X005');
   // The conductor of X005 at the PLC terminal (the options name each conductor: wire — from → to).
