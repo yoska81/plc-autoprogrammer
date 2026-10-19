@@ -182,8 +182,11 @@ ${vendorNotes(catalog)}`;
     throw new Error('The AI returned a design the app could not read. Please try again.', { cause: err });
   }
   const notes = normalizeNotes(parsed.notes);
+  // the motors the AI read from the machine are the design's (a later design for another machine drops them); one the
+  // designer typed stays theirs, as in the rules' design (engine/index.ts)
+  const typed = (m: MotorSpec) => opts.inputs.motors.some((u) => u.tag === m.tag && u.description === m.description && !u.fromDesign);
   const design: ElectricalDesign = {
-      inputs: { ...opts.inputs, motors: parsed.motors },
+      inputs: { ...opts.inputs, motors: parsed.motors.map((m) => (typed(m) ? { ...m, fromDesign: undefined } : { ...m, fromDesign: true })), motorsMarked: true },
       components: parsed.components,
       ioWiring: parsed.ioWiring,
       notes: notes.map((n) => n.text),

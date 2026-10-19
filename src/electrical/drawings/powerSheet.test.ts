@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { planDrawings } from './plan';
 import { PowerSheet } from './sheets/SchematicSheets';
 import { getPart } from '../catalog';
-import type { DrawingContext } from '../derive';
+import { designWarnings, type DrawingContext } from '../derive';
 import { DESIGN } from '../../preview/sampleProject';
 
 // tsx compiles the sheet's JSX with the classic runtime: React in scope.
@@ -33,5 +33,17 @@ const sheet = plan.sheets.find((s) => s.spec.kind === 'power')!;
 const svg = renderToStaticMarkup(createElement('svg', null, createElement(PowerSheet, { plan, sheet })));
 assert.ok(!svg.includes('>1L3<'), 'the untapped phase is not numbered 1L3');
 assert.ok(svg.includes('>SPARE<') && svg.includes('>1L1<') && svg.includes('>1L2<'), 'L3 is a spare stub; L1 / L2 numbered');
+
+// review: a 1-phase supply fed L1-L2 must take the bus voltage in one of its input ranges, and the branch breaker's
+// highest (phase-to-phase) rating counts
+const withParts = (supply: DrawingContext['design']['inputs']['supply'], ps: string, cb?: string): DrawingContext => ({
+  ...ctx, design: { ...ctx.design, inputs: { ...ctx.design.inputs, supply }, components: components.map((c) => (getPart(c.partNumber)?.category === 'powerSupply' ? { ...c, partNumber: ps } : cb && c.tag === 'CB2' ? { ...c, partNumber: cb } : c)) },
+});
+const destroyed = (c: DrawingContext) => designWarnings(c).filter((w) => /destroyed at power-up/.test(w));
+const lowBreaker = (c: DrawingContext) => designWarnings(c).filter((w) => /V bus: choose a breaker/.test(w));
+assert.equal(destroyed(withParts('480VAC-3PH', 'C0-01AC')).length, 1, 'a 100-240 VAC supply fed L1-L2 at 480 V');
+assert.deepEqual(destroyed(withParts('480VAC-3PH', 'ABL8RPS24050')), [], '"100-120VAC L-N or 200-500VAC L-L" takes 480 V L-L');
+assert.deepEqual(lowBreaker(withParts('400VAC-3PH', 'ABL8RPS24050', '5SY4106-7')), [], 'a 230/400 VAC breaker on a 400 V bus');
+assert.equal(lowBreaker(withParts('480VAC-3PH', 'ABL8RPS24050', '5SY4106-7')).length, 1, 'a 230/400 VAC breaker on a 480 V bus');
 
 console.log('powerSheet.test: ok');

@@ -10,6 +10,7 @@ import { buildModel, nativeModel, wireListCsv, type DrawingContext } from './der
 import { wiringPaths } from '../troubleshoot/wiringPath';
 import { buildCircuit } from '../troubleshoot/circuit';
 import { runCodeRules } from '../review/codeRules/rules';
+import { parseRow, wireListCsvWithNotes, wireNoteKeys } from '../edits/lists';
 import { planDrawings } from './drawings/plan';
 import { getPart } from './catalog';
 import { DESIGN } from '../preview/sampleProject';
@@ -18,6 +19,8 @@ import { DESIGN } from '../preview/sampleProject';
 assert.equal(wireOfNative('%I0.0'), 'I0.0');
 assert.equal(wireOfNative('_IO_EM_DI_00'), 'DI00');
 assert.equal(wireOfNative('on-board I0'), 'I0');
+const us = ioNames('US5-B10-TR22', [], []);
+assert.deepEqual([us.native.get('X001'), us.wire.get('X001'), us.native.get('Y001'), us.wire.get('Y001')], ['I0', 'I0', 'O0', 'O0'], 'UniStream on-board I/O as marked on the CPU (I0 / O0)');
 assert.equal(wireOfNative('Local:1:I.Pt00.Data'), null, 'a name that is no good as a wire number keeps the address');
 const s7 = ioNames('6ES7214-1AG40-0XB0', [], ['X001', 'X002', 'Y001']);
 assert.equal(s7.native.get('X001'), '%I0.0');
@@ -79,5 +82,12 @@ const clkCtx = ctx('C0-10DD1E-D', 'AutomationDirect');
 const clk = buildModel(clkCtx);
 assert.equal(nativeModel(clkCtx), clk, 'CLICK: the native model is the model');
 assert.ok(clk.wires.some((w) => w.wire === 'X001') && clk.ioNames.native.size === 0, 'CLICK: X001');
+
+// a wire-list note stays with its wire when the CPU changes (CLICK X001 → S7 I0.0): notes are keyed by app numbers
+const clickWires = buildModel(clkCtx).wires, ck = wireNoteKeys(clkCtx);
+const i = clickWires.findIndex((w) => w.wire === 'X001' && /PLC:X001/.test(`${w.from} ${w.to}`));
+assert.ok(i >= 0);
+const noted = wireListCsvWithNotes(sie, { [ck[i]]: 'Checked' }).split('\r\n').map(parseRow);
+assert.ok(noted.some((c) => c[0] === 'I0.0' && /PLC:I0\.0/.test(`${c[1]} ${c[2]}`) && c.at(-1) === 'Checked'), 'the X001 note on the S7 I0.0 row');
 
 console.log('ioNames.test: ok');

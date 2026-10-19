@@ -3119,13 +3119,16 @@ export function designWarnings(ctx: DrawingContext): string[] {
   // breaker rated below the system voltage (a 240 V 5SJ4 on 480 V): both fail at power-up
   const sys = SUPPLY_INFO[ctx.design.inputs.supply];
   for (const b of m.psBranches.filter((x) => !x.fromXfmr && m.phases === 3 && x.feedWires.length === 2)) {
-    const r = /(\d+)\s*[-/]\s*(\d+)\s*VAC/.exec(String(b.ps.part?.ratings.inputVolts ?? ''));
-    if (r && Number(r[2]) < sys.volts) w.push(`${b.ps.tag} ${b.ps.partNumber} takes ${r[1]}-${r[2]} VAC but is fed L1-L2 at ${sys.volts} V: it would be destroyed at power-up — choose a supply for ${sys.volts} V (3-phase input) or feed it from a control transformer.`);
+    // every input range it states ("100-120VAC L-N or 200-500VAC L-L"); one fed phase to phase must cover the bus
+    const text = String(b.ps.part?.ratings.inputVolts ?? '');
+    const ranges = [...text.matchAll(/(\d+)\s*[-/]\s*(\d+)\s*VAC(\s*L-N)?/gi)].filter((r) => !r[3]).map((r) => [Number(r[1]), Number(r[2])]);
+    if (ranges.length && !ranges.some(([lo, hi]) => lo <= sys.volts && sys.volts <= hi)) w.push(`${b.ps.tag} ${b.ps.partNumber} takes ${text} but is fed L1-L2 at ${sys.volts} V: it would be destroyed at power-up — choose a supply for ${sys.volts} V (3-phase input) or feed it from a control transformer.`);
   }
   for (const b of [...m.psBranches, ...m.auxBranches]) {
     const p = b.protection?.part;
-    const rv = p ? /(\d{3})/.exec(String(p.ratings.volts ?? '')) : null;
-    if (b.protection && rv && Number(rv[1]) < sys.volts && !('fromXfmr' in b && b.fromXfmr)) w.push(`${b.protection.tag} ${b.protection.partNumber} is rated ${p!.ratings.volts} but sits on the ${sys.volts} V bus: choose a breaker rated for ${sys.volts} V.`);
+    // the breaker's highest (phase-to-phase) voltage: "230/400 VAC" is a 400 V breaker
+    const rated = p ? Math.max(0, ...[...String(p.ratings.volts ?? '').matchAll(/\d{3}/g)].map((x) => Number(x[0]))) : 0;
+    if (b.protection && rated && rated < sys.volts && !('fromXfmr' in b && b.fromXfmr)) w.push(`${b.protection.tag} ${b.protection.partNumber} is rated ${p!.ratings.volts} but sits on the ${sys.volts} V bus: choose a breaker rated for ${sys.volts} V.`);
   }
   w.push(...panelLayout(ctx).warnings);
   // cooling: heat the walls cannot shed needs a filter fan, a heat exchanger or an air conditioner in the design

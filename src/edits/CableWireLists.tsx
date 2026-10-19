@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { cableSchedule, wireNumbers, type DrawingContext } from '../electrical/derive';
 import { useUi } from '../store/useUiStore';
-import { cableKey, wireKeys } from './lists';
+import { cableKey, wireNoteKeys } from './lists';
 import { useEditsStore } from './useEditsStore';
 import { EditableCell } from './EditedMark';
 
@@ -17,7 +17,7 @@ export default function CableWireLists({ ctx }: { ctx: DrawingContext | null }) 
   const [filter, setFilter] = useUi('lists.filter', '');
   const [all, setAll] = useUi('lists.all', false);
   const cables = useMemo(() => (ctx ? cableSchedule(ctx) : []), [ctx]);
-  const wires = useMemo(() => { const list = ctx ? wireNumbers(ctx) : []; const keys = wireKeys(list); return list.map((w, i) => ({ ...w, key: keys[i] })); }, [ctx]);
+  const wires = useMemo(() => { const list = ctx ? wireNumbers(ctx) : []; const keys = ctx ? wireNoteKeys(ctx) : []; return list.map((w, i) => ({ ...w, key: keys[i] })); }, [ctx]);
   if (!ctx) return <div className="flex-1 p-6 text-sm text-steel-500">No electrical design yet.</div>;
   const q = filter.trim().toLowerCase();
   const match = (...v: string[]) => !q || v.join(' ').toLowerCase().includes(q);

@@ -39,7 +39,8 @@ export function ioNames(cpuPartNumber: string, modules: string[], addresses: str
   const terminals = [...rackTerminals(rack, 'input'), ...rackTerminals(rack, 'output')];
   const native = new Map<string, string>(), wire = new Map<string, string>();
   for (const a of new Set([...terminals, ...addresses.filter((x) => /^DF\d+$/i.test(x))])) {
-    const t = profile.ioTag(a, slots, cpuPartNumber);
+    // a UniStream CPU's own I/O ("on-board input 0") is marked I0 / O0 on its terminals
+    const t = profile.ioTag(a, slots, cpuPartNumber)?.replace(/^on-board\s+(input|output)\s+(\d+)$/i, (_x, k: string, n: string) => `${/^i/i.test(k) ? 'I' : 'O'}${n}`);
     if (!t || t.toUpperCase() === a.toUpperCase()) continue;
     // only a name that also works as a wire number: drawings, wire list and markers then always agree (a UniStream
     // slot input "slot 1 UID-1600 I0" stays X101); the label drops an "on-board" prefix
