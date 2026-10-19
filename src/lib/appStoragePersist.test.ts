@@ -7,9 +7,11 @@
  */
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const SRC = new URL('..', import.meta.url).pathname;
+// fileURLToPath, not URL.pathname: on Windows the pathname is "/D:/…" (CI runs there).
+const SRC = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]?$/, sep);
 /** Small per-viewer settings that stay in localStorage on purpose (pane widths, AI timing, the preview's seed). */
 const LOCAL_ONLY = ['lib/appStorage.ts', 'lib/storageFull.ts', 'components/ResizablePane.tsx', 'lib/ai/progress.ts', 'preview/sampleProject.ts'];
 
