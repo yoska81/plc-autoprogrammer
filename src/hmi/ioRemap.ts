@@ -26,16 +26,23 @@ export function remapHmiDesign(design: HmiDesign, r: IoRemap, describe: (ioId: s
     });
     return dropped ? out.replace(/[ \t]{2,}/g, ' ').trim() : out;
   };
+  // A label that was only the deleted address ("X002") would be blank: it names the old point instead.
+  const relabel = (label: string, address?: string | null) => {
+    const out = moveInLabel(label);
+    if (out.trim() || !label.trim()) return out;
+    const g = gone(address);
+    return (g && describe(g)) || '(unbound)';
+  };
   const el = (e: HmiElement): HmiElement => {
     const g = gone(e.address);
-    const next: HmiElement = { ...e, label: e.label ? moveInLabel(e.label) : e.label };
+    const next: HmiElement = { ...e, label: e.label ? relabel(e.label, e.address) : e.label };
     if (g) { next.address = ''; next.lostIo = lost(e.address!, g); } else if (e.address) next.address = move(e.address);
     if (e.interlock) {
       const gi = gone(e.interlock);
       if (gi) { next.interlock = null; next.lostIo = next.lostIo ?? lost(e.interlock, gi); } else next.interlock = move(e.interlock);
     }
     if (e.symbols) next.symbols = e.symbols.map((s) => {
-      const label = s.label ? moveInLabel(s.label) : s.label;
+      const label = s.label ? relabel(s.label, s.address) : s.label;
       return gone(s.address) ? { ...s, label, address: '' } : s.address ? { ...s, label, address: move(s.address) } : { ...s, label };
     });
     return next;

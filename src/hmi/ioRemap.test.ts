@@ -76,6 +76,10 @@ assert.deepEqual(hmiUsesOf(null, 'X001'), []);
   // Brackets around a deleted point's address go with it.
   const paren = remapHmiDesign({ ...labelled, screens: [{ ...labelled.screens[0], elements: [lamp('l9', 'Start PB (X001)', 'C1', 10)] }] }, r, (id) => names[id] ?? '');
   assert.equal(paren.design.screens[0].elements[0].label, 'Start PB');
+  // A label that was only the deleted address names the old point (not a blank button); unknown → "(unbound)".
+  const only = (describeIt: (id: string) => string) => remapHmiDesign({ ...labelled, alarms: [], screens: [{ ...labelled.screens[0], elements: [lamp('l9', 'X001', 'X001', 10)] }] }, r, describeIt).design.screens[0].elements[0];
+  assert.deepEqual([only((id) => names[id] ?? '').label, only((id) => names[id] ?? '').address], ['Start PB', '']);
+  assert.equal(only(() => '').label, '(unbound)');
   // A swap (X001 <-> X002) in one label comes out right.
   const swap = ioRemap(new Map([['a', 'X001'], ['b', 'X002']]), new Map([['a', 'X002'], ['b', 'X001']]));
   const sw = remapHmiDesign({ ...labelled, alarms: [], screens: [{ ...labelled.screens[0], elements: [lamp('l9', 'X001 before X002', 'C1', 10)] }] }, swap);
