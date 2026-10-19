@@ -322,7 +322,8 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       const rulesProposal = async (why: string | null) => {
         const q = await rulesProgram(false);
         const replaced = useProgramStore.getState().proposal ? ' It replaces the proposal that was waiting.' : '';
-        prog.setProposal({ program: q.program, explanation: `${why ? `${why}: this is the rules' program (default cycle) for the current spec, I/O and HMI. ` : ''}${q.explanation}`, reasoning: null, specUpdate: true });
+        const note = [why ? `${why}: the rules' program (default cycle) for the current spec, I/O and HMI.` : '', replaced.trim()].filter(Boolean).join(' ');
+        prog.setProposal({ program: q.program, explanation: `${note ? `${note} ` : ''}${q.explanation}`, reasoning: null, specUpdate: true, ...(note ? { note } : {}) });
         onStep({ step, status: 'proposal', message: `${why ? `${why}: a` : 'A'} rules program (${q.program.rungs.length} rungs, default cycle) is waiting for your approval on the PLC Program page.${replaced}` });
         return true;
       };

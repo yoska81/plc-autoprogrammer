@@ -103,6 +103,7 @@ await test('no API key, existing program: "No API key — built from rules" (no 
   const rs2: StepResult[] = [];
   await runUpdateAll([...steps], (r) => rs2.push(r));
   assert.match(final(rs2, 'program')?.message ?? '', /It replaces the proposal that was waiting\.$/, JSON.stringify(rs2));
+  assert.equal(useProgramStore.getState().proposal?.note, "No API key — built from rules: the rules' program (default cycle) for the current spec, I/O and HMI. It replaces the proposal that was waiting.", 'the Program page banner says it too');
 });
 
 await test('Cancel during the AI stops the run (no fallback, no proposal)', async () => {
