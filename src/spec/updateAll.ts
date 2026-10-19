@@ -31,6 +31,7 @@ import { useDraftStore } from '../store/useDraftStore';
 import { projectUpgradeRoles } from '../plc/import/ui/applyUpgrade';
 import { mergeRegenerated } from '../hmi/engine/regenerate';
 import { changeScope, reviseLadder } from '../plc/ai/ladderAI';
+import { markLegacyMotors } from '../electrical/engine/machineModel';
 import { generateRuleBasedProgram } from '../plc/ai/cycleAI';
 import { getHmi } from '../hmi/hmiCatalog';
 import { rulesEquipment } from './equipmentRules';
@@ -251,7 +252,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       // Both versions start from the same inputs (the rules' version must not become the AI's "designer's motor list").
       const proj = useProjectStore.getState();
       const input = {
-        spec: specToText(spec), io, addresses: resolveAddresses(profile, cpu, io, slots), inputs: el.inputs, region: proj.info.region,
+        spec: specToText(spec), io, addresses: resolveAddresses(profile, cpu, io, slots), inputs: markLegacyMotors(el.inputs, el.design, el.source), region: proj.info.region,
         pref: vendorPreference(), getPart, modules: proj.modules, analog: analogSetup(profile, cpu, slots, io),
         hmiPartNumber: projectPanelPartNow(), projectName: useProgramStore.getState().projectName,
         plc: { vendor: profile.vendor, name: profile.name, cpuPartNumber: cpu.id, cpuLabel: cpu.label },

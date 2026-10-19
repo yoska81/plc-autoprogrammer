@@ -288,7 +288,7 @@ def check_aml(v: str, xml: bytes, data):
             if p not in known:
                 report('FAIL', where, f'{tagname} base class {p} not in the file')
     tags = doc.findall('.//c:ExternalInterface[@RefBaseClassPath="AutomationProjectConfigurationInterfaceClassLib/Tag"]', NS)
-    addrs = sorted(t.findtext('c:Attribute[@Name="LogicalAddress"]/c:Value', namespaces=NS) for t in tags)
+    addrs = sorted(t.findtext('c:Attribute[@Name="LogicalAddress"]/c:Value', namespaces=NS) or '' for t in tags)
     want = sorted(x['address'] for x in data['io'] if x['address'])
     if addrs != want:
         report('FAIL', where, f'tags {len(addrs)} vs {len(want)} I/O points; missing {sorted(set(want) - set(addrs))[:8]}, extra {sorted(set(addrs) - set(want))[:8]}')

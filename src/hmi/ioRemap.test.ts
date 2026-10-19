@@ -62,4 +62,28 @@ assert.equal(moved.description, 'Hold-to-run: PLC runs Y201 while ON and X103 is
 // What uses a point, for the delete confirmation.
 assert.deepEqual(hmiUsesOf(design, 'x003'), ["Screen Main: lamp 'Part present'", "Screen Main: button 'Jog' (its permissive)"]);
 assert.deepEqual(hmiUsesOf(null, 'X001'), []);
+// Labels and alarm texts that name an address follow it in the same one pass; a deleted point's address is
+// dropped from the label (with its brackets or separator), the element itself is unbound as above.
+{
+  const labelled: HmiDesign = { ...design, screens: [{ ...design.screens[0], elements: [lamp('l1', 'X001 Start PB', 'X001', 10), lamp('l2', 'Stop PB (X002)', 'X002', 150), lamp('l3', 'X003: Part present, not Y0012', 'X003', 300)] }],
+    alarms: [{ address: 'X002', message: 'X002 Stop PB stuck', severity: 'alarm' }] };
+  const del = remapHmiDesign(labelled, r, (id) => names[id] ?? '');
+  const lbl = (id: string) => del.design.screens[0].elements.find((e) => e.id === id)!.label;
+  assert.equal(lbl('l1'), 'Start PB', 'the deleted point\'s address leaves the label');
+  assert.equal(lbl('l2'), 'Stop PB (X001)', 'an address in brackets follows its point');
+  assert.equal(lbl('l3'), 'X002: Part present, not Y0012', 'one pass; other words untouched');
+  assert.equal(del.design.alarms[0].message, 'X001 Stop PB stuck');
+  // Brackets around a deleted point's address go with it.
+  const paren = remapHmiDesign({ ...labelled, screens: [{ ...labelled.screens[0], elements: [lamp('l9', 'Start PB (X001)', 'C1', 10)] }] }, r, (id) => names[id] ?? '');
+  assert.equal(paren.design.screens[0].elements[0].label, 'Start PB');
+  // A label that was only the deleted address names the old point (not a blank button); unknown → "(unbound)".
+  const only = (describeIt: (id: string) => string) => remapHmiDesign({ ...labelled, alarms: [], screens: [{ ...labelled.screens[0], elements: [lamp('l9', 'X001', 'X001', 10)] }] }, r, describeIt).design.screens[0].elements[0];
+  assert.deepEqual([only((id) => names[id] ?? '').label, only((id) => names[id] ?? '').address], ['Start PB', '']);
+  assert.equal(only(() => '').label, '(unbound)');
+  // A swap (X001 <-> X002) in one label comes out right.
+  const swap = ioRemap(new Map([['a', 'X001'], ['b', 'X002']]), new Map([['a', 'X002'], ['b', 'X001']]));
+  const sw = remapHmiDesign({ ...labelled, alarms: [], screens: [{ ...labelled.screens[0], elements: [lamp('l9', 'X001 before X002', 'C1', 10)] }] }, swap);
+  assert.equal(sw.design.screens[0].elements[0].label, 'X002 before X001');
+}
+
 console.log('HMI ioRemap tests passed');

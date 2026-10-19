@@ -10,7 +10,7 @@
  * its own instance hierarchy (generic AutomationML roles): EPLAN's AR APC import ignores it, other
  * AutomationML tools read it. Lists for the rest (terminals, cables, connections) are CSV.
  */
-import { billOfMaterials, buildModel, cableScheduleCsv, terminalPlanCsv, type DrawingContext, type ElectricalModel } from '../derive';
+import { billOfMaterials, nativeModel, cableScheduleCsv, terminalPlanCsv, type DrawingContext, type ElectricalModel } from '../derive';
 
 export interface EplanOptions {
   /** PLC address → symbolic name (program nicknames); else a name from the I/O description. */
@@ -146,7 +146,7 @@ const LIBRARIES = `
 export interface AmlStats { devices: number; plcModules: number; tags: number; channels: number; connectionPoints: number; connections: number; cables: number }
 
 /** AutomationML (CAEX 3.0): AR APC PLC configuration + the electrical design. */
-export function amlDocument(ctx: DrawingContext, opts: EplanOptions = {}, model: ElectricalModel = buildModel(ctx)): { xml: string; stats: AmlStats } {
+export function amlDocument(ctx: DrawingContext, opts: EplanOptions = {}, model: ElectricalModel = nativeModel(ctx)): { xml: string; stats: AmlStats } {
   const now = opts.now ?? new Date().toISOString();
   const project = ctx.projectName || 'Project';
   const stats: AmlStats = { devices: 0, plcModules: 0, tags: 0, channels: 0, connectionPoints: 0, connections: 0, cables: 0 };
@@ -302,7 +302,7 @@ export function partsXml(ctx: DrawingContext): string {
 }
 
 /** Device list for Project data > Devices > Import (field names to assign in EPLAN's field assignment). */
-export function deviceListCsv(ctx: DrawingContext, model: ElectricalModel = buildModel(ctx)): string {
+export function deviceListCsv(ctx: DrawingContext, model: ElectricalModel = nativeModel(ctx)): string {
   const rows: unknown[][] = [['Device tag', 'Part number', 'Manufacturer', 'Function text', 'Category', 'Mounting location', 'Quantity']];
   for (const c of ctx.design.components) rows.push([c.tag, c.partNumber, ctx.getPart(c.partNumber)?.manufacturer ?? '', c.function, ctx.getPart(c.partNumber)?.category ?? '', ctx.getPart(c.partNumber)?.mount ?? '', c.quantity]);
   const have = new Set(ctx.design.components.map((c) => c.tag));
@@ -362,7 +362,7 @@ export interface EplanPackage { files: Record<string, string>; stats: AmlStats }
 
 /** All files of the EPLAN package (paths relative to the package root); the DXF sheets are added by the caller. */
 export function eplanPackage(ctx: DrawingContext, opts: EplanOptions = {}, dxfSheets = 0): EplanPackage {
-  const model = buildModel(ctx);
+  const model = nativeModel(ctx);
   const { xml, stats } = amlDocument(ctx, opts, model);
   const base = fileSafe(ctx.projectName || 'project');
   return {

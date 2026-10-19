@@ -89,6 +89,18 @@ setClaudeInterceptor(async (o: ClaudeOptions) => {
   throw new Error('measured');
 });
 await generateElectricalDesign({ ...ai, profile, cpu, io, addresses, machineDescription: spec, inputs, region: 'US' }).catch(() => undefined);
+// 4. The all-AI design marks the motors it read from the machine as the design's; the designer's typed M1 stays theirs.
+setClaudeInterceptor(async () => ({
+  reasoning: null,
+  text: JSON.stringify({
+    explanation: 'x', notes: [], components: [], ioWiring: [],
+    motors: [{ ...inputs.motors[0] }, { tag: 'M2', description: 'Coolant pump', hp: 1, voltage: '480VAC-3PH', starter: 'contactor-overload', reversing: false }],
+    machine: { zones: [], junctionBoxes: [], motorLocations: [], routing: [] },
+  }),
+}));
+const full = await generateElectricalDesign({ ...ai, profile, cpu, io, addresses, machineDescription: spec, inputs, region: 'US' });
+assert.deepEqual(full.design.inputs.motors.map((m) => [m.tag, m.fromDesign ?? false]), [['M1', false], ['M2', true]], 'all-AI design: M2 is the design\'s, M1 the designer\'s');
+assert.equal(full.design.inputs.motorsMarked, true);
 setClaudeInterceptor(null);
 assert.ok(modelPrompt > 0 && fullPrompt > modelPrompt * 5, `machine-model prompt ${modelPrompt} chars vs full design ${fullPrompt}`);
 console.log(`prompt: full AI design ${fullPrompt} chars (~${Math.round(fullPrompt / 4)} tokens) -> machine model ${modelPrompt} chars (~${Math.round(modelPrompt / 4)} tokens); rule engine ${engineMs.toFixed(0)} ms`);

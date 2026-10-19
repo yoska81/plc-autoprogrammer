@@ -5,6 +5,7 @@ import type { DrawingPlan, PlannedSheet } from './plan';
 import { doorScale, drillSheetScale, machineLayoutScale, panelScale, scaleText } from './scale';
 import SheetFrame from './SheetFrame';
 import { SymbolSetContext } from './symbolSet';
+import { WireNamesContext } from './wireNames';
 import { IoSheet } from './sheets/IoSheet';
 import { DoorLayoutSheet, PanelLayoutSheet } from './sheets/LayoutSheets';
 import { ControlSheet, MotorSheet, PowerSheet } from './sheets/SchematicSheets';
@@ -65,7 +66,9 @@ function SheetView({ plan, sheet, width, height }: { plan: DrawingPlan; sheet: P
         doc: plan.doc, rev: sheet.rev, supply: supplyText(plan.model.supply),
       }}
     >
-      <SymbolSetContext.Provider value={plan.ctx.symbols ?? 'ansi'}><g data-cad-sheet={kind}><Content plan={plan} sheet={sheet} /></g></SymbolSetContext.Provider>
+      <SymbolSetContext.Provider value={plan.ctx.symbols ?? 'ansi'}>
+        <WireNamesContext.Provider value={plan.model.ioNames}><g data-cad-sheet={kind}><Content plan={plan} sheet={sheet} /></g></WireNamesContext.Provider>
+      </SymbolSetContext.Provider>
     </SheetFrame>
   );
 }

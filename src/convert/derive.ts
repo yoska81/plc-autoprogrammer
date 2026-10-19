@@ -44,7 +44,8 @@ async function dwgText(f: File, notes: string[]): Promise<string> {
 }
 
 /** File types the upload takes (the file picker's accept list). */
-export const UPLOAD_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.gif,.dxf,.dwg,application/pdf,image/*';
+// PLC program files are listed too, so a user who picks one here is sent to the Program tab (uploadCheck.ts).
+export const UPLOAD_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.gif,.dxf,.dwg,application/pdf,image/*,.ymw7,.YMW7,.emtp,.l5x,.L5X,.l5k,.L5K';
 
 /** One upload as content blocks for the AI: PDFs and images as they are, DXF as its text. */
 /** `notes`: warnings collected while reading (DWG); `onFile`: called before each file is read (progress: "Reading 3 of 8: …"). */

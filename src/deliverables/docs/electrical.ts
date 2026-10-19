@@ -1,7 +1,7 @@
 import { byRegion, isIec, regionSize } from '../../standards/regions';
 import type { ProjectSnapshot } from '../collect';
 import {
-  buildModel, ratingText, supplyText, cableSchedule, naturalCompare,
+  nativeModel, ratingText, supplyText, cableSchedule, naturalCompare,
   type ResolvedComponent, type ElectricalModel,
 } from '../../electrical/derive';
 import { calculations, num, type CalcSection } from './calcs';
@@ -19,7 +19,7 @@ import { panelSccr } from '../../electrical/sccr';
 const SUPPLY_V: Record<string, number> = { '120VAC-1PH': 120, '208VAC-3PH': 208, '240VAC-3PH': 240, '480VAC-3PH': 480, '600VAC-3PH': 600 };
 
 function model(p: ProjectSnapshot): ElectricalModel | null {
-  return p.drawingCtx ? buildModel(p.drawingCtx) : null;
+  return p.drawingCtx ? nativeModel(p.drawingCtx) : null;
 }
 
 const devText = (c?: ResolvedComponent) => (c ? `${c.tag} ${c.partNumber}`.trim() : '—');

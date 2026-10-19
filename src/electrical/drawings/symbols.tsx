@@ -5,7 +5,9 @@
  * the caller draws the connecting wires up to x ± half the symbol length
  * (see SYM in geometry.ts). Parent groups set stroke="#000" fill="none".
  */
-import type { ReactNode } from 'react';
+import { useContext, type ReactNode } from 'react';
+import { renameWire } from '../ioNames';
+import { WireNamesContext } from './wireNames';
 import { FONT_MONO, FONT_SANS, LW, LW_THIN, textWidth, wrapText } from './geometry';
 import { useIecSymbols } from './symbolSet';
 
@@ -77,7 +79,8 @@ export function Dot({ x, y }: { x: number; y: number }) {
 }
 
 /** Wire number centred above a horizontal wire. */
-export function WireNo({ x, y, n, maxW }: { x: number; y: number; n: string; maxW?: number }) {
+export function WireNo({ x, y, n: raw, maxW }: { x: number; y: number; n: string; maxW?: number }) {
+  const n = renameWire(useContext(WireNamesContext), raw);
   if (!n) return null;
   return <g data-cad="WIRENO"><Txt x={x} y={y - 1} mono size={2.5} anchor="middle" maxW={maxW}>{n}</Txt></g>;
 }

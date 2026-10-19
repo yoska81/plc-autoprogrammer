@@ -301,7 +301,7 @@ export const visionProfile: PlcProfile = {
   exporters: EXPORTERS,
   analogChannels: unitronicsAnalogChannels,
   mnemonics: VISILOGIC_MNEMONICS,
-  ioTag: (a) => visiIo(a, undefined),
+  ioTag: (a, _modules, cpuId) => visiIo(a, cpuId),
   importSteps: [
     'VisiLogic has no ladder or program import: enter each net from the net listing (or the printable ladder) in the Ladder editor. The operand map at the top says which VisiLogic operand each app address became.',
     'Open the operands CSV in Excel and save it as .xls with the sheet named "Operands" (header in row 2); then Edit › Import Operand Descriptions names every operand.',

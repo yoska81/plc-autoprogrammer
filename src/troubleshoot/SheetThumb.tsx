@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import SheetView from '../electrical/drawings/SheetView';
 import type { DrawingPlan } from '../electrical/drawings/plan';
+import { ioLabel, renameWire } from '../electrical/ioNames';
 
 const HL = 'data-ts-mark';
 
@@ -21,7 +22,9 @@ export default function SheetThumb({ plan, sheetNo, marks, className = '' }: { p
     if (!svg) return;
     // Marks in order of importance (wire, terminal, tag): the zoom centres on the first mark found and keeps
     // only the hits near it, so a terminal number printed all over the sheet does not zoom out to all of it.
-    const want = marks.map((m) => m.trim().toUpperCase()).filter(Boolean);
+    // the steps name I/O wires and terminals by app address (X001); an S7 sheet draws wire I0.0 and terminal %I0.0
+    const names = plan.model.ioNames;
+    const want = [...new Set(marks.map((m) => m.trim()).filter(Boolean).flatMap((m) => [renameWire(names, m), ioLabel(names, m), m]).map((m) => m.toUpperCase()))];
     const [, , vw0] = (svg.getAttribute('viewBox') ?? '0 0 432 279').split(/\s+/).map(Number);
     const found: { b: DOMRect; t: SVGGraphicsElement; rank: number }[] = [];
     for (const t of svg.querySelectorAll('text')) {

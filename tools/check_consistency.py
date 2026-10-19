@@ -140,10 +140,23 @@ def check(vdir: Path):
     missing = sorted(w for w in wires_csv if not re.search(r'(?<![\w-])' + re.escape(w) + r'(?:(?![\w-])|(?=-?[A-Z]{1,4}\d))', drw_all))
     if missing:
         report('FAIL', v, f'{len(missing)} wire numbers from the wire list never appear on the drawings: {missing[:12]}')
+    # a "?" terminal the design asks about (relay logic read from an old machine: "Terminal numbers not read for PB4 …",
+    # "CR7 … coil was not read") is a known open question, noted once; any other unassigned end is a WARN
+    rel_q = (data.get('relay') or {}).get('questions', [])
+    asked = {t for q in rel_q for t in re.findall(r'\b[A-Z]+\d+[A-Z]?\b', q)}
+    source_asked = any('coil was not read' in q for q in rel_q)
+    noted = []
     for r in wl:
         for k in ('From', 'To'):
             if re.search(r'\?|undefined|null', r[k]):
-                report('WARN', v, f'wire {r["Wire"]} {k} = "{r[k]}" (unassigned device)')
+                tag = r[k].split(':')[0].strip()
+                if ('?' in r[k] and not re.search(r'undefined|null', r[k])
+                        and (tag in asked or (tag.startswith('?') and source_asked))):
+                    noted.append(f'{r["Wire"]} {r[k]}')
+                else:
+                    report('WARN', v, f'wire {r["Wire"]} {k} = "{r[k]}" (unassigned device)')
+    if noted:
+        report('NOTE', v, f'{len(noted)} wire ends at a terminal the design asks about ("?" on the ladder): {", ".join(sorted(set(noted))[:10])}{" …" if len(set(noted)) > 10 else ""}')
     # marker copies = 2 per conductor
     per = {}
     for r in wl:
@@ -180,14 +193,19 @@ def check(vdir: Path):
     # CLICK analog channels (DF registers) are not BIT rows: they go in the analog setup CSV instead.
     ana = next(z.glob('plc/*_analog_setup.csv'), None)
     ana_txt = ana.read_text(encoding='utf-8-sig') if ana else ''
+    # a PLC that names its I/O differently (S7 %I0.0): the drawings show that name (data.json io[].native)
+    native = {x['address']: x['native'] for x in data['io'] if x.get('native')}
     for a, desc in io_a:
         if not a:
             report('FAIL', v, f'I/O "{desc}" has no PLC address')
             continue
-        if not re.search(r'(?<!\w)' + a + r'(?!\w)', drw_all):
-            report('FAIL', v, f'I/O address {a} not on the drawings')
-        if a not in eng_all:
-            report('FAIL', v, f'I/O address {a} not in the engineering package')
+        shown = native.get(a, a)
+        if not re.search(r'(?<![\w%])' + re.escape(shown) + r'(?![\w.])', drw_all):
+            report('FAIL', v, f'I/O address {shown} not on the drawings')
+        elif a in native and re.search(r'(?<!\w)' + a + r'(?!\w)', drw_all):
+            report('FAIL', v, f'I/O address {a} on the drawings of a PLC that names it {native[a]}')
+        if shown not in eng_all:
+            report('FAIL', v, f'I/O address {shown} not in the engineering package')
         if re.fullmatch(r'DF\d+', a):
             if not re.search(r'(?<!\w)' + a + r'(?!\w)', ana_txt):
                 report('FAIL', v, f'analog I/O address {a} not in the analog setup CSV')
@@ -363,7 +381,9 @@ def main():
     for lvl, where, msg in results:
         print(f'{lvl:4} {where}: {msg}')
     fails = [r for r in results if r[0] == 'FAIL']
-    print(f'CONSISTENCY: {len(fails)} FAIL, {len(results) - len(fails)} WARN')
+    warns = [r for r in results if r[0] == 'WARN']
+    notes = [r for r in results if r[0] == 'NOTE']
+    print(f'CONSISTENCY: {len(fails)} FAIL, {len(warns)} WARN' + (f', {len(notes)} NOTE' if notes else ''))
     sys.exit(1 if fails else 0)
 
 

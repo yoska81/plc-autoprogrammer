@@ -9,8 +9,10 @@ import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 import VoiceTextarea from '../voice/VoiceTextarea';
+import { PLC_PROGRAM_FILE } from '../convert/uploadCheck';
 
-const ACCEPT = '.pdf,.docx,.txt,.md,.csv,image/*';
+// PLC program files are listed so a user who picks one here is sent to the Program tab
+const ACCEPT = '.pdf,.docx,.txt,.md,.csv,image/*,.ymw7,.YMW7,.emtp,.l5x,.L5X';
 
 /** Free text + document upload that the AI merges into the spec, plus open questions. */
 export default function SpecIntake() {
@@ -25,6 +27,13 @@ export default function SpecIntake() {
   const [reasoning, setReasoning] = useState<string | null>(null);
   const [undo, setUndo] = useDraft<SpecSections | null>('spec.undo', null);
   const [dragOver, setDragOver] = useState(false);
+  // PLC program files are not spec documents: they are read on the Import page's Program tab
+  const [programFiles, setProgramFiles] = useState<string[]>([]);
+  const addFiles = (list: File[]) => {
+    setProgramFiles(list.filter((f) => PLC_PROGRAM_FILE.test(f.name)).map((f) => f.name));
+    const docs = list.filter((f) => !PLC_PROGRAM_FILE.test(f.name));
+    if (docs.length) setFiles((f) => [...f, ...docs]);
+  };
   const apiKey = settings.anthropicApiKey;
 
   const organize = () => {
@@ -62,12 +71,17 @@ export default function SpecIntake() {
             <label
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => { e.preventDefault(); setDragOver(false); setFiles((f) => [...f, ...e.dataTransfer.files]); }}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles([...e.dataTransfer.files]); }}
               className={`flex items-center justify-center border-2 border-dashed rounded py-4 text-sm cursor-pointer ${dragOver ? 'border-brand-500 bg-brand-50' : 'border-steel-300 text-steel-600 hover:border-brand-400'}`}
             >
               Drop spec documents here or click to choose (PDF, Word .docx, text)
-              <input type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { const picked = [...(e.target.files ?? [])]; e.target.value = ''; setFiles((f) => [...f, ...picked]); }} />
+              <input type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { const picked = [...(e.target.files ?? [])]; e.target.value = ''; addFiles(picked); }} />
             </label>
+            {programFiles.length > 0 && (
+              <div role="status" data-testid="spec-program-file" className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                {programFiles.join(', ')} {programFiles.length > 1 ? 'are PLC program files' : 'is a PLC program file'}: it is read on <Link to="/import?tab=program" className="underline font-medium">Import an existing machine → Program</Link>, which also writes the machine description from it.
+              </div>
+            )}
             {files.length > 0 && (
               <ul className="flex flex-wrap gap-2">
                 {files.map((f, i) => (
