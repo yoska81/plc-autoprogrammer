@@ -1,3 +1,4 @@
+import { yaskawaFamily } from './profiles/yaskawa';
 import { PLC_PROFILES } from './profiles';
 import { moduleSlots, ioCapacity } from './modules';
 import { getPart } from '../../electrical/catalog';
@@ -191,6 +192,8 @@ export function modulesToFit(cpuId: string, modules: string[], need: Need): stri
     const mods = addForSignals(cpu, suggestModules(platform, cpuId, need), need, platform.modules, 32);
     return mods && cpuFit(cpu, mods, need).ok ? mods : null;
   }
+  // A Yaskawa CPU has no platform until its catalog parts come: never CLICK modules on it.
+  if (yaskawaFamily(cpuId)) return null;
   const clickAll = ALL_PARTS.filter((p) => p.category === 'plcModule' && /^C0-/.test(p.partNumber));
   const click = clickAll.filter((p) => !/THM|RTD/i.test(p.partNumber));
   const mods = [...modules];

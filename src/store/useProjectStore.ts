@@ -3,6 +3,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { normalizePreference, type VendorPreference } from '../electrical/catalogs';
 import type { EquipmentRecommendation } from '../lib/ai/equipmentAI';
+import type { NetworkAxis } from '../plc/core/networkAxes';
+import type { MemoryLayout } from '../plc/core/profiles/yaskawa';
 
 interface ProjectStore {
   /** Selected PLC profile id (see src/plc/core/profiles). */
@@ -25,6 +27,12 @@ interface ProjectStore {
   /** Project data shown on drawings and reports. */
   info: ProjectInfo;
   setInfo: (info: Partial<ProjectInfo>) => void;
+  /** Servo axes on the motion network (Yaskawa MECHATROLINK): the program, the drawings and the HMI number them from this list. */
+  networkAxes: NetworkAxis[];
+  setNetworkAxes: (axes: NetworkAxis[]) => void;
+  /** Yaskawa: MW bases of the app's memory areas (set once, e.g. around an imported program's registers); absent = the defaults. */
+  yaskawaMemory?: MemoryLayout;
+  setYaskawaMemory: (layout: MemoryLayout | undefined) => void;
 }
 
 /** Installation region: US (NEC / UL 508A), Canada (CEC / CSA C22.2 No. 14) or an IEC region (src/standards/regions.ts). */
@@ -97,6 +105,10 @@ export const useProjectStore = create<ProjectStore>()(
       setRecommendation: (recommendation) => set({ recommendation }),
       info: DEFAULT_INFO,
       setInfo: (info) => set((s) => ({ info: { ...s.info, ...info } })),
+      networkAxes: [],
+      setNetworkAxes: (networkAxes) => set({ networkAxes }),
+      yaskawaMemory: undefined,
+      setYaskawaMemory: (yaskawaMemory) => set({ yaskawaMemory }),
     }),
     {
       name: 'plc-project-store',

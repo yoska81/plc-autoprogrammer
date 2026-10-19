@@ -5,6 +5,7 @@ import { micro800Profile } from './micro800';
 import { siemensProfile } from './siemens';
 import { unistreamProfile } from './unilogic';
 import { visionProfile } from './visilogic';
+import { yaskawaProfile } from './yaskawa';
 
 /** Generic IEC 61131-3 Structured Text, addressed by the project's own I/O ids. */
 const genericStProfile: PlcProfile = {
@@ -20,16 +21,6 @@ const genericStProfile: PlcProfile = {
   promptKnowledge: () => '',
 };
 
-/** Listed in the picker so users see what's coming; not selectable yet. */
-function comingSoon(id: string, vendor: string, name: string, language: PlcProfile['language']): PlcProfile {
-  const cpu: CpuModel = { id: 'tbd', label: 'Coming soon', builtInInputs: 0, builtInOutputs: 0 };
-  return {
-    id, vendor, name, language, available: false,
-    cpuModels: [cpu], defaultCpuId: cpu.id,
-    autoAddresses: () => new Map(), parseAddress: () => null, promptKnowledge: () => '',
-  };
-}
-
 export const PLC_PROFILES: PlcProfile[] = [
   clickProfile,
   logixProfile,
@@ -37,7 +28,7 @@ export const PLC_PROFILES: PlcProfile[] = [
   siemensProfile,
   unistreamProfile,
   visionProfile,
-  comingSoon('yaskawa', 'Yaskawa', 'MotionWorks IEC', 'st'),
+  yaskawaProfile,
   genericStProfile,
 ];
 

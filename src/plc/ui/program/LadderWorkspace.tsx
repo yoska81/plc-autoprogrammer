@@ -222,7 +222,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
 
   // CLICK: a motion axis's pulse must be on a pulse-train output of the CPU's option-slot module.
   const moduleParts = useProjectStore((st) => st.modules);
-  const checkOpts = useMemo(() => (ctx.profile.id === 'click' ? { pulseOutputs: ptoPointsFor(ctx.cpu.id, moduleParts) } : {}), [ctx.profile.id, ctx.cpu.id, moduleParts]);
+  const yaskawaMemory = useProjectStore((st) => st.yaskawaMemory);
+  const checkOpts = useMemo(() => ({ yaskawaMemory, ...(ctx.profile.id === 'click' ? { pulseOutputs: ptoPointsFor(ctx.cpu.id, moduleParts) } : {}) }), [ctx.profile.id, ctx.cpu.id, moduleParts, yaskawaMemory]);
   const issues = useMemo(() => validateProgram(ladder, ctx.profile, ioAddressSet, hmiDesign ?? undefined, checkOpts), [ladder, ctx.profile, ioAddressSet, hmiDesign, checkOpts]);
 
   // While reviewing an AI change, show the proposed program with removed rungs kept in place.
