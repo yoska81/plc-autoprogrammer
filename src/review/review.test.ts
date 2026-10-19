@@ -241,5 +241,20 @@ test('motion: a pulse-train axis on a CLICK C0 is a critical finding with what w
   assert.ok(!check().some((f) => f.id.startsWith('motion:')), 'no motion: no finding');
 });
 
+test('S7 project: findings name the I/O terminal with its Siemens address', () => {
+  seedSampleProject();
+  useProjectStore.setState({ plcId: 'siemens-s7', cpuId: '6ES7214-1AG40-0XB0', modules: [] });
+  // An input the program does not read: the finding names it as "X00n (%I0.m)".
+  const io = useIOStore.getState();
+  io.importPoints([{ description: 'Spare door switch', type: 'input', category: 'Station 1' }], false);
+  const f = checksFor(collectProject());
+  const unused = f.find((x) => /Spare door switch/.test(x.title));
+  assert.ok(unused && /\bX0\d\d \(%I\d+\.\d\)/.test(unused.title), unused?.title);
+  assert.ok(f.every((x) => !/\b[XY]\d{3}\b(?!\s*\()/.test(`${x.title} ${x.detail} ${x.fix}`)), 'every terminal has its Siemens address next to it');
+  seedSampleProject();
+  const click = checksFor(collectProject());
+  assert.ok(click.every((x) => !/%[IQ]\d/.test(x.title)), 'CLICK findings unchanged');
+});
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

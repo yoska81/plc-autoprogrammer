@@ -28,3 +28,10 @@ export function inPlcNames(p: ProjectSnapshot): (text: string) => string {
   const name = plcNameOf(p);
   return (t) => t.replace(OPERAND, (m) => name(m));
 }
+
+/** A text with the brand's address after each I/O terminal it quotes: "Input X005 (%I0.4)". CLICK unchanged. */
+export function withNativeIo(p: ProjectSnapshot): (text: string) => string {
+  if (p.profile.id === 'click' || !p.profile.ioTag) return (t) => t;
+  const name = plcNameOf(p);
+  return (t) => t.replace(/\b([XY]\d{3})\b(?!\s*\()/g, (m) => { const n = name(m); return n && n !== m ? `${m} (${n})` : m; });
+}

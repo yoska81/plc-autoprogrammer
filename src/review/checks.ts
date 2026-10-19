@@ -24,6 +24,7 @@ import { getPart } from '../electrical/catalog';
 import { specToText } from '../spec/types';
 import { inPlcNames, openPlcChanges, programUse } from '../hmi/engine/upgradeHmi';
 import { plcTagNameOf } from '../deliverables/plcTagNames';
+import { withNativeIo } from '../deliverables/plcNames';
 
 export interface ReviewInput {
   p: ProjectSnapshot;
@@ -497,5 +498,8 @@ export function runChecks(input: ReviewInput): Finding[] {
   const eng = engineerChecksFor(input.p);
   all.push(...eng.filter((e) => !all.some((f) => f.title === e.title)));
   const seen = new Set<string>();
-  return all.filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)));
+  // The brand's address next to each I/O terminal a finding names ("Input X005 (%I0.4)"); ids stay as they are.
+  const native = withNativeIo(input.p);
+  return all.filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)))
+    .map((f) => ({ ...f, title: native(f.title), detail: native(f.detail), fix: native(f.fix) }));
 }
