@@ -645,11 +645,16 @@ await test('the reading as three parts at once: every field in exactly one part;
     assert.deepEqual(three.machine, one.machine);
 
     // warm-up: the other two parts start when the first one's answer begins (its prompt, files included, is cached by then)
+    // A gate, not timing: part 1 yields once (the others could start there if they didn't wait), then begins its
+    // answer and stays open until parts 2 and 3 have both started; a gate that never opens fails within 5 s.
     const order: string[] = [];
+    let othersStarted = 0, openGate = () => {};
+    const gate = new Promise<void>((resolve, reject) => { openGate = resolve; setTimeout(() => reject(new Error(`parts 2 and 3 never started: ${order.join(', ')}`)), 5000).unref?.(); });
     setClaudeInterceptor(async (o) => {
       const i = DERIVE_PARTS.findIndex((p) => (o.messages[0].content as { text?: string }[]).some((b) => b.text?.includes(p.instruction)));
       order.push(`start ${i}`);
-      if (i === 0) { await new Promise((r) => setTimeout(r, 20)); order.push('answer 0 begins'); o.onStarted?.(); await new Promise((r) => setTimeout(r, 30)); }
+      if (i === 0) { await new Promise((r) => setImmediate(r)); order.push('answer 0 begins'); o.onStarted?.(); await gate; }
+      else if (++othersStarted === 2) openGate();
       order.push(`end ${i}`);
       return { reasoning: null, text: JSON.stringify(Object.fromEntries([...DERIVE_PARTS[i].fields, 'uncertainties'].map((k) => [k, (full as Record<string, unknown>)[k]]))) };
     });
