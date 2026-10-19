@@ -198,4 +198,9 @@ assert.match(msgs, /no embedded I\/O/);
   assert.match(logixProfile.checkRung!(rung, { ioAddresses: new Set() }).map((i) => i.message).join(), /X001: this CompactLogix has no embedded I\/O/);
 }
 
+// Accented letters keep their letter: "Ölstand" → Olstand, "Straße" → Strasse (never O_lstand).
+assert.equal(logixName('Ölstand', new Set(), 'X'), 'Olstand');
+assert.equal(logixName('Straße Förderband', new Set(), 'X'), 'Strasse_Forderband');
+assert.equal(logixName('Température', new Set(), 'X'), 'Temperature');
+
 console.log('logix tests passed');

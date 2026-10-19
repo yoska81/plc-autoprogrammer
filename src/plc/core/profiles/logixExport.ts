@@ -31,7 +31,8 @@ const GENERATED: Record<string, string> = { SC7: 'Clock_1s', CLOCK_TMR: 'Clock_1
 
 /** Logix tag names: letters, digits, single underscores; start with a letter or underscore; at most 40 characters. */
 export function logixName(text: string, used: Set<string>, fallback: string): string {
-  let base = text.normalize('NFKD').replace(/[^A-Za-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+  // Accents dropped, not turned into "_": "Ölstand" → Olstand, "Straße" → Strasse.
+  let base = text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').replace(/[^A-Za-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
   if (!base) base = fallback;
   if (/^\d/.test(base)) base = `T_${base}`;
   base = base.slice(0, 40).replace(/_+$/, '');

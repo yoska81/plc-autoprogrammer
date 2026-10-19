@@ -52,7 +52,10 @@ export function IOTable({ filter }: { filter: IOFilter }) {
   // Said, never silent: addresses on modules nobody chose (a preview), and points the PLC has no terminal for.
   const noCpu = !chosenCpu;
   const preview = !modules.length && [...addresses.values()].some((a) => /^[XY][1-9]\d\d$/.test(a));
-  const unaddressed = projectIO.filter((p) => !addresses.get(p.id)).length;
+  const noAddress = projectIO.filter((p) => !addresses.get(p.id));
+  const noTerminal = noAddress.filter((p) => p.signal !== 'analog').length;
+  const noChannel = noAddress.length - noTerminal;
+  const unaddressed = noAddress.length;
 
   const q = filter.text.trim().toLowerCase();
   const shown = projectIO.filter((p) =>
@@ -68,8 +71,9 @@ export function IOTable({ filter }: { filter: IOFilter }) {
       {(noCpu || preview || unaddressed > 0) && (
         <div role="status" className="px-3 py-2 text-xs bg-amber-50 border-b border-amber-200 text-amber-900 space-y-0.5">
           {noCpu && <p>No PLC CPU is chosen yet: the addresses assume a {cpu.label.split(' — ')[0]}. Choose the PLC on the <Link to="/equipment" className="underline">Equipment</Link> page.</p>}
-          {preview && <p>No expansion modules are chosen: addresses past the CPU's own {cpu.builtInInputs} inputs / {cpu.builtInOutputs} outputs (X101…, Y101…) are a preview on 16-point modules that do not exist yet. Add the modules on the <Link to="/equipment" className="underline">Equipment</Link> page.</p>}
-          {unaddressed > 0 && <p>{unaddressed} of {projectIO.length} points have no address: the PLC has no terminal left for them. Choose a larger CPU or more modules on the <Link to="/equipment" className="underline">Equipment</Link> page.</p>}
+          {preview && <p>No expansion modules are chosen: {cpu.builtInInputs + cpu.builtInOutputs ? `addresses past the CPU's own ${cpu.builtInInputs} inputs / ${cpu.builtInOutputs} outputs` : 'the CPU has no I/O of its own, so every address'} (X101…, Y101…) {cpu.builtInInputs + cpu.builtInOutputs ? 'are' : 'is'} a preview on 16-point modules that do not exist yet. Add the modules on the <Link to="/equipment" className="underline">Equipment</Link> page.</p>}
+          {noTerminal > 0 && <p>{noTerminal} of {projectIO.length} points have no address: the PLC has no terminal left for them. Choose a larger CPU or more modules on the <Link to="/equipment" className="underline">Equipment</Link> page.</p>}
+          {noChannel > 0 && <p>{noChannel} analog point{noChannel === 1 ? ' has' : 's have'} no analog channel: add an analog module on the <Link to="/equipment" className="underline">Equipment</Link> page.</p>}
         </div>
       )}
       <div className="overflow-x-auto">
