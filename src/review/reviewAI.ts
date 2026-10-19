@@ -151,17 +151,18 @@ export async function runAiReview(ai: AIConfig, p: ProjectSnapshot, deterministi
   const perChar = clickRungListing(p.ladder, p.labels, '').length / Math.max(1, JSON.stringify(p.ladder.rungs).length);
   const cost = (r: Rung) => 1.4 * approxTokens(JSON.stringify(r)) * perChar;
   const queue = programParts(p.ladder, cost, Math.max(10_000, INPUT_TOKENS - base));
-  // The estimate does not see how long the I/O lines a part brings are: a part measured over the budget is halved.
-  const fits = (rungs: Rung[]) => approxTokens(projectSummary(p, deterministic, { rungs, note: PART_NOTE(1, 1, '') })) <= INPUT_TOKENS;
+  const number = new Map(p.ladder.rungs.map((r, i) => [r.id, i + 1]));
+  const span = (rs: Rung[]) => `rungs ${number.get(rs[0].id)}–${number.get(rs[rs.length - 1].id)}`;
+  // The estimate does not see how long the I/O lines a part brings are: a part measured over the budget (with its
+  // own note) is halved, at the block boundary nearest the middle when it has more than one block.
   const read: Rung[][] = [];
+  const fits = (rungs: Rung[]) => approxTokens(projectSummary(p, deterministic, { rungs, note: PART_NOTE(read.length + 1, read.length + queue.length + 1, span(rungs)) })) <= INPUT_TOKENS;
   while (queue.length && read.length < MAX_REVIEW_PARTS) {
     const rungs = queue.shift()!;
-    if (rungs.length > 1 && !fits(rungs)) { const h = rungs.length >> 1; queue.unshift(rungs.slice(0, h), rungs.slice(h)); continue; }
+    if (rungs.length > 1 && !fits(rungs)) { queue.unshift(...halves(rungs)); continue; }
     read.push(rungs);
   }
   const total = read.length + queue.length;
-  const number = new Map(p.ladder.rungs.map((r, i) => [r.id, i + 1]));
-  const span = (rs: Rung[]) => `rungs ${number.get(rs[0].id)}–${number.get(rs[rs.length - 1].id)}`;
   const results: AiReview[] = [];
   for (const [k, rungs] of read.entries()) {
     results.push(await reviewOnce(ai, projectSummary(p, deterministic, { rungs, note: PART_NOTE(k + 1, total, span(rungs)) })));
@@ -174,6 +175,17 @@ export async function runAiReview(ai: AIConfig, p: ProjectSnapshot, deterministi
     ].join('\n'),
     findings: uniqueIds(results.flatMap((r) => r.findings)),
   };
+}
+
+/** Two halves of a part: at the block boundary nearest the middle, else in the middle. */
+export function halves(rungs: Rung[]): [Rung[], Rung[]] {
+  const mid = rungs.length >> 1;
+  let at = -1;
+  for (let i = 1; i < rungs.length; i++) {
+    if (rungs[i].block !== rungs[i - 1].block && (at < 0 || Math.abs(i - mid) < Math.abs(at - mid))) at = i;
+  }
+  if (at < 0) at = mid;
+  return [rungs.slice(0, at), rungs.slice(at)];
 }
 
 const PART_NOTE = (k: number, n: number, span: string) =>

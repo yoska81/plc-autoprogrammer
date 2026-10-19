@@ -11,7 +11,7 @@ import { applyUpgrade } from '../plc/import/ui/applyUpgrade';
 import { collectProject } from '../deliverables/collect';
 import { setClaudeInterceptor, type ClaudeOptions } from '../lib/ai/anthropic';
 import { approxTokens, INPUT_TOKENS, programParts } from '../lib/ai/budget';
-import { MAX_REVIEW_PARTS, runAiReview } from './reviewAI';
+import { halves, MAX_REVIEW_PARTS, runAiReview } from './reviewAI';
 import { runEngineerAI } from '../engineer/engineerAI';
 import { l5x } from '../plc/import/__fixtures__/bigPrograms';
 import { seedSampleProject } from '../preview/sampleProject';
@@ -38,6 +38,13 @@ await test('parts: whole blocks together under the limit; a block too big alone 
   const r = (id: string, block: string) => ({ id, block, comment: '', branches: [], outputs: [] });
   const program = { rungs: [r('a', 'A'), r('b', 'A'), r('c', 'B'), r('d', 'C'), r('e', 'C'), r('f', 'C'), r('g', 'C'), r('h', 'D')], tags: [] } as unknown as LadderProgram;
   assert.deepEqual(programParts(program, () => 1, 3).map((p) => p.map((x) => x.id).join('')), ['abc', 'def', 'gh']);
+});
+
+await test('a part halved again splits at the block boundary nearest the middle (one block: in the middle)', () => {
+  const r = (id: string, block: string) => ({ id, block, comment: '', branches: [], outputs: [] });
+  const ids = (h: { id: string }[][]) => h.map((x) => x.map((y) => y.id).join(''));
+  assert.deepEqual(ids(halves(['a', 'b', 'c', 'd', 'e', 'f'].map((id, i) => r(id, i < 2 ? 'A' : 'B')) as never)), ['ab', 'cdef']);
+  assert.deepEqual(ids(halves(['a', 'b', 'c', 'd'].map((id) => r(id, 'A')) as never)), ['ab', 'cd']);
 });
 
 await test('a small project is one review request, as before', async () => {

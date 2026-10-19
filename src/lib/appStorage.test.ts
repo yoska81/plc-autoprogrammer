@@ -205,4 +205,33 @@ await test('a program kept aside after a clear is found by the deep scan (Recove
   assert.match(found?.where ?? '', /^Open project \(from before the app's storage was cleared\) \(Old line\)$/);
 });
 
+await test('only the latest two sets kept aside stay (each clear adds one)', async () => {
+  const t = Date.now() + 1000;
+  for (const now of [t + 1, t + 2, t + 3]) {
+    appStorage.setItem('plc-io-store', `{"set":${now}}`);
+    await flushAppStorage();
+    ls.clear();
+    await flushAppStorage(); resetAppStorage();
+    await loadAppStorage({ backend: idb, now });
+  }
+  const sets = new Set(appStorage.keys().filter((k) => k.startsWith(CLEARED_PREFIX)).map((k) => k.split(':')[1]));
+  assert.deepEqual([...sets].sort(), [String(t + 2), String(t + 3)]);
+  assert.ok(![...idb.data.keys()].some((k) => k.startsWith(`${CLEARED_PREFIX}${t + 1}:`)), 'an older set is gone from IndexedDB too');
+});
+
+await test('localStorage full and IndexedDB not writing: nothing gives way to a placeholder (it is the only copy)', async () => {
+  const full = new SmallStorage(300);
+  full.setItem('plc-project-data:b', 'b'.repeat(150));
+  full.setItem('plc-spec-store', 's'.repeat(300 - 150 - 'plc-project-data:b'.length - 'plc-spec-store'.length));
+  const was = ls.data; ls.data = full.data;
+  const limit = ls.limit; ls.limit = 300;
+  const broken = new MemoryBackend(); broken.failing = true;
+  resetAppStorage();
+  await loadAppStorage({ backend: broken, onFailure: () => {} });
+  assert.equal(ls.getItem('plc-project-data:b'), 'b'.repeat(150), 'still the real value');
+  assert.equal(ls.getItem(MARKER_KEY), null);
+  ls.data = was; ls.limit = limit;
+  await restart();
+});
+
 console.log(`appStorage.test: all passed (${passed})`);
