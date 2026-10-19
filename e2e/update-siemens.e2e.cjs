@@ -242,7 +242,7 @@ async function s1500(browser) {
   // Shown: the I/O list's Siemens address column, by tag.
   const shown = await page.locator('tr', { has: page.locator('input[aria-label^="PLC address for"]') }).evaluateAll((rows) => rows.map((r) => {
     const id = r.querySelector('input[aria-label^="PLC address for"]').getAttribute('aria-label').replace('PLC address for ', '');
-    return [id, r.children[2].textContent.trim()];
+    return [id, r.children[1].textContent.trim()];
   }));
   const out = await page.evaluate(async () => {
     const { collectProject } = await import('/src/deliverables/collect.ts');
