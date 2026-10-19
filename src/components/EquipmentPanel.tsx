@@ -12,7 +12,7 @@ import { getPart, partsIn } from '../electrical/catalog';
 import { getHmi } from '../hmi/hmiCatalog';
 import { normalizePreference } from '../electrical/catalogs';
 import { moduleSlots, ioCapacity } from '../plc/core/modules';
-import { cpuFit, findCpu, hmiFit, platformOf, type Need } from '../plc/core/fit';
+import { cpuFit, findCpu, hmiFit, modulesToFit, platformOf, type Need } from '../plc/core/fit';
 import { nearestPanel } from '../hmi/nearestPanel';
 import { recommendEquipment, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
 import { applyEquipment, recommendedChoice, usePendingEquipment, type EquipmentChoice } from '../spec/equipment';
@@ -245,17 +245,28 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                 <thead><tr>{['', 'Part number', 'Inputs', 'Outputs', 'Features', 'Fits this machine?'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
                 <tbody>
                   {shownCpus.map((c) => {
-                    const f = cpuFit(c, choice?.modules ?? [], need);
+                    // The modules chosen when they belong to this CPU's platform; a CPU with no (or too little) on-board
+                    // I/O (S7-1500, CompactLogix 5380) fits once its own I/O modules are added: say which, add them on Select.
+                    const platform = platformOf(c.id);
+                    const own = (choice?.modules ?? []).filter((m) => !platform || platform.modules.includes(m));
+                    const base = own.length === (choice?.modules ?? []).length ? own : [];
+                    const f0 = cpuFit(c, base, need);
+                    const grow = f0.ok ? null : modulesToFit(c.id, base, need);
+                    const f = grow ? cpuFit(c, grow, need) : f0;
+                    const added = grow ? grow.slice(base.length) : [];
+                    const family = [...new Set(added.map((m) => getPart(m)?.family?.replace(/^SIMATIC\s+/, '') ?? 'I/O'))].join(' / ');
                     const selected = choice?.cpuId === c.id;
+                    // Modules of another platform go with the CPU change (they do not fit this one).
+                    const pick = () => { if (f.ok) set({ ...withCpu(c.id), modules: grow ?? base }); };
                     return (
-                      <tr key={c.id} onClick={() => f.ok && set(withCpu(c.id))}
+                      <tr key={c.id} onClick={pick}
                         className={`${f.ok ? 'cursor-pointer hover:bg-brand-50' : 'text-steel-400 bg-steel-50/60 cursor-not-allowed'} ${selected ? 'bg-brand-100' : ''}`}>
                         <td className={td}><input type="radio" readOnly checked={selected} disabled={!f.ok} aria-label={`Choose ${c.id}`} /></td>
                         <td className={`${td} font-mono`}>{c.id}{rec?.plc.cpuId === c.id && <span className="ml-2 text-[10px] bg-brand-600 text-white px-1.5 py-0.5 rounded-sm font-sans">SUGGESTED</span>}</td>
                         <td className={td}>{c.builtInInputs}</td>
                         <td className={td}>{c.builtInOutputs}</td>
                         <td className={`${td} text-xs`}>{[/ethernet/i.test(c.label) && 'Ethernet', /analog/i.test(c.label) && 'Analog', /relay/i.test(c.label) && 'Relay out', /sourcing/i.test(c.label) && 'Sourcing out', /CLICK PLUS/.test(c.label) && 'CLICK PLUS', /built-in [\d.]+" touch screen/.test(c.label) && 'Built-in touch screen'].filter(Boolean).join(' · ')}</td>
-                        <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes · {f.spareIn} in / {f.spareOut} out spare</span> : f.reason}</td>
+                        <td className={`${td} text-xs`}>{f.ok ? <span className="text-green-700">Yes{added.length ? ` with ${added.length} ${family} module${added.length === 1 ? '' : 's'} (added when selected)` : ''} · {f.spareIn} in / {f.spareOut} out spare</span> : f.reason}</td>
                       </tr>
                     );
                   })}
