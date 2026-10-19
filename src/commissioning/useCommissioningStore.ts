@@ -17,15 +17,20 @@ interface CommissioningStore {
   setResult: (projectId: string | null, itemId: string, patch: Partial<CommResult>) => void;
   /**
    * Signs. Refused while any result is a failure, or an item that failed and was dismissed while removed
-   * is back in the checklist (currentIds) without a new result. A valid signature it replaces is kept on
-   * the record. True when stored.
+   * is back in the checklist without passing since. A valid signature it replaces is kept on the record.
+   * True when stored.
+   *
+   * currentIds: the ids of the checklist as it is now. The checklist is made from the project (I/O list,
+   * program, safety functions, alarms: commissioningItems(collectProject())), which this store does not
+   * own, so the caller passes it; the page passes the same items it shows and checks with signBlock.
    */
   sign: (projectId: string | null, signoff: CommSignoff, currentIds: string[]) => boolean;
   /** Removes the signature, on the record (who removed it: required). True when removed. */
   unsign: (projectId: string | null, by: string) => boolean;
   /**
    * Dismisses the failed result of an item no longer in the checklist, on the record (who: required).
-   * Refused for an item still in the checklist (currentIds), a result that is not a failure, or no name.
+   * Refused for an item still in the checklist (currentIds, as for sign), a result that is not a failure,
+   * or no name.
    */
   dismiss: (projectId: string | null, itemId: string, currentIds: string[], by: string) => boolean;
   clear: (projectId: string | null) => void;
@@ -73,7 +78,9 @@ export const useCommissioningStore = create<CommissioningStore>()(
           // a valid signature it replaces stays on the record
           const was = rec.signoff;
           const voided = was ? [...(rec.voided ?? []), { signoff: was, reason: 'replaced' as const, voidedAt: nowStamp(), voidedBy: signoff.name }] : rec.voided;
-          put(projectId, { ...rec, signoff, ...(voided ? { voided } : {}) });
+          // no empty keys (drawn: undefined): the record is the same after a project file save and open
+          const stored: CommSignoff = { name: signoff.name, company: signoff.company, signature: signoff.signature, date: signoff.date, ...(signoff.drawn ? { drawn: signoff.drawn } : {}) };
+          put(projectId, { ...rec, signoff: stored, ...(voided ? { voided } : {}) });
           return true;
         },
         unsign: (projectId, by) => {

@@ -123,11 +123,16 @@ assert.match(dismissedText(rec().dismissed!.at(-1)!), new RegExp(`^Failed result
 assert.equal(st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:20' }, without), true, 'signed while it is removed');
 assert.equal(st.unsign('proj', 'B. Owner'), true);
 assert.equal(st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:30' }, ids), false, 'back in the checklist without a new result: refused');
-assert.match(signBlock(items, rec().results, rec().dismissed) ?? '', new RegExp(`^1 item failed before and was dismissed while removed \\(.+\\): test it again\\.$`));
+assert.match(signBlock(items, rec().results, rec().dismissed) ?? '', new RegExp(`^1 item failed before and was dismissed while removed \\(.+\\): test it again; only a Pass clears it\\.$`));
+st.setResult('proj', back.id, { status: 'na', title: back.title });
+assert.equal(st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:35' }, ids), false, 'N/A does not clear a failure');
+assert.match(signBlock(items, rec().results, rec().dismissed) ?? '', /only a Pass clears it/);
 st.setResult('proj', back.id, { status: 'pass', title: back.title });
-assert.equal(signBlock(items, rec().results, rec().dismissed), null, 'tested again: it may be signed');
+assert.equal(signBlock(items, rec().results, rec().dismissed), null, 'tested again and passed: it may be signed');
 assert.equal(st.sign('proj', { name: 'B. Owner', company: 'Plant', signature: 'B. Owner', date: '2026-10-17 11:40' }, ids), true);
 assert.equal(st.sign('proj', { name: ' ', company: '', signature: 'x', date: '2026-10-17 11:50' }, ids), false, 'a sign-off needs a name in the store too');
+assert.ok(!('drawn' in rec().signoff!), 'no empty drawn key on a sign-off without a drawn signature');
+assert.match(dismissedText({ itemId: 'old', result: { status: 'fail', note: '', by: '', date: '' }, at: '2026-01-01 08:00', by: '' }), /dismissed 2026-01-01 08:00\.$/, 'an old dismissal with no name reads cleanly');
 
 // Records from storage or a project file: malformed ones are cleaned, never crash; legacy voided entries read as 'failed'.
 assert.deepEqual(cleanRecord({ voided: {}, results: { x: null, y: { status: 'bogus', note: 3 }, z: { status: 'fail', note: 'n', by: 'b', date: 'd' } }, signoff: { company: 'no name' } }),

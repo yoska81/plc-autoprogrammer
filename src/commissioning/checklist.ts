@@ -153,15 +153,16 @@ export function voidedText(v: VoidedSignoff, items: CommItem[]): string {
 
 export const dismissedText = (d: DismissedResult) => {
   const failed = [d.result.by && `by ${d.result.by}`, d.result.date].filter(Boolean).join(' ');
-  return `Failed result of ${d.result.title ? `${d.result.title} (${d.itemId})` : d.itemId}${failed ? `, failed ${failed}` : ''}${d.result.note ? `, note: ${d.result.note}` : ''}: no longer in the checklist, dismissed ${d.at} by ${d.by}.`;
+  return `Failed result of ${d.result.title ? `${d.result.title} (${d.itemId})` : d.itemId}${failed ? `, failed ${failed}` : ''}${d.result.note ? `, note: ${d.result.note}` : ''}: no longer in the checklist, dismissed ${d.at}${d.by ? ` by ${d.by}` : ''}.`;
 };
 
 /**
- * Items that failed, were dismissed while they were not in the checklist, and are back without a new
- * result: their failure still stands until they are tested again.
+ * Items that failed, were dismissed while they were not in the checklist, and are back without passing
+ * since: their failure stands until they are tested again and pass (N/A does not clear a failure — an
+ * E-stop that failed is not signed off as not applicable).
  */
 export const returnedDismissed = (ids: string[], rec: Pick<CommRecord, 'results' | 'dismissed'>): string[] =>
-  [...new Set((rec.dismissed ?? []).map((d) => d.itemId))].filter((id) => ids.includes(id) && !rec.results[id]?.status);
+  [...new Set((rec.dismissed ?? []).map((d) => d.itemId))].filter((id) => ids.includes(id) && rec.results[id]?.status !== 'pass');
 
 /** The store's rule for a sign-off (the page shows the same one as signBlock): no failed result, no returned dismissed failure. */
 export const signRefused = (ids: string[], rec: Pick<CommRecord, 'results' | 'dismissed'>): boolean =>
@@ -197,7 +198,7 @@ export function signBlock(items: CommItem[], results: Record<string, CommResult>
     const names = failed.slice(0, 3).map((it) => it.title).join('; ');
     parts.push(`${failed.length} failed item${failed.length === 1 ? '' : 's'} (${names}${failed.length > 3 ? '; …' : ''}): fix ${failed.length === 1 ? 'it' : 'them'} and test again before signing off.`);
   }
-  if (back.length) parts.push(`${back.length} item${back.length === 1 ? '' : 's'} failed before and ${back.length === 1 ? 'was' : 'were'} dismissed while removed (${back.slice(0, 3).join('; ')}${back.length > 3 ? '; …' : ''}): test ${back.length === 1 ? 'it' : 'them'} again.`);
+  if (back.length) parts.push(`${back.length} item${back.length === 1 ? '' : 's'} failed before and ${back.length === 1 ? 'was' : 'were'} dismissed while removed (${back.slice(0, 3).join('; ')}${back.length > 3 ? '; …' : ''}): test ${back.length === 1 ? 'it' : 'them'} again; only a Pass clears it.`);
   if (orphans.length) parts.push(`${orphans.length} failed result${orphans.length === 1 ? '' : 's'} of item${orphans.length === 1 ? '' : 's'} no longer in the checklist: dismiss ${orphans.length === 1 ? 'it' : 'them'} below.`);
   return parts.length ? parts.join(' ') : null;
 }

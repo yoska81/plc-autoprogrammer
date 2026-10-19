@@ -38,7 +38,7 @@ function Item({ it, r, onSet, returned }: { it: CommItem; r: CommResult | undefi
           <p className="text-sm font-medium text-steel-900">{it.title}{it.device && <span className="ml-2 text-xs font-normal text-steel-500">{it.device}</span>}</p>
           <p className="text-xs text-steel-600"><span className="font-semibold">Do: </span>{it.procedure}</p>
           <p className="text-xs text-steel-700"><span className="font-semibold">Expect: </span>{it.expected}</p>
-          {returned && <p className="text-xs font-semibold text-red-700" data-testid="comm-returned">Failed before, dismissed while it was removed: test it again.</p>}
+          {returned && <p className="text-xs font-semibold text-red-700" data-testid="comm-returned">Failed before, dismissed while it was removed: test it again (only a Pass clears it).</p>}
         </div>
         <div className="flex shrink-0 gap-1" role="group" aria-label={`Result of ${it.title}`}>
           {(['pass', 'fail', 'na'] as const).map((st) => (
