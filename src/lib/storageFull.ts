@@ -14,9 +14,9 @@ const AGAIN_MS = 120_000;
 
 const isFull = (e: unknown) => e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22);
 
-/** Say it (a moment from now, then at most every 2 minutes). */
-export function tellStorageFull(): void {
-  if (Date.now() - toldAt <= AGAIN_MS) return;
+/** Say it (a moment from now, then at most every 2 minutes); a backup copy that is not kept is not the project. */
+export function tellStorageFull(key = ''): void {
+  if (key.startsWith('plc-backup:') || Date.now() - toldAt <= AGAIN_MS) return;
   toldAt = Date.now();
   setTimeout(() => notify(STORAGE_FULL), 1000);
 }
@@ -32,7 +32,7 @@ export function installStorageFullNotice(storage: Storage | undefined = globalTh
     try {
       setItem.call(this, key, value);
     } catch (e) {
-      if (isFull(e)) tellStorageFull();
+      if (isFull(e) && this === storage) tellStorageFull(key);
       throw e;
     }
   };

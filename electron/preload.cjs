@@ -27,6 +27,13 @@ contextBridge.exposeInMainWorld('isaDesktop', {
     ipcRenderer.on('isa:open-file', h);
     return () => { ipcRenderer.removeListener('isa:open-file', h); };
   },
+  // Closing the window waits for the page's last writes to IndexedDB (main.cjs, 'close').
+  onFlushStorage: (flush) => {
+    ipcRenderer.on('isa:flush-storage', async () => {
+      try { await flush(); } finally { ipcRenderer.send('isa:storage-flushed'); }
+    });
+    ipcRenderer.send('isa:flush-ready');
+  },
   // DWG import: GNU LibreDWG's dwg2dxf shipped with the installer, or another reader (electron/dwgReader.cjs)
   dwg: {
     status: () => ipcRenderer.invoke('isa:dwg-status'),

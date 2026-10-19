@@ -11,7 +11,8 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
 
 (async () => {
   const browser = await chromium.launch();
-  const page = await browser.newPage();
+  const context = await browser.newContext();
+  const page = await context.newPage();
   await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -35,7 +36,28 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
     const inLs = await page.evaluate(() => localStorage.getItem('plc-program-store'));
     check(inLs === '\u0000in-indexeddb', 'too big for localStorage: kept in IndexedDB (a placeholder in localStorage)');
 
-    await page.waitForTimeout(1000); // the IndexedDB write waits for the changes to stop
+    // closing while the program (only IndexedDB holds it) is being written: the browser asks to stay
+    const dialogs = [];
+    const onDialog = (d) => { dialogs.push(d.type()); void d.dismiss(); };
+    page.on('dialog', onDialog);
+    await page.evaluate(async () => {
+      const st = (await appImport('/src/store/useProgramStore.ts')).useProgramStore;
+      st.setState({ ladder: { ...st.getState().ladder } }); // a change: written again in a moment
+      location.reload();
+    });
+    await page.waitForTimeout(500);
+    page.off('dialog', onDialog);
+    check(dialogs.includes('beforeunload'), `leaving while it is being written asks first (${dialogs.join() || 'no dialog'})`);
+    // another tab of the app sees what this one writes
+    const other = await context.newPage();
+    await useAppModules(other);
+    await other.goto(BASE + '/spec');
+    await other.waitForSelector('nav');
+    await page.evaluate(async () => (await appImport('/src/lib/appStorage.ts')).appStorage.setItem('plc-project-data:probe', '{"from":"first tab"}'));
+    await other.waitForTimeout(300);
+    check(await other.evaluate(async () => (await appImport('/src/lib/appStorage.ts')).appStorage.getItem('plc-project-data:probe')) === '{"from":"first tab"}', 'another tab reads the copy this tab saved (not an old one)');
+    await other.close();
+    await page.evaluate(async () => { const m = await appImport('/src/lib/appStorage.ts'); m.appStorage.removeItem('plc-project-data:probe'); await m.flushAppStorage(); });
     await page.reload();
     await page.waitForSelector('nav');
     check(await rungsOf() === rungs, 'after a reload the whole program is there');

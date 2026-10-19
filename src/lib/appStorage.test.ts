@@ -6,7 +6,8 @@
  * Run with:  npx tsx src/lib/appStorage.test.ts
  */
 import assert from 'node:assert/strict';
-import { appPersistStorage, appStorage, flushAppStorage, IN_IDB, loadAppStorage, MARKER_KEY, resetAppStorage, type StorageBackend } from './appStorage';
+import { deepScan } from '../components/recoverScan';
+import { appPersistStorage, appStorage, CLEARED_PREFIX, flushAppStorage, IN_IDB, loadAppStorage, MARKER_KEY, resetAppStorage, storageBusy, type StorageBackend } from './appStorage';
 
 /** localStorage that holds at most `limit` characters. */
 class SmallStorage {
@@ -38,7 +39,7 @@ class MemoryBackend implements StorageBackend {
 const ls = new SmallStorage(1000);
 Object.defineProperty(globalThis, 'localStorage', { configurable: true, get: () => asStorage(ls) });
 const idb = new MemoryBackend();
-const restart = async (onFailure?: (e: unknown) => void) => { await flushAppStorage(); resetAppStorage(); await loadAppStorage({ backend: idb, onFailure }); };
+const restart = async (onFailure?: (e: unknown, key: string) => void) => { await flushAppStorage(); resetAppStorage(); await loadAppStorage({ backend: idb, onFailure }); };
 
 let passed = 0;
 const test = async (name: string, fn: () => Promise<void> | void) => { await fn(); passed++; console.log('  ok ', name); };
@@ -99,13 +100,69 @@ await test('localStorage full, not even the placeholder fits: the IndexedDB copy
   ls.removeItem('filler');
 });
 
-await test('localStorage cleared: the app starts clean (IndexedDB\'s old values are dropped)', async () => {
+await test('localStorage cleared: the app starts clean; what only IndexedDB had is kept aside, never deleted', async () => {
   ls.clear();
   ls.setItem('plc-settings-store', '{"fresh":true}');
   await restart();
-  assert.deepEqual(appStorage.keys(), ['plc-settings-store']);
-  assert.equal(appStorage.getItem('plc-program-store'), null);
-  assert.equal(idb.data.has('plc-program-store'), false);
+  assert.equal(appStorage.getItem('plc-program-store'), null, 'clean');
+  assert.equal(appStorage.getItem('plc-settings-store'), '{"fresh":true}');
+  const aside = appStorage.keys().filter((k) => k.startsWith(CLEARED_PREFIX));
+  assert.ok(aside.some((k) => k.endsWith(':plc-program-store')), aside.join());
+  assert.equal(appStorage.getItem(aside.find((k) => k.endsWith(':plc-program-store'))!), big, 'the old program is kept aside');
+  assert.ok([...idb.data.keys()].some((k) => k.startsWith(CLEARED_PREFIX) && k.endsWith(':plc-program-store')));
+  await restart();
+  assert.equal(appStorage.getItem('plc-program-store'), null, 'still clean after another start');
+});
+
+await test('localStorage full at the first start: the marker still goes in, nothing is set aside or lost', async () => {
+  const old = new SmallStorage(1000);
+  const copy = JSON.stringify({ program: 'p'.repeat(300) });
+  old.setItem('plc-project-data:a', copy);
+  old.setItem('plc-backup:2026-01-01', copy);
+  const used = [...old.data].reduce((n, [k, v]) => n + k.length + v.length, 0);
+  old.setItem('plc-program-store', 'q'.repeat(old.limit - used - 'plc-program-store'.length)); // full
+  const was = ls.data; ls.data = old.data;
+  const fresh = new MemoryBackend();
+  resetAppStorage();
+  await loadAppStorage({ backend: fresh });
+  assert.equal(ls.getItem(MARKER_KEY), 'indexeddb-1');
+  await flushAppStorage(); resetAppStorage();
+  await loadAppStorage({ backend: fresh });
+  assert.equal(appStorage.getItem('plc-project-data:a'), copy);
+  assert.equal(appStorage.getItem('plc-backup:2026-01-01'), copy);
+  assert.ok(!appStorage.keys().some((k) => k.startsWith(CLEARED_PREFIX)));
+  ls.data = was;
+  await restart();
+});
+
+await test('closing while a value only IndexedDB will hold is being written: busy (the window waits or asks)', async () => {
+  const held: (() => void)[] = [];
+  const release = () => { for (const go of held.splice(0)) go(); };
+  const slow = new MemoryBackend();
+  const put = slow.put.bind(slow);
+  slow.put = (k, v) => new Promise<void>((resolve) => { held.push(() => void put(k, v).then(resolve)); });
+  resetAppStorage();
+  await loadAppStorage({ backend: slow });
+  release(); await flushAppStorage(); // the copies made at the start
+  appStorage.setItem('plc-io-store', '{"small":true}');
+  assert.equal(storageBusy(), false, 'a value that fits in localStorage is safe there');
+  appStorage.setItem('plc-program-store', big);
+  assert.equal(storageBusy(), true, 'waiting to be written');
+  const done = flushAppStorage();
+  assert.equal(storageBusy(), true, 'being written');
+  release();
+  await done;
+  assert.equal(storageBusy(), false);
+  await restart();
+});
+
+await test('IndexedDB did not open: a value only it holds is not shown and never written over', async () => {
+  ls.setItem('plc-hmi-store', IN_IDB);
+  resetAppStorage();
+  assert.equal(appStorage.getItem('plc-hmi-store'), null);
+  appStorage.setItem('plc-hmi-store', '{"empty":true}');
+  assert.equal(ls.getItem('plc-hmi-store'), IN_IDB);
+  await restart();
 });
 
 await test('removed: gone from both', async () => {
@@ -135,6 +192,17 @@ await test('a store\'s state is written once its changes stop (a burst of change
   await flushAppStorage();
   assert.equal(ls.getItem('plc-spec-store'), '{"state":{"n":3},"version":0}');
   assert.equal(idb.data.get('plc-spec-store'), '{"state":{"n":3},"version":0}');
+});
+
+await test('a program kept aside after a clear is found by the deep scan (Recover work)', async () => {
+  const program = JSON.stringify({ state: { ladder: { rungs: [{ id: 'r1', comment: 'Old start rung', branches: [], outputs: [] }], tags: [] }, projectName: 'Old line' }, version: 0 });
+  appStorage.setItem('plc-program-store', program);
+  await flushAppStorage();
+  ls.clear();
+  await restart();
+  assert.equal(appStorage.getItem('plc-program-store'), null);
+  const found = deepScan({ ladder: { rungs: [], tags: [] }, spec: {} }).find((x) => x.kind === 'program');
+  assert.match(found?.where ?? '', /^Open project \(from before the app's storage was cleared\) \(Old line\)$/);
 });
 
 console.log(`appStorage.test: all passed (${passed})`);
