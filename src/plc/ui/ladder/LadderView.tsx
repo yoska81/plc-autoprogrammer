@@ -15,7 +15,7 @@ import type { LadderElement, LadderOutput, LadderProgram, Rung } from '../../cor
 import type { RungChange } from '../../core/diff';
 import type { ValidationIssue } from '../../core/validate';
 import { ElementCell, OutputCell } from './RungSymbol';
-import { MnemonicsContext } from './mnemonics';
+import { MnemonicsContext, PlcNamesContext, type PlcNameOf } from './mnemonics';
 import { useProjectStore } from '../../../store/useProjectStore';
 import { getProfile } from '../../core/profiles';
 import ElementEditor from './ElementEditor';
@@ -51,6 +51,8 @@ export interface LadderViewProps {
   editTools?: boolean;
   /** Addresses offered in the instruction editor (the project's I/O in the chosen PLC's addressing). */
   choices?: AddressChoice[];
+  /** The PLC's own names for the operands (Siemens / Logix): shown on top, the app operand in the small line. */
+  plcNames?: PlcNameOf;
 }
 
 const NO_ISSUES: ValidationIssue[] = [];
@@ -473,7 +475,7 @@ const RungRow = memo(function RungRow(props: RungRowProps) {
 });
 
 export default function LadderView({
-  program, onChange, labels, changes, issues = NO_ISSUES, selectedRungId = null, onSelectRung, numberOf, zoom = 1, progressive = false, editTools, choices,
+  program, onChange, labels, changes, issues = NO_ISSUES, selectedRungId = null, onSelectRung, numberOf, zoom = 1, progressive = false, editTools, choices, plcNames,
 }: LadderViewProps) {
   const [editing, setEditingPath] = useState<EditPath | null>(null);
   // The selected contact / output stays selected after its editor closes (for Delete and the edit bar).
@@ -574,6 +576,7 @@ export default function LadderView({
 
   return (
     <MnemonicsContext.Provider value={mnemonics}>
+    <PlcNamesContext.Provider value={plcNames}>
     {/* Focusable (not in the tab order): a click anywhere in the ladder puts the focus here, for the Delete key. */}
     <div ref={root} tabIndex={-1} className="h-full overflow-auto bg-white outline-none">
       {editTools && editable && (
@@ -658,6 +661,7 @@ export default function LadderView({
       </div>
       {editorEl}
     </div>
+    </PlcNamesContext.Provider>
     </MnemonicsContext.Provider>
   );
 }

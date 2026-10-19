@@ -39,6 +39,7 @@ import { useUi } from '../../../store/useUiStore';
 import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
 import VoiceTextarea from '../../../voice/VoiceTextarea';
 import SpeakButton from '../../../voice/SpeakButton';
+import { usePlcNames } from '../ladder/plcNames';
 
 type Tab = 'describe' | 'fix' | 'history';
 
@@ -181,6 +182,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     const rack = { profile: ctx.profile, cpu: ctx.cpu, modules };
     return [...labels].map(([address, label]) => ({ address, label, native: nativeName(rack, address), kind: ctx.profile.parseAddress(address)?.kind ?? (/^X\d/.test(address) ? 'input' : /^Y\d/.test(address) ? 'output' : undefined) }));
   }, [labels, ctx.profile, ctx.cpu, modules]);
+  // Siemens / Logix: the PLC's own tag names on the ladder (the names in the exported program).
+  const plcNames = usePlcNames(ladder);
   const [xrefAddress, setXrefAddress] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [scrollTo, setScrollTo] = useState<{ id: string; n: number } | null>(() => (searchParams.get('rung') ? { id: searchParams.get('rung')!, n: 0 } : null));
@@ -557,7 +560,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
         {/* The ladder diagram pans both ways. */}
         <div ref={ladderBox} {...phonePanel(narrow, 'program', 'ladder')} className={`flex-1 min-w-0 overflow-auto${narrow && pane !== 'ladder' ? ' hidden' : ''}`} data-scroll-x="">
           {review ? (
-            <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} zoom={zoom} />
+            <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} zoom={zoom} plcNames={plcNames} />
           ) : ladder.rungs.length ? (
             <>
             {isGenerating && (
@@ -565,8 +568,9 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 <Spinner className="h-3.5 w-3.5 text-brand-800" /> The AI is working on the program. Hand edits are paused until it finishes, so they are not lost.
               </div>
             )}
-            {ladder.sequence && (activeBlock === null || activeBlock === 'cycle') && <SequenceTable sequence={ladder.sequence} labels={labels} />}
+            {ladder.sequence && (activeBlock === null || activeBlock === 'cycle') && <SequenceTable sequence={ladder.sequence} labels={labels} plcNames={plcNames} />}
             <LadderView
+              plcNames={plcNames}
               program={shown}
               onChange={isGenerating ? undefined : activeBlock === null ? handEdit : (p) => handEdit(mergeBlock(ladder, activeBlock, p))}
               zoom={zoom}
