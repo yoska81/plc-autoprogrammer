@@ -22,7 +22,7 @@ import { processLoads } from './process';
 import { num, Picker } from './select';
 import { controlInputAmps, motionDesign, motionDeviceType } from '../motion';
 import { commModulesFor } from '../commModule';
-import type { NetworkAxisInput } from '../mechatrolink';
+import { isNetworkServoText, yaskawaCpuPart, type NetworkAxisInput } from '../mechatrolink';
 
 export { defaultMachineModel, type MachineModel } from './machineModel';
 
@@ -97,7 +97,10 @@ function enclosureCandidates(pk: Picker, rating: DesignInputs['enclosureRating']
 
 interface Trial { components: DesignComponent[]; spare: number; fits: boolean; ok: boolean; enc: CatalogPart; notes: string[]; score: number[] }
 
-export function generateDesign(input: EngineInput): EngineResult {
+export function generateDesign(input0: EngineInput): EngineResult {
+  // A Yaskawa CPU id from the PLC profile ("CPU-301") stands for its catalog part (JAPMC-CP3301-1-E).
+  const cpuPn = yaskawaCpuPart(input0.plc.cpuPartNumber);
+  const input = cpuPn === input0.plc.cpuPartNumber ? input0 : { ...input0, plc: { ...input0.plc, cpuPartNumber: cpuPn } };
   const { inputs, getPart } = input;
   const supply = inputs.supply;
   const pk = new Picker(input.pref ?? DEFAULT_PREFERENCE);
@@ -108,8 +111,17 @@ export function generateDesign(input: EngineInput): EngineResult {
   const motion = motionDesign({ io: input.io, addresses: input.addresses, supply, region: input.region, pref: input.pref, spec: input.spec, nextTag: (p) => tags.next(p), extraParts: input.motionParts,
     cpu: getPart(input.plc.cpuPartNumber), networkAxes: input.networkAxes });
   const io = input.io.filter((p) => !motion.claimed.has(p.id));
-  const model = drivesFromIo(input.model, io, input.spec ?? '');
+  // A MECHATROLINK-III servo machine: a motor in the motor list that is a servo axis ("Servo drive 1", "Axis 3",
+  // "Main drive" read from the program's I/O comments) is a SERVOPACK axis above, never an AC motor on a VFD.
+  // (a motor the motor list read from one of the servo signals, e.g. "Main" from "Main drive run", is one too)
+  const words = (t: string) => t.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !/^(motor|run|drive|the|and|ready|enable|fault|reset|alarm|output|input|servo|axis)$/.test(w));
+  const fromSignal = (m: { description: string }) => { const mw = words(m.description); return mw.length > 0 && [...(motion.networkSignals ?? []), ...(input.networkAxes ?? []).map((a) => a.name)].some((d) => mw.every((w) => words(d).includes(w))); };
+  const servoMotors = motion.networkServo ? input.model.motors.filter((m) => isNetworkServoText(m.description) || fromSignal(m)) : [];
+  const dropped = (t: string) => servoMotors.some((m) => t.startsWith(`${m.description.replace(/ motor$/i, '')}:`) || t.includes(`${m.tag} `));
+  const baseModel = servoMotors.length ? { ...input.model, motors: input.model.motors.filter((m) => !servoMotors.includes(m)), assumptions: input.model.assumptions.filter((t) => !dropped(t)) } : input.model;
+  const model = drivesFromIo(baseModel, io, input.spec ?? '');
   const notes: string[] = [...motion.notes];
+  if (servoMotors.length) notes.push(`${servoMotors.map((m) => `${m.tag} ${m.description}`).join(', ')}: a servo axis on MECHATROLINK-III, not an AC motor — left out of the motor circuits (no VFD or starter). Only AC induction motors get a VFD or starter.`);
   const askUser: string[] = [...model.assumptions, ...motion.askUser];
 
   // Discrete PLC points with addresses (analog channels are wired by electrical/analog.ts).
@@ -137,7 +149,8 @@ export function generateDesign(input: EngineInput): EngineResult {
   notes.push(...dev.notes);
   askUser.push(...dev.askUser);
 
-  const plc: DesignComponent[] = [comp('PLC', input.plc.cpuPartNumber, 1, 'PLC CPU')];
+  const cpu0 = getPart(input.plc.cpuPartNumber);
+  const plc: DesignComponent[] = [comp('PLC', input.plc.cpuPartNumber, 1, cpu0?.ratings.builtInFunctions ? `PLC CPU ${cpu0.ratings.series ?? ''} — built in: ${cpu0.ratings.builtInFunctions} (no separate parts)` : 'PLC CPU')];
   input.modules.forEach((pn, i) => {
     const p = getPart(pn);
     const discrete = num(p?.ratings.inputs) || num(p?.ratings.outputs);

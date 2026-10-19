@@ -32,7 +32,7 @@ import { SUPPLY_INFO, type Region } from '../standards/regions';
 import type { CatalogPart, DesignComponent, FieldDeviceType, IOWiring, SupplyVoltage } from './types';
 import type { IOPoint } from '../types/io';
 import { pointsFromText } from './highSpeedIo';
-import { axesFromSpec, isMechatrolinkCpu, type NetworkAxisInput } from './mechatrolink';
+import { axesFromSpec, isNetworkServoProject, isNetworkServoText, type NetworkAxisInput } from './mechatrolink';
 
 const num = (v: unknown): number | undefined => {
   const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
@@ -280,6 +280,10 @@ export interface MotionResult {
   axes: ServoAxis[];
   /** Line current of the servo drives (A): a continuous load for the main disconnect. */
   loadA: number;
+  /** Servo axes over MECHATROLINK-III: the motor rules must not turn a servo axis into a VFD motor. */
+  networkServo?: boolean;
+  /** The I/O descriptions taken as MECHATROLINK-III servo signals (a motor read from one of them is no AC motor). */
+  networkSignals?: string[];
 }
 
 /**
@@ -327,10 +331,11 @@ export function motionDesign(input: MotionInput): MotionResult {
   const info = SUPPLY_INFO[input.supply];
 
   // ---- Servo axes over MECHATROLINK-III (Yaskawa MP3300): from the axis list, not from I/O points
-  if (isMechatrolinkCpu(input.cpu)) networkServos(input, out, pick);
+  const network = isNetworkServoProject(input.cpu, input.networkAxes);
+  if (network) networkServos(input, out, pick);
 
   // ---- Servo axes
-  const servoPoints = isMechatrolinkCpu(input.cpu) ? [] : input.io.filter(isServoPoint);
+  const servoPoints = network ? [] : input.io.filter(isServoPoint);
   const byAxis = new Map<string, IOPoint[]>();
   for (const p of servoPoints) byAxis.set(axisKey(p.description), [...(byAxis.get(axisKey(p.description)) ?? []), p]);
   for (const [key, pts] of byAxis) {
@@ -452,6 +457,12 @@ export function motionDesign(input: MotionInput): MotionResult {
  * next drive CN6A …; no terminator). Drives that do not take the panel supply get a note (200 V Sigma-7 on 480 V).
  */
 function networkServos(input: MotionInput, out: MotionResult, pick: (ok: (p: CatalogPart) => boolean, size?: (p: CatalogPart) => number) => CatalogPart | undefined) {
+  out.networkServo = true;
+  // I/O points that name a servo drive or axis: their signals go over MECHATROLINK-III — no field wiring, never a VFD.
+  const netPoints = input.io.filter((p) => p.signal !== 'analog' && isNetworkServoText(p.description));
+  for (const p of netPoints) out.claimed.add(p.id);
+  out.networkSignals = netPoints.map((p) => p.description);
+  if (netPoints.length) out.notes.push(`${netPoints.length} I/O point${netPoints.length > 1 ? 's name' : ' names'} a servo drive or axis (${netPoints.slice(0, 4).map((p) => p.description).join(', ')}${netPoints.length > 4 ? '…' : ''}): on MECHATROLINK-III these signals go over the network to the SERVOPACKs — not wired as field I/O, and never a VFD. If one is a separate AC motor on a VFD, name it "VFD" in its description.`);
   const all = input.networkAxes?.length ? input.networkAxes : axesFromSpec(input.spec ?? '');
   const info = SUPPLY_INFO[input.supply];
   const cls = info.volts >= 380 ? 460 : 230;

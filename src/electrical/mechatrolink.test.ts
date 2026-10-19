@@ -84,4 +84,38 @@ assert.ok(sgdv.notes.some((n) => /SGDV-280D21A: catalog data not fully verified/
 const big = generateDefaultDesign({ ...input, inputs: { ...input.inputs, supply: '480VAC-3PH' }, spec: `${base.spec}\nAxis 1 11 kW` }).design;
 assert.ok(!big.components.some((c) => c.partNumber === 'SGDV-280D21A'), 'legacy drive never generated for a new axis');
 assert.ok(big.notes.some((n) => /Axis 1: no MECHATROLINK-III SERVOPACK/.test(n)));
+
+// The user's machine (report on project 1317: 13 VFDs, no SERVOPACK): 8 axes from the imported program's axis list
+// (2 SGDV stations kept, 3 SGD7W stations of 2 axes), the CPU named as the profile names it ("CPU-301"), no AC motors,
+// and I/O comments that say "drive": 5 SERVOPACKs, no VFD, no starter, the CPU-301 on its base unit, remote I/O.
+const nax = (axis: number, drive: string, motor: string) => ({ key: `ax${axis}`, name: `Axis ${axis}`, circuit: 1, axis, kind: 'servo' as const, drivePartNumber: drive, motorPartNumber: motor, source: 'import' as const });
+const networkAxes = [nax(1, 'SGDV-280D21A', 'SGMGV-1ADDA61'), nax(2, 'SGDV-280D21A', 'SGMGV-1ADDA61'),
+  ...[3, 4, 5, 6, 7, 8].map((n) => nax(n, 'SGD7W-2R8A20A700', n === 3 ? 'SGM7J-04AFA6C' : 'SGM7J-04AFA61'))];
+const driveIo = ['Servo drive 1 enable', 'Servo drive 2 enable', 'Axis 3 drive ready', 'Main drive run', 'SGD7W alarm reset']
+  .map((description, i) => ({ id: `nd${i}`, category: 'Operator/HMI', description, type: 'output' })) as typeof base.io;
+const addr = new Map(base.addresses); driveIo.forEach((p, i) => addr.set(p.id, `OB0001${i}`));
+const user = { ...base, io: [...base.io.filter((p) => !/conveyor/i.test(p.description)), ...driveIo], addresses: addr, inputs: { ...base.inputs, supply: '480VAC-3PH' as const, motors: [] }, spec: 'Roll forming line, 8 servo axes on MECHATROLINK-III.',
+  modules: [], networkAxes, plc: { vendor: 'Yaskawa', name: 'MP2000 / MP3000 (MPE720)', cpuPartNumber: 'CPU-301', cpuLabel: 'CPU-301' } };
+const ud = generateDefaultDesign(user).design;
+const ofCat = (c: string) => ud.components.filter((x) => getPart(x.partNumber)?.category === c);
+assert.deepEqual(ofCat('servoDrive').map((c) => c.partNumber), ['SGDV-280D21A', 'SGDV-280D21A', 'SGD7W-2R8A20A700', 'SGD7W-2R8A20A700', 'SGD7W-2R8A20A700'], '5 SERVOPACKs');
+assert.equal(ofCat('vfd').length, 0, 'no VFD for a servo axis');
+assert.equal(ofCat('contactor').filter((c) => c.motorTag).length, 0, 'no motor starter');
+assert.equal(ofCat('servoMotor').length, 8);
+assert.equal(ud.components.find((c) => c.tag === 'PLC')?.partNumber, 'JAPMC-CP3301-1-E', 'CPU-301 is its catalog part');
+assert.match(ud.components.find((c) => c.tag === 'PLC')!.function, /built in: 218IFD/);
+assert.ok(ud.components.some((c) => getPart(c.partNumber)?.ratings.kind === 'plc-base-unit'), 'on its MP3300 base unit');
+assert.equal(ud.components.filter((c) => /^NW\d/.test(c.tag)).length, 5, 'one MECHATROLINK-III cable per station');
+assert.ok(ud.notes.some((n) => /Main drive run/.test(n) && /never a VFD/.test(n)));
+const uctx = { ...ctxFor(user, ud), plc: user.plc };
+const uw = designWarnings(uctx);
+assert.ok(uw.some((w) => /existing remote I\/O \(not identified\)/.test(w)) && !uw.some((w) => /over capacity/.test(w)), 'remote I/O, no "add a module"');
+assert.ok(!panelLayout(uctx).items.some((i) => /^IO\d/.test(i.tag)), 'no rack I/O modules drawn');
+// A motor the motor list has under an axis's name ("Feed roll" = axis 3's name) is that servo axis, not a VFD motor;
+// a real AC motor (hydraulic pump) keeps its starter.
+const named = { ...user, spec: `${user.spec} Hydraulic pump motor 5 HP on a starter.`, networkAxes: networkAxes.map((a) => (a.axis === 3 ? { ...a, name: 'Feed roll' } : a)),
+  inputs: { ...user.inputs, motors: [{ tag: 'M1', description: 'Feed roll motor', hp: 1, voltage: '480VAC-3PH' as const, starter: 'vfd' as const, reversing: false }, { tag: 'M2', description: 'Hydraulic pump motor', hp: 5, voltage: '480VAC-3PH' as const, starter: 'contactor-overload' as const, reversing: false }] } };
+const nd = generateDefaultDesign(named).design;
+assert.equal(nd.components.filter((x) => getPart(x.partNumber)?.category === 'vfd').length, 0, 'Feed roll is a servo axis');
+assert.ok(nd.components.some((x) => x.motorTag === 'M2' && getPart(x.partNumber)?.category === 'contactor'), 'the pump keeps its starter');
 console.log('mechatrolink tests passed');
