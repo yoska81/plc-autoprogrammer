@@ -21,7 +21,7 @@ if (big) assert.equal(compareStrength(mid, big).ok, true);
 console.log('strength tests passed');
 
 // Voltage ratings written as text are compared (AC with AC).
-import { keyRatings, parseVolts } from './strength';
+import { acceptsFeed, keyRatings, parseVolts } from './strength';
 import { getPart } from './catalog';
 assert.deepEqual(parseVolts('480Y/277 VAC/125 VDC'), { ac: 480, dc: 125 });
 assert.deepEqual(parseVolts('240 VAC/125 VDC'), { ac: 240, dc: 125 });
@@ -67,3 +67,13 @@ assert.ok(compareStrength(getPart('PSR-24-240-3')!, getPart('ABL8RPS24100')!).ok
 assert.ok(compareStrength(getPart('PSR-24-240')!, getPart('ABL8RPS24100')!).ok, 'and a 120 / 240 V one');
 assert.ok(!compareStrength(getPart('ABL8RPS24100')!, getPart('PSR-24-240-3')!).ok, 'a 3-phase supply needs all three lines');
 console.log('power supply input tests passed');
+// The design's feed: greyed out when the candidate's AC input range doesn't hold it ("~" ranges, "3 x" prefixes too).
+assert.equal(acceptsFeed({ inputVolts: '90~264VAC / 127~370VDC' }, 480), false);
+assert.equal(acceptsFeed({ inputVolts: '90~264VAC / 127~370VDC' }, 120), true);
+assert.equal(acceptsFeed({ inputVolts: '3 x 340-575 VAC / 480-820 VDC (rated 3 x 400-500 VAC)' }, 480), true);
+assert.equal(acceptsFeed({ inputVolts: '120/230 VAC' }, 240), true);
+assert.equal(acceptsFeed({ inputVolts: '19.2…31.2V DC' }, 120), undefined, 'DC input: no AC answer');
+assert.match(compareStrength(getPart('PSR-24-240')!, getPart('ABL8RPS24100')!, { feedVolts: 480 }).reason, /^Equivalent|^Stronger/);
+assert.match(compareStrength(getPart('ABL8RPS24100')!, getPart('PSR-24-240')!, { feedVolts: 480 }).reason, /does not take the 480 V feed|^Different input/);
+assert.ok(compareStrength(getPart('PSR-24-240')!, getPart('PSN24-240')!, { feedVolts: 120 }).ok, 'same class, takes 120 V');
+console.log('power supply feed tests passed');

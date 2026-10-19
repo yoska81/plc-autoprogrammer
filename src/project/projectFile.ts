@@ -15,6 +15,7 @@ import { useLayoutStore } from '../electrical/layout/useLayoutStore';
 import { useQuestionStore } from '../components/questions/useQuestionStore';
 import { useCheckoutStore } from '../online/useCheckoutStore';
 import { useCommissioningStore } from '../commissioning/useCommissioningStore';
+import { cleanRecord } from '../commissioning/checklist';
 import { useRedlineStore } from '../redlines/useRedlineStore';
 import { useLabelSetupStore } from '../electrical/labels/setup';
 import { useFaultLogStore } from '../troubleshoot/useFaultLogStore';
@@ -97,7 +98,7 @@ export async function openProjectFile(file: Blob): Promise<{ id: string; name: s
   if (pp.layout) useLayoutStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.layout as never } }));
   if (pp.questions) useQuestionStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.questions as never } }));
   if (pp.checkout) useCheckoutStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.checkout as never } }));
-  if (pp.commissioning) useCommissioningStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.commissioning as never } }));
+  if (pp.commissioning) useCommissioningStore.setState((s) => ({ byProject: { ...s.byProject, [id]: cleanRecord(pp.commissioning) } }));
   if (pp.redlines) useRedlineStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.redlines as never } }));
   if (pp.faultLog) useFaultLogStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.faultLog as never } }));
   if (pp.labels) useLabelSetupStore.setState((s) => ({ byProject: { ...s.byProject, [id]: pp.labels as never } }));

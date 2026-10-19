@@ -64,7 +64,7 @@ export function plcTagNames(profile: PlcProfile, program: LadderProgram, ctx: Ex
         const t = /^T(\d+)(_ET)?$/.exec(v.base);
         if (t && v.type !== 'TON' && v.type !== 'TOF') { out.set(t[2] ? `TD${t[1]}` : v.base, { name: v.name, scope: 'Global', dataType: v.type }); continue; }
         if (/_(TON|ACC|LAST|WAS)$/.test(v.base)) continue;
-        addIec(out, v.base, v.name, v.type, 'Global', profile.ioTag?.(v.base, ctx.modules ?? []) ?? undefined, { bool: 'BOOL', time: 'TIME', dint: 'INT' });
+        addIec(out, v.base, v.name, v.type, 'Global', profile.ioTag?.(v.base, ctx.modules ?? [], ctx.cpuId) ?? undefined, { bool: 'BOOL', time: 'TIME', dint: 'INT' });
       }
       break;
     }

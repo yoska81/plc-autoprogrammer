@@ -37,6 +37,7 @@ import { CABINET, type LayoutForDesign } from './layout/types';
 import { iecColor, iecMotorCurrent, isIec, mm2For, mm2FromAwg, mm2Text, regionSize, regionSpec, SUPPLY_INFO, type DesignationStyle, type Region, type SheetFormat, type SymbolSet } from '../standards/regions';
 import { ALL_PARTS } from './catalogs';
 import { coolingCover, dcFanAmps } from './cooling';
+import { coilMatchesRail, relayLadder, type Ladder } from './relayLogic';
 import { ALLOWED_RISE_C, cabinetHeat } from './thermal';
 import { withIecStrips } from '../standards/designations';
 import { issuedForConstruction } from '../standards/issue';
@@ -365,6 +366,11 @@ export interface IoPoint {
   /** Inputs: the wire a dry contact (button, switch, relay contact) switches into the input — '24+', or '0V' in a
    *  group whose common goes to +24V for NPN sensors (sourcing inputs: the contact must pull the input to 0V). */
   supplyWire?: '24+' | '0V';
+  /** Inputs: the device terminal the supply wire lands on (the contact's feed side: C, 23, R1…), as wired. */
+  feedTo?: string;
+  /** Inputs: the contact's terminals [feed, signal] — C / NO, C / NC for an N.C. button, and an E-stop's own N.C.
+   *  block (31-32 beside a safety relay's two channels, else 21-22): the PLC reads those N.C. (ON = released). */
+  inPins?: [string, string];
   /** Load terminals the output switches ([feed, return]): A1/A2, B1/B2 for a second coil of the same device
    *  (double solenoid), X1/X2 for a pilot light. */
   pins: [string, string];
@@ -379,6 +385,9 @@ export interface IoPoint {
     wires: string[];
     /** Sinking output: the chain runs from the output supply (24+S) to A1 and the coil's A2 returns to the PLC output. */
     sink: boolean;
+    /** A contact in the coil's return (A2 → contact → 0V): the overload shared by both coils of a reversing starter on
+     *  sourcing outputs, whose feeds are two different PLC outputs (one contact cannot be in both feeds). */
+    returnVia?: { tag: string; terminals: string; wire: string };
   };
 }
 
@@ -479,6 +488,8 @@ export interface ElectricalModel {
   hmi?: HmiLink;
   /** Enclosure filter fan switched by its thermostat (24 VDC from TB1, or AC — not drawn). */
   fan?: FanCircuit;
+  /** The relay ladder kept from a converted machine (DesignInputs.relayLogic), numbered around the panel's own wiring. */
+  ladder?: Ladder;
 }
 
 export interface FanCircuit {
@@ -622,6 +633,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const bus = phases === 3 ? ['1L1', '1L2', '1L3'] : ['1L1', 'N'];
   const wires: WireRecord[] = [];
   const addWire = (w: WireRecord) => wires.push(w);
+  // a return both coils of a double solenoid share is one conductor
+  const addWireOnce = (w: WireRecord) => { if (!wires.some((x) => x.wire === w.wire && x.from === w.from && x.to === w.to)) addWire(w); };
 
   const disconnect = byCat(rc, 'disconnect').filter((c) => c.mount === 'backplate' && !isLayoutAccessory(c))[0];
   const looseProt = byCat(rc, 'breaker', 'fuse').filter((c) => !c.comp.motorTag && !isFuseCartridge(c));
@@ -691,7 +704,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   const appOf = (c: ResolvedComponent) => `${str(c.part?.ratings, 'application') ?? ''} ${c.comp.function}`;
   const isTwoHand = (c: ResolvedComponent) => /two-hand/i.test(appOf(c));
   const isCurtain = (c: ResolvedComponent) => /light[- ]curtain/i.test(appOf(c)) && !/e-?stop/i.test(appOf(c).split('—')[0]);
-  const srs = byCat(rc, 'safetyRelay');
+  // a converted machine's own safety relay (relay logic kept, e.g. MSR1) is drawn and wired on its ladder sheets, never
+  // as one of the panel's E-stop / two-hand / light-curtain relays
+  const ladderTags = new Set((ctx.design.inputs.relayLogic?.devices ?? []).map((d) => d.tag));
+  const srs = byCat(rc, 'safetyRelay').filter((c) => !ladderTags.has(c.tag));
   const relay = srs.find((c) => !isTwoHand(c) && !isCurtain(c)) ?? srs[0];
   const estopTags = byCat(rc, 'estop').map((c) => c.tag);
   const guardTags = byCat(rc, 'sensor').filter((c) => /safety interlock switch/i.test(String(c.part?.ratings.type ?? ''))).map((c) => c.tag);
@@ -736,6 +752,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   for (const d of stoDrives) { const P = servoPins(d.part)!; auxNc.set(d.tag, { terms: [P.sto.fbPlus, P.sto.fbMinus], missing: false }); }
   function auxNcUsed(b: ResolvedComponent) { return [...auxNc.values()].filter((a) => a.block === b.partNumber && !a.missing).length >= Math.max(1, b.comp.quantity); }
   const ncOf = (tag: string): [string, string] => auxNc.get(tag)?.terms ?? ['21', '22'];
+  // a reversing interlock needs its own N.C. contact when the first one is in the safety relay's feedback (EDM)
+  // loop: one contact cannot be in two circuits. The second N.C. is 71-72 (a 2 N.O. + 2 N.C. block).
+  const secondNc = new Set(motors.filter((mm) => mm.motor.reversing && mm.contactors.length === 2).flatMap((mm) => mm.contactors.map((c) => c.tag)).filter((t) => edm.includes(t)));
+  const ilkOf = (tag: string): [string, string] => (secondNc.has(tag) ? ['71', '72'] : ncOf(tag));
   const extraRelays: SafetyModel['extraRelays'] = srs.filter((c) => c !== relay && (isTwoHand(c) || isCurtain(c))).map((c) => {
     const kind = isTwoHand(c) ? 'two-hand' as const : 'light-curtain' as const;
     // The devices feeding it: the two-hand station / the light curtains (by the relay's tag in their function).
@@ -771,6 +791,8 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   for (const p of io) {
     if (p.type !== 'output') continue;
     if (p.deviceType === 'pilot-light') { p.pins = ['X1', 'X2']; continue; }
+    // a stack light's tiers share one body: each output on its own tier terminal (RED, GREEN…), all back on COM
+    if (p.deviceType === 'stack-light') { p.pins = [(p.description.match(/red|amber|yellow|green|blue|white|horn|buzzer/i)?.[0] ?? p.address).toUpperCase(), 'COM']; continue; }
     const k = io.filter((q) => q.type === 'output' && q.deviceTag && q.deviceTag === p.deviceTag && q.deviceType !== 'stack-light').indexOf(p);
     if (k > 0) p.pins = [`${String.fromCharCode(65 + k)}1`, `${String.fromCharCode(65 + k)}2`];
   }
@@ -806,6 +828,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   for (const g of groups) if (g.type === 'input' && g.points.some((p) => p.deviceType === 'sensor-npn')) g.commonTo = '24+';
   // a group with its common on +24V (NPN sensors) only sees an input pulled to 0V: its dry contacts switch 0V
   for (const g of groups) for (const p of g.points) if (g.type === 'input') p.supplyWire = g.commonTo === '24+' && !isSensor3(p.deviceType) ? '0V' : '24+';
+  for (const p of io) if (p.type === 'input' && p.deviceTag) {
+    p.inPins = p.deviceType === 'estop-contact' ? (relay ? ['31', '32'] : ['21', '22'])
+      : [pinOf(p.deviceTag, 'C'), pinOf(p.deviceTag, p.deviceType === 'pushbutton-nc' ? 'NC' : 'NO')];
+  }
 
   // safety status input
   safety.statusInput = io.find((p) => p.deviceType === 'safety-relay-output');
@@ -818,17 +844,23 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     // A safety relay's N.O. output in series (two-hand relay on the closing stroke, over-temperature limit on a heater contactor).
     if (sc) devices.push({ tag: sc, terminals: '13-14', nc: false, kind: 'interlock' });
     const mm = motors.find((m) => m.contactors.some((c) => c.tag === p.deviceTag));
-    if (mm?.overload) devices.push({ tag: mm.overload.tag, terminals: '95-96', nc: true, kind: 'ol' });
+    const sink = groups.find((x) => x.key === p.group)?.outputStyle === 'sinking';
+    // a reversing starter's two coils share one overload contact: on sinking outputs both feeds start at the output
+    // supply, so the contact leads both chains into one shared net; on sourcing outputs the feeds are two PLC outputs,
+    // so the contact goes in the coils' common return
+    const shared = !!mm?.overload && !!mm.motor.reversing && mm.contactors.length === 2;
+    if (mm?.overload && !(shared && !sink)) devices.push({ tag: mm.overload.tag, terminals: '95-96', nc: true, kind: 'ol' });
     if (mm && mm.motor.reversing && mm.contactors.length === 2) {
       const other = mm.contactors.find((c) => c.tag !== p.deviceTag);
-      if (other) devices.push({ tag: other.tag, terminals: ncOf(other.tag).join('-'), nc: true, kind: 'interlock' });
+      if (other) devices.push({ tag: other.tag, terminals: ilkOf(other.tag).join('-'), nc: true, kind: 'interlock' });
     }
     // Sourcing: output → chain → A1, A2 → 0V. Sinking: the output switches to 0V, so the coil hangs off the
     // output supply: 24+S → chain → A1, A2 → output (both coil ends at 0V would never pull in).
-    const sink = groups.find((x) => x.key === p.group)?.outputStyle === 'sinking';
+    const olNet = shared ? `${mm!.motor.tag}OL` : '';
+    const wires = devices.map((d, k) => (k === 0 && shared && sink && d.kind === 'ol' ? olNet : `${p.address}${letter(k + 1)}`));
     p.coilChain = sink
-      ? { devices, wires: [safety.outputSupply, ...devices.map((_, k) => `${p.address}${letter(k + 1)}`)], sink }
-      : { devices, wires: [p.address, ...devices.map((_, k) => `${p.address}${letter(k + 1)}`)], sink };
+      ? { devices, wires: [safety.outputSupply, ...wires], sink }
+      : { devices, wires: [p.address, ...wires], sink, ...(shared ? { returnVia: { tag: mm!.overload!.tag, terminals: '95-96', wire: olNet } } : {}) };
   }
 
   // ---- terminal strips
@@ -878,7 +910,12 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   }
   for (const p of io) {
     if (!p.coilChain) continue;
-    if (!p.coilChain.sink) { if (p.location !== 'field') zero.push(`${p.deviceTag}:${p.pins[1]}`); continue; }
+    if (!p.coilChain.sink) {
+      const rv = p.coilChain.returnVia;
+      const end = rv ? `${rv.tag}:${rv.terminals.split('-')[1]}` : `${p.deviceTag}:${p.pins[1]}`;
+      if (p.location !== 'field' && !zero.includes(end)) zero.push(end);
+      continue;
+    }
     const d0 = p.coilChain.devices[0];
     const first = d0 ? `${d0.tag}:${d0.terminals.split('-')[0]}` : `${p.deviceTag}:${p.pins[0]}`;
     (safety.outputSupply === '24+S' ? outSupply : plus).push(first);
@@ -948,9 +985,9 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
         p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${p.jb} (${tag})`, kind: 'feed', group: p.jb });
         continue;
       }
-      p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${tag}:${sensor ? 'BK' : pinOf(tag, 'NO')}`, kind: 'feed', group: tag });
+      p.signalTerminal = add(tb2, { wire: p.address, internal: `${plcTag}:${p.address}`, external: `${tag}:${sensor ? 'BK' : p.inPins?.[1] ?? pinOf(tag, 'NO')}`, kind: 'feed', group: tag });
       const sw = sensor ? '24+' : p.supplyWire ?? '24+';
-      p.supplyTerminal = add(tb2, { wire: sw, internal: `TB1 ${sw} (jumper)`, external: `${tag}:${sensor ? 'BN' : pinOf(tag, 'C')}`, kind: 'feed', group: tag });
+      p.supplyTerminal = add(tb2, { wire: sw, internal: `TB1 ${sw} (jumper)`, external: `${tag}:${sensor ? 'BN' : p.inPins?.[0] ?? pinOf(tag, 'C')}`, kind: 'feed', group: tag });
       if (sensor) p.returnTerminal = add(tb2, { wire: '0V', internal: 'TB1 0V (jumper)', external: `${tag}:BU`, kind: 'feed', group: tag });
       // the device cable's PE core gets its own clamp (one conductor per terminal)
       else add(tb2, { wire: 'PE', internal: groundBar?.tag ?? 'PE BAR', external: `${tag}:${pinOf(tag, 'PE')}`, kind: 'ground', group: tag });
@@ -1163,14 +1200,17 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     const ioTagSet = new Set(io.map((p) => p.deviceTag));
     for (const k of rc.filter((c) => c.category === 'contactor' && !c.comp.motorTag && !ioTagSet.has(c.tag) && /safety contactor/i.test(c.comp.function))) {
       if (limit) {
-        addWire({ wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}`, to: `${limit.tag}:R1`, color: 'BU', size: '18 AWG', function: `${k.tag} coil through the over-temperature limit` });
-        addWire({ wire: `${k.tag}A1`, from: `${limit.tag}:R1`, to: `${k.tag}:A1`, color: 'BU', size: '18 AWG', function: `${k.tag} coil` });
+        // the limit's relay 1 is a contact in series with the coil: in on one side, out on the other
+        const [ra, rb] = limitRelayPins(limit.part);
+        addWire({ wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}`, to: `${limit.tag}:${ra}`, color: 'BU', size: '18 AWG', function: `${k.tag} coil through the over-temperature limit` });
+        addWire({ wire: `${k.tag}A1`, from: `${limit.tag}:${rb}`, to: `${k.tag}:A1`, color: 'BU', size: '18 AWG', function: `${k.tag} coil` });
       } else addWire({ wire: safety.outputSupply, from: `TB1 ${safety.outputSupply}`, to: `${k.tag}:A1`, color: 'BU', size: '18 AWG', function: `${k.tag} coil` });
       addWire({ wire: '0V', from: `${k.tag}:A2`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${k.tag} coil return` });
     }
     if (safety.statusInput) {
       const sw = io.find((q) => q.address === safety.statusInput!.address)?.supplyWire ?? '24+';
       addWire({ wire: sw, from: `TB1 ${sw}`, to: `${relay.tag}:23`, color: sw === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `Safety status contact${sw === '0V' ? ' (switches 0V: NPN input common)' : ''}` });
+      safety.statusInput.feedTo = `${relay.tag}:23`;
       addWire({ wire: safety.statusInput.address, from: `${relay.tag}:24`, to: `${plcTag}:${safety.statusInput.address}`, color: 'BU', size: '18 AWG', function: 'Safety relay status to PLC' });
     }
   } else if (estopTags.length) {
@@ -1222,7 +1262,9 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     }
     const fault = c.terminals.find((t) => t.role === 'fault');
     if (fault) {
-      const sw = io.find((q) => q.address === fault.address)?.supplyWire ?? '24+';
+      const fp = io.find((q) => q.address === fault.address);
+      const sw = fp?.supplyWire ?? '24+';
+      if (fp) fp.feedTo = `${tag}:R1`;
       addWire({ wire: sw, from: `TB1 ${sw}`, to: `${tag}:R1`, color: sw === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `${tag} fault relay common` });
     }
     if (c.safetyStop === 'sto') {
@@ -1274,15 +1316,20 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
     if (p.type === 'input') {
       if (p.signalTerminal) {
         const s3 = isSensor3(p.deviceType);
-        const sig = p.deviceType === 'encoder' ? encoderChannel(p.description) ?? 'A' : s3 ? 'BK' : pinOf(tag, 'NO');
+        const sig = p.deviceType === 'encoder' ? encoderChannel(p.description) ?? 'A' : s3 ? 'BK' : p.inPins?.[1] ?? pinOf(tag, 'NO');
         addWire({ wire: p.address, from: `${tag}:${sig}`, to: p.signalTerminal, color: s3 ? `${p.deviceType === 'encoder' ? sig : 'BK'} (cable)` : 'BU', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
-        if (p.supplyTerminal) addWire({ wire: s3 ? '24+' : p.supplyWire ?? '24+', from: p.supplyTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '+V' : s3 ? 'BN' : pinOf(tag, 'C')}`, color: s3 ? 'BN (cable)' : 'BU', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: `${tag} supply` });
+        if (p.supplyTerminal) {
+          const sw = s3 ? '24+' : p.supplyWire ?? '24+';
+          p.feedTo = `${tag}:${p.deviceType === 'encoder' ? '+V' : s3 ? 'BN' : p.inPins?.[0] ?? pinOf(tag, 'C')}`;
+          addWire({ wire: sw, from: p.supplyTerminal, to: p.feedTo, color: s3 ? 'BN (cable)' : sw === '0V' ? 'WH/BU' : 'BU', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: `${tag} supply` });
+        }
         if (p.returnTerminal) addWire({ wire: '0V', from: p.returnTerminal, to: `${tag}:${p.deviceType === 'encoder' ? '0V' : 'BU'}`, color: p.deviceType === 'encoder' ? 'WH (cable)' : 'BU (cable)', size: p.deviceType === 'encoder' ? '24 AWG (cable)' : '18 AWG', function: `${tag} 0V` });
       } else {
         const sw = p.supplyWire ?? '24+';
-        addWire({ wire: sw, from: `TB1 ${sw}`, to: `${tag}:C`, color: sw === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `${tag} supply` });
-        addWire({ wire: p.address, from: `${tag}:${p.deviceType === 'pushbutton-nc' ? 'NC' : 'NO'}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
+        p.feedTo = `${tag}:${p.inPins?.[0] ?? 'C'}`;
+        addWire({ wire: sw, from: `TB1 ${sw}`, to: p.feedTo, color: sw === '0V' ? 'WH/BU' : 'BU', size: '18 AWG', function: `${tag} supply` });
+        addWire({ wire: p.address, from: `${tag}:${p.inPins?.[1] ?? (p.deviceType === 'pushbutton-nc' ? 'NC' : 'NO')}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: p.description });
       }
     } else {
       const sink = g?.outputStyle === 'sinking';
@@ -1306,16 +1353,23 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
           // Field coil: from the chain through its output terminal, returning through the field return terminal.
           addWire({ wire: ch.wires[ch.wires.length - 1], from: last, to: p.signalTerminal, color: 'BU', size: '18 AWG', function: p.description });
           addWire({ wire: ch.wires[ch.wires.length - 1], from: p.signalTerminal, to: tbExternal(strips, p.signalTerminal), color: 'BU', size: '18 AWG', function: p.description });
-          if (p.returnTerminal) addWire({ wire: '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: 'WH/BU', size: '18 AWG', function: `${tag} return` });
+          if (p.returnTerminal) addWireOnce({ wire: '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: 'WH/BU', size: '18 AWG', function: `${tag} return` });
         } else addWire({ wire: ch.wires[ch.wires.length - 1], from: last, to: `${tag}:${p.pins[0]}`, color: 'BU', size: '18 AWG', function: p.description });
         if (p.signalTerminal && !ch.sink) { /* return wired above */ } else if (ch.sink) addWire({ wire: p.address, from: `${tag}:${p.pins[1]}`, to: `${plcTag}:${p.address}`, color: 'BU', size: '18 AWG', function: `${p.description} (sinking output)` });
-        else addWire({ wire: '0V', from: `${tag}:${p.pins[1]}`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} coil return` });
+        else if (ch.returnVia) {
+          // A2 → the shared overload contact → 0V (once for both coils)
+          const [a, b] = ch.returnVia.terminals.split('-');
+          addWire({ wire: ch.returnVia.wire, from: `${tag}:${p.pins[1]}`, to: `${ch.returnVia.tag}:${a}`, color: 'BU', size: '18 AWG', function: `${tag} coil return through ${ch.returnVia.tag}` });
+          if (!wires.some((w) => w.from === `${ch.returnVia!.tag}:${b}` && w.wire === '0V')) addWire({ wire: '0V', from: `${ch.returnVia.tag}:${b}`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${ch.returnVia.tag} coil return` });
+        } else addWire({ wire: '0V', from: `${tag}:${p.pins[1]}`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} coil return` });
       } else if (p.signalTerminal) {
         addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: p.signalTerminal, color: 'BU', size: '18 AWG', function: p.description });
         addWire({ wire: p.address, from: p.signalTerminal, to: tbExternal(strips, p.signalTerminal), color: 'BU', size: '18 AWG', function: p.description });
-        if (p.returnTerminal) addWire({ wire: sink ? lampSupply(p) : '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
+        if (p.returnTerminal) addWireOnce({ wire: sink ? lampSupply(p) : '0V', from: tbExternal(strips, p.returnTerminal), to: p.returnTerminal, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
       } else {
-        addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: `${tag}:${p.deviceType === 'vfd-input' ? 'DI' : p.pins[0]}`, color: 'BU', size: '18 AWG', function: p.description });
+        // a drive input lands on the terminal the description names (U2 DI7, U1 MI3), else the drive's DI
+        const di = p.deviceType === 'vfd-input' ? /\b(?:DI|MI)\d{1,2}\b/i.exec(p.description)?.[0].toUpperCase() ?? 'DI' : p.pins[0];
+        addWire({ wire: p.address, from: `${plcTag}:${p.address}`, to: `${tag}:${di}`, color: 'BU', size: '18 AWG', function: p.description });
         if (p.deviceType === 'vfd-input') addWire({ wire: '0V', from: `${tag}:DCM`, to: 'TB1 0V', color: 'WH/BU', size: '18 AWG', function: `${tag} digital input common` });
         else addWire({ wire: sink ? lampSupply(p) : '0V', from: `${tag}:${p.pins[1]}`, to: `TB1 ${sink ? lampSupply(p) : '0V'}`, color: sink ? 'BU' : 'WH/BU', size: '18 AWG', function: `${tag} return` });
       }
@@ -1339,12 +1393,23 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   addWire({ wire: 'PE', from: 'BACK PANEL (ground stud)', to: pe, color: 'GN/YE', size: mainAwg, function: 'Back panel bonding' });
   addWire({ wire: 'PE', from: 'DOOR (ground stud)', to: 'ENCLOSURE (ground stud)', color: 'GN/YE', size: '14 AWG', function: 'Door bonding jumper (flexible, across the hinge)' });
   wires.push(...analog.wires);
+  // relay logic kept from a converted machine: the ladder's nodes (relayLogic.ts, same numbers as the ladder sheets);
+  // NFPA 79 13.2.4: DC control blue, AC control red
+  const logic = ctx.design.inputs.relayLogic;
+  let ladder: Ladder | undefined;
+  if (logic?.rungs.length) {
+    // terminals the panel already wires stay on their net: the ladder asks instead of joining a second wire to them
+    const occupied = new Map<string, string>();
+    for (const w of wires) for (const e of [w.from, w.to]) if (/^[A-Z][A-Z0-9-]*:[^\s?]+$/.test(e) && !occupied.has(e)) occupied.set(e, w.wire);
+    ladder = relayLadder(logic, { occupied });
+    for (const w of ladder.wires) addWire({ ...w, color: logic.supply === '120VAC' ? 'RD' : 'BU', size: '18 AWG' });
+  }
   if (analog.strip) strips.push(analog.strip);
   machine.cables.push(...analog.cables);
   if (iec) toIec(wires, machine.cables);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
-    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives, servos: servo.axes, hmi, fan,
+    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives, servos: servo.axes, hmi, fan, ladder,
   };
 }
 
@@ -1532,6 +1597,12 @@ function rangeText(labels: string[]): string {
 /** 3-wire DC devices: supply, 0 V and signal (PNP/NPN sensors, a discrete ultrasonic sensor, an encoder channel). */
 const isSensor3 = (t: FieldDeviceType | 'motor') => t === 'sensor-pnp' || t === 'sensor-npn' || t === 'ultrasonic' || t === 'encoder';
 
+/** The two sides of a limit alarm's relay 1 (a Form A contact): the catalog's terminals, else R1A / R1B. */
+export function limitRelayPins(part: CatalogPart | undefined): [string, string] {
+  const [a, b] = String(part?.ratings.relay1Terminals ?? '').split(/\s*-\s*/);
+  return a && b ? [a, b] : ['R1A', 'R1B'];
+}
+
 function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], motors: MotorModel[], peBar: string, strips: TerminalStrip[]): MachineModel {
   const warnings = [...mw.warnings];
   const stripWire = new Map<string, string>();
@@ -1587,9 +1658,9 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
       else type = '3-core 18 AWG sensor cable (BN/BU/BK)';
     } else if (p0.type === 'input') {
       const sw = p0.supplyWire ?? '24+';
-      cores.push({ core: '1', color: sw === '0V' ? 'WH/BU' : 'BU', wire: sw, from: term(p0, 'sup'), to: `${d.tag}:C` });
+      cores.push({ core: '1', color: sw === '0V' ? 'WH/BU' : 'BU', wire: sw, from: term(p0, 'sup'), to: `${d.tag}:${p0.inPins?.[0] ?? 'C'}` });
       // one signal core per input of the device (the terminal name matches the wire list)
-      d.points.forEach((p, k) => cores.push({ core: String(k + 2), color: 'BU', wire: p.wire, from: term(p, 'sig'), to: `${d.tag}:NO` }));
+      d.points.forEach((p, k) => cores.push({ core: String(k + 2), color: 'BU', wire: p.wire, from: term(p, 'sig'), to: `${d.tag}:${p.inPins?.[1] ?? 'NO'}` }));
       cores.push({ core: 'PE', color: 'GN/YE', wire: 'PE', from: from !== 'CABINET' ? `${from}:PE` : 'PE', to: `${d.tag}:PE` });
       type = `${cores.length}-core 18 AWG control cable (${cores.length - 1} + PE)`;
     } else {
@@ -1640,12 +1711,15 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
           const lab = addT({ wire: w, incoming: '', outgoing: '', device: d.tag, kind: 'feed' });
           roles.set(role === 'ret' && p0.type === 'output' ? `ret:${w}` : role, lab);
           const cabTerm = role === 'sup' ? pc.supplyTerminal : pc.returnTerminal;
-          if (!firstOf.has(w)) {
-            firstOf.set(w, lab);
+          // one trunk core per cabinet terminal the wire list leaves from (SOL1's 0V on TB3-2 is its own core, not
+          // the sensors' 0V core from TB2-9); the same wire from the same terminal is jumpered in the JB
+          const key = `${w}|${cabTerm ?? `TB1 ${w}`}`;
+          if (!firstOf.has(key)) {
+            firstOf.set(key, lab);
             trunk.push({ core: String(trunk.length + 1), color: w === '0V' ? 'WH/BU' : 'BU', wire: w, from: cabTerm ?? `TB1 ${w}`, to: lab });
             terms[terms.length - 1].incoming = `${trunkTag}/${trunk.length}`;
-            landed.set(w, lab);
-          } else terms[terms.length - 1].incoming = `JUMPER ${firstOf.get(w)}`;
+            if (!landed.has(w)) landed.set(w, lab);
+          } else terms[terms.length - 1].incoming = `JUMPER ${firstOf.get(key)}`;
         }
         const c = deviceCable(d, jb.tag, (p, role) => (role === 'sig' ? roles.get(`sig:${p.address}`) : role === 'ret' && p.type === 'output' ? roles.get(`ret:${retWire(p)}`) : roles.get(role)) ?? '?');
         d.cable = c.tag;
@@ -1772,12 +1846,12 @@ const CAT_TITLES: Record<CatalogCategory, string> = {
   contactor: 'Contactors', overload: 'Overload relays', motorProtector: 'Motor protectors', vfd: 'Variable frequency drives',
   relay: 'Relays', safetyRelay: 'Safety relays', terminal: 'Terminal blocks', terminalAccessory: 'Terminal accessories',
   pushbutton: 'Pushbuttons', estop: 'Emergency stops', pilotLight: 'Pilot lights', selector: 'Selector switches', stackLight: 'Stack lights',
-  plc: 'PLC', plcModule: 'PLC I/O modules', hmi: 'HMI', sensor: 'Sensors', solenoidValve: 'Solenoid valves', dinRail: 'DIN rail',
+  plc: 'PLC', plcModule: 'PLC I/O modules', commModule: 'PLC communication modules', hmi: 'HMI', sensor: 'Sensors', solenoidValve: 'Solenoid valves', dinRail: 'DIN rail',
   wireDuct: 'Wire duct', groundBar: 'Ground bars', fan: 'Fans & filters', other: 'Miscellaneous',
   servoDrive: 'Servo drives', servoMotor: 'Servo motors', encoder: 'Encoders',
 };
 const CAT_ORDER: CatalogCategory[] = ['enclosure', 'disconnect', 'breaker', 'fuse', 'motorProtector', 'contactor', 'overload', 'vfd', 'servoDrive', 'powerSupply',
-  'plc', 'plcModule', 'hmi', 'safetyRelay', 'relay', 'estop', 'pushbutton', 'selector', 'pilotLight', 'stackLight', 'sensor', 'encoder', 'servoMotor', 'solenoidValve',
+  'plc', 'plcModule', 'commModule', 'hmi', 'safetyRelay', 'relay', 'estop', 'pushbutton', 'selector', 'pilotLight', 'stackLight', 'sensor', 'encoder', 'servoMotor', 'solenoidValve',
   'terminal', 'terminalAccessory', 'groundBar', 'dinRail', 'wireDuct', 'fan', 'other'];
 
 export function categoryTitle(c: CatalogCategory | 'note'): string { return c === 'note' ? 'Derived quantities (part to be selected)' : CAT_TITLES[c]; }
@@ -2907,9 +2981,16 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (m.safety.estops.length && !m.safety.relay) w.push('E-stop present but no safety relay — E-stop circuit is drawn as a hardwired MCR chain; perform a risk assessment (ISO 13849 / NFPA 79 9.2.5.4).');
   if (m.safety.relay && !m.safety.estops.length) w.push('Safety relay present but no E-stop device found.');
   if (m.safety.relay && !m.safety.reset) w.push('Safety relay has no reset pushbutton assigned (function "Reset").');
+  const ilk = m.motors.filter((mm) => mm.motor.reversing && mm.contactors.length === 2 && mm.contactors.every((c) => m.safety.edm.includes(c.tag)));
+  if (ilk.length) w.push(`${ilk.flatMap((mm) => mm.contactors.map((c) => c.tag)).join(', ')}: the reversing interlock uses a second N.C. contact (71-72) — the first N.C. is in the safety relay feedback (EDM) loop; fit a 2 N.O. + 2 N.C. auxiliary block (e.g. Fuji SZ-A22T, not in the parts catalog yet) in place of the 1 N.O. + 1 N.C. block.`);
   const auxMissing = [...m.auxNc].filter(([, a]) => a.missing);
   if (auxMissing.length) w.push(`${auxMissing.map(([t, a]) => `${t} (${a.family})`).join(', ')}: no built-in auxiliary contact — an SZ-A11T front block (1 N.O. + 1 N.C.) is added to the BOM; the feedback / interlock uses its N.C. 61-62. Add it to the design or choose another block.`);
-  if (m.motors.some((x) => x.vfd)) w.push('VFD: enter the drive parameters marked NAMEPLATE / SET ON SITE on the drive sheets at commissioning; Safe Torque Off is not used (factory jumper) unless the risk assessment calls for it.');
+  if (m.motors.some((x) => x.vfd)) {
+    // STO as designed, per drive: never "not used (factory jumper)" next to a drive whose STO is wired
+    const sto = m.drives.filter((d) => d.safetyStop === 'sto').map((d) => d.drive.tag);
+    const jumpered = m.drives.filter((d) => d.safetyStop !== 'sto' && d.series === 'GS20').map((d) => d.drive.tag);
+    w.push(`VFD: enter the drive parameters marked NAMEPLATE / SET ON SITE on the drive sheets at commissioning${sto.length ? `; ${sto.join(', ')}: Safe Torque Off wired from the safety relay (factory jumper removed)` : ''}${jumpered.length ? `; ${jumpered.join(', ')}: Safe Torque Off not used (factory jumper) unless the risk assessment calls for it` : ''}.`);
+  }
   const noWiring = m.io.filter((p) => !p.wiring);
   if (noWiring.length) w.push(`${noWiring.length} I/O point(s) without wiring info (${noWiring.slice(0, 6).map((p) => p.address).join(', ')}${noWiring.length > 6 ? '…' : ''}) — drawn as generic devices.`);
   const curtains = (m.safety.extraRelays ?? []).filter((x) => x.kind === 'light-curtain').map((x) => x.relay.tag);
@@ -2926,8 +3007,14 @@ export function designWarnings(ctx: DrawingContext): string[] {
   // Analog points (DF) are in ctx.io but not in the discrete m.io.
   const extra = ctx.design.ioWiring.filter((x) => !m.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase()) && !(/^DF\d+$/i.test(x.address) && ctx.io.some((p) => p.address.toUpperCase() === x.address.toUpperCase())));
   if (extra.length) w.push(`ioWiring entries not in the project I/O list: ${extra.map((x) => x.address).join(', ')}.`);
-  const unaddressed = ctx.io.filter((p) => !p.address).length;
-  if (unaddressed) w.push(`${unaddressed} project I/O point(s) have no PLC address and are not drawn.`);
+  // name every point with no address; an analog point says why (no free channel of its kind and range)
+  const anFree = (ctx.analog ?? []).filter((r) => !r.address);
+  const why = (d: string) => {
+    const r = anFree.find((x) => x.description === d);
+    return r ? ` (analog ${r.kind} ${r.range}: no free ${r.kind === 'output' ? 'analog output' : r.range === 'thermocouple' ? 'thermocouple' : 'analog input'} channel for this range on the PLC or its modules — add a module that has one)` : '';
+  };
+  const unaddressed = [...ctx.io.filter((p) => !p.address).map((p) => p.description), ...anFree.map((r) => r.description).filter((d) => !ctx.io.some((p) => !p.address && p.description === d))];
+  if (unaddressed.length) w.push(`${unaddressed.length} project I/O point(s) have no PLC address and are not drawn: ${unaddressed.map((d) => `"${d}"${why(d)}`).join('; ')}.`);
   // capacity
   let inCap = 0, outCap = 0, capKnown = false;
   // Module lines can carry a quantity (e.g. 2 x 16-point input modules).
@@ -2948,6 +3035,22 @@ export function designWarnings(ctx: DrawingContext): string[] {
     if (dry.length) w.push(`${g.label}: input common on +24V for its NPN sensors — ${dry.map((p) => `${p.deviceTag || p.address} (${p.address})`).join(', ')} switch 0V into their inputs (sourcing inputs); do not feed them +24V. A device that sources +24V (PNP sensor, OSSD) cannot share this common.`);
   }
   for (const p of m.io) if (!p.deviceTag && p.wiring) w.push(`${p.address}: wiring has no device tag.`);
+  // relay logic: every device of a rung is a part of the design (the converter maps each original tag to one), each
+  // coil is rated for the rung's rail, and what the reading could not give is asked (relayLogic.ts questions)
+  const logic = ctx.design.inputs.relayLogic;
+  if (logic) {
+    const byTag = new Map(ctx.design.components.map((c) => [c.tag, c]));
+    const all = logic.rungs.flatMap((r) => r.path.flatMap((e) => (e.t === 'branch' ? e.paths.flat() : [e])));
+    const missing = [...new Set(all.map((e) => e.tag))].filter((t) => t !== '?' && !byTag.has(t));
+    if (missing.length) w.push(`Relay logic: ${missing.join(', ')} drawn on the ladder but not in the design's parts — add the part or correct the tag.`);
+    for (const c of new Set(all.filter((e) => e.t === 'coil' && e.kind !== 'drive-input').map((e) => e.tag))) {
+      const part = byTag.get(c) ? ctx.getPart(byTag.get(c)!.partNumber) : undefined;
+      const rating = String(part?.ratings.coilVoltage ?? part?.ratings.volts ?? '');
+      if (part && rating && !coilMatchesRail(logic.supply, rating)) w.push(`Relay logic: ${c} ${part.partNumber} is rated ${rating}, but its rung is on the ${logic.supply === '120VAC' ? '120 VAC' : '24 VDC'} rail — choose the ${logic.supply === '120VAC' ? '120 VAC' : '24 VDC'} coil version.`);
+    }
+    for (const q of m.ladder?.questions ?? []) w.push(`Relay logic: ${q}`);
+  }
+
   w.push(...panelLayout(ctx).warnings);
   // cooling: heat the walls cannot shed needs a filter fan, a heat exchanger or an air conditioner in the design
   {

@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const JSZip = require(path.join(__dirname, '..', 'node_modules', 'jszip'));
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const OUT = path.join(__dirname, 'out-hmi-looks');
@@ -17,26 +18,27 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 /** The large screen on the HMI page (the screen list's thumbnails carry the same aria-label). */
 const mainSvg = (page) => page.evaluateHandle(() => [...document.querySelectorAll('svg[aria-label^="HMI screen:"]')].sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0]);
 
-const hmiState = (page) => page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design);
+const hmiState = (page) => page.evaluate(async () => (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design);
 const screenButtons = (page) => page.locator('nav[aria-label="Screens"] > button');
 
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   await page.goto(BASE + '/hmi');
   await page.waitForTimeout(800);
 
   const theme = await page.evaluate(async () => {
-    const t = await import('/src/hmi/theme.ts');
+    const t = await appImport('/src/hmi/theme.ts');
     return { looks: t.HMI_LOOKS, labels: t.LOOK_LABEL, screens: Object.fromEntries(t.HMI_LOOKS.map((l) => [l, t.PALETTES[l].screen])), headers: Object.fromEntries(t.HMI_LOOKS.map((l) => [l, t.PALETTES[l].header])) };
   });
 
@@ -103,9 +105,9 @@ const screenButtons = (page) => page.locator('nav[aria-label="Screens"] > button
     check((await hmiState(page)).look === look, `${look}: stored`);
     check((await bg()) === rgb(theme.screens[look]), `${look}: screen colour ${await bg()}`);
     const layout = await page.evaluate(async () => {
-      const { checkDesign } = await import('/src/hmi/layout.ts');
-      const { getHmi } = await import('/src/hmi/hmiCatalog.ts');
-      const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
+      const { checkDesign } = await appImport('/src/hmi/layout.ts');
+      const { getHmi } = await appImport('/src/hmi/hmiCatalog.ts');
+      const d = (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
       const m = getHmi(d.hmiPartNumber);
       return checkDesign(d, m.widthPx, m.heightPx, { text: true }).filter((i) => i.severity === 'error' || /cut off/.test(i.message)).map((i) => i.message);
     });
@@ -196,10 +198,10 @@ const screenButtons = (page) => page.locator('nav[aria-label="Screens"] > button
   await page.locator('[role="option"][data-look="auto"]').click();
   check(!(await hmiState(page)).look, 'Match the panel clears the stored look');
   const weintek = await page.evaluate(async () => {
-    const { catalogPanels } = await import('/src/hmi/panels.ts');
+    const { catalogPanels } = await appImport('/src/hmi/panels.ts');
     const o = catalogPanels().find((x) => x.model && x.part.manufacturer === 'Weintek' && x.model.widthPx === 800 && x.model.heightPx === 480)
       ?? catalogPanels().find((x) => x.model && x.part.manufacturer === 'Weintek');
-    const { useHmiStore } = await import('/src/store/useHmiStore.ts');
+    const { useHmiStore } = await appImport('/src/store/useHmiStore.ts');
     const s = useHmiStore.getState();
     s.setHmiPartNumber(o.part.partNumber);
     s.setDesign({ ...s.design, hmiPartNumber: o.part.partNumber }, null);

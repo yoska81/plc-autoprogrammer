@@ -88,4 +88,15 @@ assert.ok(sdf.includes('"Tank_level_raw","%IW64","Int","True","True","False","Ta
 
 const bad: LadderProgram = { tags: [], rungs: [{ id: 'x', comment: '', branches: [[{ type: 'NO', address: 'SC19' }]], outputs: [{ type: 'OUT', address: 'C1' }] }] };
 assert.match(validateProgram(bad, siemensProfile, new Set()).map((i) => i.message).join(' | '), /SC19: S7 has no equivalent/);
+// Every tag name in the .sdf is unique: a used analog "Tank level" and an unused one with the same description.
+{
+  const twin: IOPoint = { id: 'I009', description: 'Tank level', type: 'input', category: 'Analog/Process', signal: 'analog', analog: { range: '0-10V', min: 0, max: 100, units: '%' } };
+  const io2 = [...io, twin];
+  const addr2 = siemensProfile.autoAddresses(io2, cpu, modules);
+  const sdf = siemensTagsSdf(program, { ...ctx, io: io2, addresses: addr2, labels: new Map([...labels, [addr2.get('I009')!, twin.description]]) });
+  const names = sdf.trim().split(/\r?\n/).map((l) => JSON.parse(`[${l}]`)[0] as string);
+  assert.equal(new Set(names.map((n) => n.toLowerCase())).size, names.length, `unique tag names: ${names.join(', ')}`);
+  assert.ok(names.includes('Tank_level_raw') && names.some((n) => /^Tank_level_raw_\d$/.test(n)), names.join(', '));
+}
+
 console.log('siemens tests passed');

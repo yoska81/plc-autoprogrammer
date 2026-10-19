@@ -580,3 +580,40 @@ rules-big failed check-all with 35 door FAILs: ENC1 was SCE-16EL1206LP (16x12), 
   - A design warning names those contacts.
   - check_consistency fails when an input can never turn ON (proved: with the old feed it fails X101 / X102 / X105 / X106).
   - Check-all variant: `rules-sealing-npn`.
+
+## Relay ladder sheets; one pin = one wire number; drive inputs; wire list vs cables; QA A–Z (on integration 0e7b78c)
+- **Relay ladder sheets** (reworked after the #92 review):
+  - one terminal = one net;
+  - terminals only as read ("?" plus a question otherwise);
+  - every coil drawn, with a placeholder rung for one the reading missed;
+  - drive inputs from the drive's common;
+  - wrapped lines;
+  - xref per element;
+  - the ladder's devices are added as parts.
+  - Check-all variant: `rules-relay` (the roll former's 22 circuits).
+- **Input feeds:**
+  - every input's feed terminal is recorded as wired (`IoPoint.feedTo`);
+  - E-stop and N.C. pushbutton inputs go through an N.C. contact (ES1D third block).
+- **Safety: TAH1:R1** carried 24+S in and K1A1 out on the same pin, so the over-temperature limit never broke the heater contactor coil. Now 24+S → TAH1:R1A and R1B → K:A1.
+- **One device pin, one wire number:** new check_consistency rule, plus an engine.test over every scenario. Other pins it found, all fixed:
+  - STK1:A1: one pin per colour plus COM;
+  - K1/K2 61-62, EDM vs interlock: the interlock is on 71-72, with a 2NO+2NC block warning;
+  - OL1:96 on a shared reversing overload: one net when sinking; coil return via 95-96 when sourcing;
+  - PLC:0V vs DFn-: the analog minus on 0V is numbered 0V;
+  - SR1:14, ladder vs engine: the ladder is built around the panel's occupied pins.
+- **Drive inputs are never motors or contactors:**
+  - "U2 DI1 SON" and "U2 DI7 CAM" were invented 1 HP motors; "U1 MI3 jog" got contactor K2.
+  - A drive input on a named drive is wired to that drive's own terminal (U2:DI7, or VFD1:DI3 when U1 is the only VFD).
+  - "SON" is still read as a servo axis by motion.ts (Dev 2's).
+- **Wire list vs cable schedule:**
+  - the JB trunk carried each wire number once, so SOL1's 0V from TB3-2 rode TB2-9's core;
+  - fix: one core per (wire, cabinet terminal);
+  - new check_consistency rule, checked both ways.
+- **QA A–Z:**
+  - Excel wraps long text: BOM, Wire List, Cable Schedule, HMI Tags, Order list, spares;
+  - the BOM sheet wraps instead of shrinking to 4.6 pt;
+  - STO is described per drive, wired or jumpered;
+  - unaddressed points are named, with the reason for analog ones;
+  - the analog sheet title matches the signals, and the shield wire is numbered;
+  - the commissioning checklist is always in the ZIP;
+  - the printPdf frame is removed.

@@ -102,7 +102,9 @@ export function programRoles(program: LadderProgram, labels: Map<string, string>
         else if (!isX(a) && !isY(a) && FAULT.test(name(a)) && !HEALTHY.test(name(a)) && !ANNUNCIATOR.test(name(a))) {
           out.faults.push(role(a, `${o.type === 'SET' ? 'a latched' : 'a'} fault / alarm bit`));
           // The comment as the original programmer wrote it (not the import's own "Original: M51 —" / "Bit 0 of …").
-          const said = comment(a).replace(/^Original:[^—]*—\s*/, '').replace(/^Bit \d+ of .*$/, '').replace(/^\s*(alarm|fault|alm)\s*[:-]\s*/i, '').trim();
+          // No comment of its own (an array bit, Alm[0].3): the comment of the rung that sets it ("Alarm 3: infeed overload").
+          const plain = (t: string) => t.replace(/^Original:[^—]*—\s*/, '').replace(/^Bit \d+ of .*$/, '').replace(/^\s*(alarm|fault|alm)\s*\d*\s*[:-]\s*/i, '').split('\n')[0].trim();
+          const said = plain(comment(a)) || (o.type === 'OUT' || o.type === 'SET' ? plain(r.comment ?? '') : '');
           out.alarms.push({ ...role(a, 'a fault / alarm bit of the program'), text: said ? said[0].toUpperCase() + said.slice(1) : nick(a) });
         }
         if (isY(a)) out.outputs.push(role(a, 'a physical output'));

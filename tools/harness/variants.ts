@@ -32,9 +32,10 @@ import { alarmRows, programInfo } from '../../src/deliverables/docs/program';
 import { getHmi } from '../../src/hmi/hmiCatalog';
 import { ALLOWED_RISE_C, cabinetHeat } from '../../src/electrical/thermal';
 import { coolingCover } from '../../src/electrical/cooling';
+import { coilMatchesRail, relayLadder } from '../../src/electrical/relayLogic';
 import { runCodeRules } from '../../src/review/codeRules';
 import { sccrTable } from '../../src/deliverables/docs/electrical';
-import type { DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, MotorSpec } from '../../src/electrical/types';
+import type { DesignComponent, ElectricalDesign, FieldDeviceType, IOWiring, MotorSpec, RelayLogic } from '../../src/electrical/types';
 import type { AnalogSpec, IOCategory } from '../../src/types/io';
 import { generateRuleBasedDesign } from '../../src/lib/ai/machineModelAI';
 import { getPart } from '../../src/electrical/catalog';
@@ -319,7 +320,9 @@ async function setupRules(v: string) {
   }
   // "rules-sealing-npn": the sealing head with NPN sensors — their input commons go to +24V, so the buttons, limit /
   // pressure switches and relay contacts on the same modules must switch 0V (check_consistency: every input can turn ON).
-  if (v === 'rules-sealing-npn') useIOStore.setState({ projectIO: useIOStore.getState().projectIO.map((p) => (p.deviceType === 'sensor-pnp' ? { ...p, deviceType: 'sensor-npn' } : p)) });
+  // It also reads the door E-stop's status (N.C., ON = released) on that +24V common: through the E-stop's own N.C.
+  // block, switching 0V.
+  if (v === 'rules-sealing-npn') useIOStore.setState({ projectIO: [...useIOStore.getState().projectIO.map((p) => (p.deviceType === 'sensor-pnp' ? { ...p, deviceType: 'sensor-npn' as const } : p)), { id: 'seal-es', description: 'E-stop released (status)', type: 'input' as const, category: 'Safety' as const, deviceType: 'estop-contact' as const }] });
   // "rules-sealing-thm": the user's Sealing Head as built — C0-11DD2E-D + C0-08ND3 + C0-04THM, NEMA 4X, the seal bar's
   // type J thermocouple read straight by the THM (no transmitter, no analog output). The point comes in through the
   // store's import at the list's 4-20 mA default: the import must make it a 'thermocouple' range, or it gets no channel.
@@ -359,6 +362,13 @@ async function setupRules(v: string) {
   }
   const el = useElectricalStore.getState();
   let inputs = v === 'rules-sealing' || v === 'rules-sealing-4x' || v === 'rules-sealing-thm' || v === 'rules-sealing-npn' || v === 'rules-servo' || uni || noPanel ? el.inputs : el.design?.inputs ?? el.inputs;
+  // "rules-relay": the example plus the relay logic the converter kept from a Chinese roll former (22 circuits, the
+  // converter's fixture): the engine adds its devices as parts and draws the NFPA 79 ladder sheets.
+  if (v === 'rules-relay') {
+    const res = await fetch('/e2e/fixtures/convert/cn-rollformer-01.relayLogic.json');
+    if (!res.ok) throw new Error('rules-relay: e2e/fixtures/convert/cn-rollformer-01.relayLogic.json not served');
+    inputs = { ...inputs, relayLogic: (await res.json()) as RelayLogic };
+  }
   if (v === 'rules-eu' || v === 'rules-stress') {
     useProjectStore.getState().setInfo({ region: 'EU', standards: ['IEC 60204-1', 'IEC 61439-1'] });
     inputs = { ...inputs, supply: '400VAC-3PH', motors: inputs.motors.map((m) => ({ ...m, voltage: '400VAC-3PH' as const })) };
@@ -470,13 +480,24 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
         parts: m.rc.filter((c) => ['filter fan', 'exhaust filter', 'thermostat', 'heat exchanger', 'air conditioner'].includes(String(c.part?.ratings.kind ?? ''))).map((c) => ({ tag: c.tag, partNumber: c.partNumber, kind: c.part?.ratings.kind })),
         fan: m.fan ?? null, cover: h.ventilation ? coolingCover(ctx.design.components, getPart, h.ventilation, ALLOWED_RISE_C) : null };
     })(),
+    // relay logic (check_consistency: one terminal = one wire number; every coil rated for its rung's rail)
+    relay: ctx.design.inputs.relayLogic ? (() => {
+      const logic = ctx.design.inputs.relayLogic!;
+      const lad = relayLadder(logic);
+      const coils = [...new Set(lad.rungs.flatMap((r) => r.cols).flatMap((c) => (c.kind === 'el' ? [c.e] : c.paths.flat())).filter((e) => e.el.t === 'coil' && e.el.kind !== 'drive-input').map((e) => e.el.tag))];
+      return {
+        supply: logic.supply, wires: lad.wires, questions: lad.questions,
+        coils: coils.map((tag) => { const c = ctx.design.components.find((x) => x.tag === tag); const pt = c ? getPart(c.partNumber) : undefined; return { tag, partNumber: c?.partNumber ?? null, rating: String(pt?.ratings.coilVoltage ?? pt?.ratings.volts ?? ''), ok: pt ? coilMatchesRail(logic.supply, String(pt.ratings.coilVoltage ?? pt.ratings.volts ?? '')) : null }; }),
+      };
+    })() : null,
     // input commons (check_consistency: every input can turn ON — on a +24V common (NPN) a dry contact is fed 0V)
     inputCommons: m.groups.filter((g) => g.type === 'input').map((g) => ({
       group: g.label, commonTo: g.commonTo,
       points: g.points.map((q) => {
-        const pin = q.deviceType === 'safety-relay-output' ? '23' : 'C';
-        const feed = m.wires.filter((w) => w.to.startsWith(`${q.deviceTag}:`) && (q.supplyTerminal ? w.from === q.supplyTerminal : w.from.startsWith('TB1 ') && w.to === `${q.deviceTag}:${pin}`)).map((w) => w.wire);
-        return { address: q.address, tag: q.deviceTag, deviceType: q.deviceType, feed: [...new Set(feed)] };
+        // the wire landing on the input's feed terminal as derive wired it (C, 23, R1, BN…): every input is checked
+        const feed = q.feedTo ? m.wires.filter((w) => w.to === q.feedTo && w.wire !== q.address).map((w) => w.wire) : [];
+        const sig = m.wires.find((w) => w.wire === q.address && w.from.startsWith(`${q.deviceTag}:`));
+        return { address: q.address, tag: q.deviceTag, deviceType: q.deviceType, feedTo: q.feedTo ?? null, feed: [...new Set(feed)], signalFrom: sig?.from ?? null };
       }),
     })),
     drives: m.motors.filter((x) => x.vfd).map((x) => ({ motor: x.motor.tag, tag: x.vfd!.tag, partNumber: x.vfd!.partNumber, fuseClass: x.vfd!.part?.ratings.fuseClass ?? null, fusePart: x.vfd!.part?.ratings.fusePart ?? null,

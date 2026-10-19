@@ -2,6 +2,7 @@
 // fault would do (short to 24 V → input ON, open → input OFF / load dead), a hidden fault, repair.
 //   npm run dev -- --port 5204 &  ;  BASE_URL=http://localhost:5204 node e2e/troubleshoot.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('fs');
 const { fakeServer } = require('./fake-modbus.cjs');
 const { createModbusClient } = require('../electron/modbus.cjs');
@@ -15,12 +16,13 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1500, height: 950 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   await page.goto(BASE + '/simulate');
@@ -28,7 +30,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await bar.waitFor({ timeout: 15000 });
   const lit = (a) => page.evaluate((a) => {
     const row = [...document.querySelectorAll('span.font-mono.w-11')].find((s) => s.textContent.trim() === a)?.parentElement;
-    return Boolean(row?.querySelector('span.rounded-full')?.className.match(/bg-(brand|emerald|violet)-500/));
+    return Boolean(row?.querySelector('span.rounded-full')?.className.match(/bg-(brand|sky|emerald|violet)-500/));
   }, a);
   const before = await lit('X005');
   // The conductor of X005 at the PLC terminal (the options name each conductor: wire — from → to).
@@ -47,7 +49,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(/hidden wiring fault is active/.test(await bar.innerText()), 'hidden fault banner');
   check(!/Fault: wire/.test(await bar.innerText()), 'the wire is not shown');
   await bar.getByRole('button', { name: 'Reveal' }).click();
-  check(/Fault: wire /.test(await bar.innerText()), 'revealed');
+  check(/Fault: \S/.test(await bar.innerText()), 'revealed');
   log('Revealed:', (await bar.innerText()).replace(/\s+/g, ' ').slice(0, 160));
   await bar.getByRole('button', { name: 'Repair the wire' }).click();
 

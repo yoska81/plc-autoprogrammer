@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { drawEachScreen, hmiImageName, hmiImagesNote } from './hmiImages';
+import { drawEachScreen, hmiImageName, hmiImagesNote, hmiMissingLine } from './hmiImages';
 
 const screens = [{ name: 'Main' }, { name: 'Manual / Jog' }, { name: 'Alarms' }];
 const { images, failed } = await drawEachScreen(screens, async (s) => {
@@ -19,6 +19,7 @@ assert.equal(hmiImageName(1, 'Manual / Jog'), '02_Manual_Jog.png');
 const note = hmiImagesNote(failed);
 assert.match(note, /^1 HMI screen could not be drawn/);
 assert.match(note, /- Manual \/ Jog: HMI screen "Manual \/ Jog" could not be drawn/);
+assert.equal(hmiMissingLine(failed, 'hmi/SCREENS_NOT_DRAWN.txt'), 'Downloaded, but 1 HMI screen could not be drawn and is not in it: Manual / Jog. See hmi/SCREENS_NOT_DRAWN.txt in the ZIP.');
 // every screen failing: nothing thrown, every failure reported
 const none = await drawEachScreen(screens, async () => { throw new Error('no canvas'); });
 assert.equal(none.images.length, 0);
@@ -28,5 +29,7 @@ assert.match(hmiImagesNote(none.failed), /^3 HMI screens could not be drawn/);
 // the ZIP, the package and the Export page use it: a failure becomes a note, never a failed download
 const files = readFileSync(new URL('./files.ts', import.meta.url), 'utf8');
 assert.match(files, /buildHmiImages\(p, failed\)[\s\S]{0,200}SCREENS_NOT_DRAWN\.txt/, 'the deliverables ZIP writes the note');
-assert.match(readFileSync(new URL('../pages/ExportPage.tsx', import.meta.url), 'utf8'), /SCREENS_NOT_DRAWN\.txt/, 'the screen images ZIP writes the note');
+const exportPage = readFileSync(new URL('../pages/ExportPage.tsx', import.meta.url), 'utf8');
+assert.match(exportPage, /SCREENS_NOT_DRAWN\.txt/, 'the screen images ZIP writes the note');
+assert.equal((exportPage.match(/setDownloadNote\(hmiMissingLine\(failed/g) ?? []).length, 2, 'both ZIP downloads say on the page which screens are missing');
 console.log('hmi images: 1 passed, 0 failed');

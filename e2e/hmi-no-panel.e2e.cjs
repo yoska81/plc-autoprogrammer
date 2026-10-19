@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const JSZip = require(path.join(__dirname, '..', 'node_modules', 'jszip'));
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const OUT = path.join(__dirname, 'out-hmi-no-panel');
@@ -17,22 +18,23 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
 
   // "No touch panel" chosen: the panel is cleared, the screens made for it stay in the store.
   const screensBefore = await page.evaluate(async () => {
-    const { useStageStore } = await import('/src/store/useStageStore.ts');
-    const { useSpecStore } = await import('/src/store/useSpecStore.ts');
-    const { setProjectPanel } = await import('/src/hmi/retarget.ts');
-    const { useHmiStore } = await import('/src/store/useHmiStore.ts');
+    const { useStageStore } = await appImport('/src/store/useStageStore.ts');
+    const { useSpecStore } = await appImport('/src/store/useSpecStore.ts');
+    const { setProjectPanel } = await appImport('/src/hmi/retarget.ts');
+    const { useHmiStore } = await appImport('/src/store/useHmiStore.ts');
     if (!useStageStore.getState().sources.equipment) useStageStore.getState().markGenerated('equipment', { specFp: '', spec: useSpecStore.getState().sections });
     setProjectPanel('');
     return useHmiStore.getState().design.screens.length;
@@ -92,7 +94,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.goto(BASE + '/hmi');
   await page.waitForTimeout(500);
   await page.getByRole('button', { name: 'Remove them' }).click();
-  check(await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design) === null, 'earlier screens removed');
+  check(await page.evaluate(async () => (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design) === null, 'earlier screens removed');
   check(await page.getByTestId('hmi-leftover').count() === 0, 'no leftover note after removing');
   await page.getByRole('button', { name: /Add a touch panel after all/ }).click();
   check(await page.getByRole('heading', { name: 'Which HMI are you using?' }).isVisible(), 'panel chooser opens');

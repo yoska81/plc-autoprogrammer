@@ -3,6 +3,7 @@
 // (button works, picture behind it) and in the exported PNG.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/hmi-editor.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const JSZip = require('jszip');
 const fs = require('fs');
 const path = require('path');
@@ -19,6 +20,7 @@ let failPage = null;
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true });
   const page = await ctx.newPage();
+  await useAppModules(page);
 
   // Pages load as their own chunks: after a navigation, wait until the app and the page have rendered.
   const gotoRaw = page.goto.bind(page);
@@ -56,7 +58,7 @@ let failPage = null;
   await page.evaluate(async () => {
     localStorage.clear();
     localStorage.setItem('plc-settings-store', JSON.stringify({ state: { provider: 'anthropic', anthropicApiKey: 'sk-ant-test', anthropicModel: 'claude-opus-5-5', effort: 'high', openaiApiKey: '', openaiModel: 'gpt-4o' }, version: 4 }));
-    (await import('/src/preview/sampleProject.ts')).seedSampleProject();
+    (await appImport('/src/preview/sampleProject.ts')).seedSampleProject();
   });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
@@ -151,7 +153,7 @@ let failPage = null;
   check(await programStale() === 1, 'program marked out of date');
   const screenName = 'icon'; // named after the picture file
   const navTo = await page.evaluate(async (name) => {
-    const { useHmiStore } = await import('/src/store/useHmiStore.ts');
+    const { useHmiStore } = await appImport('/src/store/useHmiStore.ts');
     const d = useHmiStore.getState().design;
     const id = d.screens.find((s) => s.name === name).id;
     return d.screens.filter((s) => s.elements.some((e) => e.kind === 'nav' && e.targetScreenId === id)).length;

@@ -39,6 +39,7 @@ import VoiceTextarea from '../../../voice/VoiceTextarea';
 import SpeakButton from '../../../voice/SpeakButton';
 import { useProjectStore } from '../../../store/useProjectStore';
 import { ptoPointsFor } from '../../../electrical/highSpeedIo';
+import { usePlcNames } from '../ladder/plcNames';
 
 type Tab = 'describe' | 'fix' | 'history';
 
@@ -162,6 +163,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     if (box && w) setZoom(Math.round(Math.min(2, Math.max(0.4, (box.clientWidth - 24) / w)) * 100) / 100);
   };
   const history = useLadderHistory(ladder, store.editLadder);
+  // Siemens / Logix: the PLC's own tag names on the ladder (the names in the exported program).
+  const plcNames = usePlcNames(ladder);
   const [xrefAddress, setXrefAddress] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [scrollTo, setScrollTo] = useState<{ id: string; n: number } | null>(() => (searchParams.get('rung') ? { id: searchParams.get('rung')!, n: 0 } : null));
@@ -540,11 +543,12 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
         {/* The ladder diagram pans both ways. */}
         <div ref={ladderBox} {...phonePanel(narrow, 'program', 'ladder')} className={`flex-1 min-w-0 overflow-auto${narrow && pane !== 'ladder' ? ' hidden' : ''}`} data-scroll-x="">
           {review ? (
-            <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} zoom={zoom} />
+            <LadderView program={review.display} labels={labels} changes={review.changes} issues={review.issues} zoom={zoom} plcNames={plcNames} />
           ) : ladder.rungs.length ? (
             <>
-            {ladder.sequence && (activeBlock === null || activeBlock === 'cycle') && <SequenceTable sequence={ladder.sequence} labels={labels} />}
+            {ladder.sequence && (activeBlock === null || activeBlock === 'cycle') && <SequenceTable sequence={ladder.sequence} labels={labels} plcNames={plcNames} />}
             <LadderView
+              plcNames={plcNames}
               program={shown}
               onChange={activeBlock === null ? history.edit : (p) => history.edit(mergeBlock(ladder, activeBlock, p))}
               zoom={zoom}

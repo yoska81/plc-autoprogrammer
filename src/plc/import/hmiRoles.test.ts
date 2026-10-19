@@ -77,4 +77,15 @@ const nicks = (xs: Role[]) => xs.map((x) => x.nickname);
   assert.equal(cap.alarms[0].text, 'Emergency stop');
 }
 
+// Array alarm bits with no comment of their own (Alm[0].3) take the comment of the rung that sets them.
+{
+  const f = join(here, '..', '..', '..', 'fixtures', 'import', 'ab-palletizer-01', 'Palletizer_PL01.L5X');
+  const pal = programRoles(planUpgrade(importProgramFiles([{ name: 'Palletizer_PL01.L5X', text: fileText('Palletizer_PL01.L5X', new Uint8Array(readFileSync(f))) }]).program, 'click').program);
+  const text = (n: string) => pal.alarms.find((a) => a.nickname === n)?.text;
+  assert.equal(text('Alm[0].0'), 'E-stop');
+  assert.equal(text('Alm[0].3'), 'Infeed overload');
+  assert.equal(text('Alm[0].8'), 'Elevator raise timeout');
+  assert.ok(pal.alarms.every((a) => !/^Alm\[|^Alarm \d+:/.test(a.text)), pal.alarms.map((a) => a.text).join(' | '));
+}
+
 console.log('hmiRoles.test: all passed');

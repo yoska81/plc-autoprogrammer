@@ -4,6 +4,7 @@
 // "issued for construction" (names required) on Project data, drawings and documents.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/qa-round2.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const path = require('path');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const PICTURE = path.join(__dirname, '..', 'build', 'icon.png');
@@ -14,13 +15,14 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
 
@@ -29,7 +31,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByTestId('convert-files').setInputFiles(PICTURE);
   await page.getByRole('button', { name: 'Remove icon.png' }).waitFor({ timeout: 5000 }).catch(() => {}); // files are checked before they are listed
   check(await page.getByRole('button', { name: 'Remove icon.png' }).count() === 1, 'import: file listed in the example');
-  await page.evaluate(async () => (await import('/src/store/useProjectsStore.ts')).useProjectsStore.getState().createProject('Other project'));
+  await page.evaluate(async () => (await appImport('/src/store/useProjectsStore.ts')).useProjectsStore.getState().createProject('Other project'));
   await page.goto(BASE + '/import');
   await page.waitForTimeout(400);
   check(await page.getByRole('button', { name: 'Remove icon.png' }).count() === 0, "import: another project doesn't see the example's files");
@@ -50,7 +52,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
     await page.waitForTimeout(300);
     await page.getByRole('button', { name: 'Next →' }).click();
     await page.waitForTimeout(400);
-    const cpu = await page.evaluate(async () => (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().cpuId);
+    const cpu = await page.evaluate(async () => (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().cpuId);
     check(cpu === 'C0-12DD1E-D', `wizard: the selection was applied on Next (${cpu})`);
     check(/C0-12DD1E-D/.test(await page.locator('aside').innerText()), 'wizard summary shows the controller');
     // Jump back, then forward again with the step tabs.
@@ -82,15 +84,15 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   // Leave through the app's own navigation (a reload would ask "leave the page?").
   await page.locator('a[href="/spec"]').first().click();
   await page.waitForURL(/\/spec/);
-  const effortNow = () => page.evaluate(async () => (await import('/src/store/useSettingsStore.ts')).useSettingsStore.getState().effort);
+  const effortNow = () => page.evaluate(async () => (await appImport('/src/store/useSettingsStore.ts')).useSettingsStore.getState().effort);
   let kept = await effortNow();
   for (let t = 0; t < 50 && kept !== 'low'; t++) { await page.waitForTimeout(100); kept = await effortNow(); } // saved as the page unmounts
   check(kept === 'low', `settings kept when leaving the page (${kept})`);
 
   // 9. One "issued for construction" rule: needs the checker and approver.
   const status = await page.evaluate(async () => {
-    const { useProjectStore } = await import('/src/store/useProjectStore.ts');
-    const { revisionState } = await import('/src/electrical/derive.ts');
+    const { useProjectStore } = await appImport('/src/store/useProjectStore.ts');
+    const { revisionState } = await appImport('/src/electrical/derive.ts');
     const p = useProjectStore.getState();
     p.setInfo({ revisions: [{ rev: '0', date: '2026-10-17', description: 'Issued for construction', by: 'AB' }], checkedBy: '', approvedBy: 'AB' });
     const unsigned = revisionState({ ...p.info, ...useProjectStore.getState().info, prefix: '' }).status;
@@ -100,7 +102,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   });
   log('Revision status unsigned / signed:', JSON.stringify(status));
   check(/PRELIMINARY/.test(status.unsigned) && /ISSUED FOR CONSTRUCTION/.test(status.signed), 'drawings: IFC only with checker and approver');
-  await page.evaluate(async () => (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().setInfo({ checkedBy: '' }));
+  await page.evaluate(async () => (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().setInfo({ checkedBy: '' }));
   await page.goto(BASE + '/project');
   await page.waitForTimeout(500);
   const projText = await page.locator('main').innerText();

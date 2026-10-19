@@ -4,10 +4,11 @@
  *   npx tsx src/plc/core/platforms.test.ts
  */
 import assert from 'node:assert/strict';
-import { getPart } from '../../electrical/catalog';
-import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules, driversOf } from './platforms';
+import { getPart, partsIn } from '../../electrical/catalog';
+import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules, driversOf, plcModuleFor, plcModulePart } from './platforms';
 import { cpuFit, hmiFit, modulesToFit, platformOf, type Need } from './fit';
 import { PLC_PROFILES } from './profiles';
+import { LOGIX_CPUS } from './profiles/logix';
 import { HMI_MODELS } from '../../hmi/hmiCatalog';
 import { CATALOG } from '../../electrical/catalog';
 
@@ -104,6 +105,73 @@ assert.ok(driversOf(getPart('cMT2078X')!).includes('ab-micro850'), 'Weintek driv
 assert.ok(ok('ab-micro850', 'cMT2078X') && ok('siemens-s7-1200', 'cMT2078X') && ok('omron-nx1p2', 'cMT2078X'), 'Weintek cMT X talks to AB, Siemens, Omron NX1P2');
 assert.ok(!ok('siemens-s7-1200-g2', 'MT8072iP'), 'Weintek iP: no S7-1200 G2 driver');
 assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000'), 'Red Lion: Logix yes, NX1P2 not listed');
+// CompactLogix 5370 (an L5X upgrade that keeps its 1769-L33ER): the makers' driver lists name it, so a panel can be chosen.
+{
+  const l33 = platformById(LOGIX_CPUS.find((c) => c.id === '1769-L33ER')!.platformId!)!;
+  const fits = ALL_HMIS().filter((p) => hmiCompatible(l33, p).ok);
+  assert.ok(fits.some((p) => p.vendor === 'allen-bradley') && fits.length >= 10, `1769-L33ER panels: ${fits.length}`);
+  assert.ok(ok('ab-compactlogix-5370', '2713P-T7WD1') && ok('ab-compactlogix-5370-l1', '2711R-T7T'), 'PanelView 5310 with an L33ER, PanelView 800 with an L1');
+  for (const p of fits.filter((x) => driversOf(x).includes('ab-compactlogix-5370'))) assert.ok(p.ratings.drivers5370Source, `${p.partNumber}: 5370 driver source`);
+  assert.ok(ok('ab-compactlogix-5370-l1', 'cMT2078X') && ok('ab-compactlogix-5370-l1', 'G07C0000'), 'L1 on Weintek and Red Lion panels too');
+  // CompactLogix speaks EtherNet/IP only: never on a serial-only panel (Pro-face GP4100 series).
+  const LOGIX = ['ab-compactlogix-5380', 'ab-compactlogix-5370', 'ab-compactlogix-5370-l1'];
+  for (const p of ALL_HMIS()) {
+    const d = driversOf(p).filter((id) => LOGIX.includes(id));
+    if (d.length) assert.ok(Number(p.ratings.ethernetPorts) > 0, `${p.partNumber}: Logix driver on a panel with no Ethernet port`);
+    // 5370 and 5380 come from the same maker statements: the two sets stay in step.
+    assert.ok(d.length === 0 || d.length === 3, `${p.partNumber}: Logix driver ids out of step (${d.join(', ')})`);
+  }
+  assert.ok(!ok('ab-compactlogix-5370', 'PFXGP4115T2D'), 'serial-only GP4100: no CompactLogix');
+  // PanelView Plus 7 (FactoryTalk View ME): CompactLogix 5370 per 2711P-TD008J / TD009M, 5380 per 2711P-SP011L.
+  for (const pn of ['2711P-T7C22D8S', '2711P-T10C22D9P']) assert.ok(ok('ab-compactlogix-5370', pn) && ok('ab-compactlogix-5380', pn) && !ok('ab-micro850', pn), `${pn}: Logix, not Micro800`);
+  // PanelView 5310 / 5510 need Logix firmware V27 or later (Rockwell 2713P-TD001K / 2715P-TD001G).
+  for (const p of ALL_HMIS().filter((x) => /^271[35]P-/.test(x.partNumber))) assert.equal(p.ratings.logixFirmwareMin, 27, `${p.partNumber}: firmware V27+`);
+}
+// A panel with no Ethernet port keeps a PLC family only where its maker's serial / fieldbus driver names it
+// (generic Modbus does not count). The route, module and source are in ratings.serialRouteNote.
+{
+  const ETHERNET_ONLY = new Map<string, string>([
+    ['siemens-s7-1200-g2', 'Pro-face lists S7-1200 G2 under Ethernet only'],
+    ['ab-micro850', 'Pro-face lists Micro850 only under EtherNet/IP (roc.htm); its DF1 table has no Micro800'],
+    ['schneider-m241', 'not in the Pro-face Schneider serial driver list'],
+    ['click', 'not named by Pro-face, Delta or Omron serial drivers (generic Modbus not counted)'],
+  ]);
+  for (const p of ALL_HMIS().filter((x) => x.ratings.ethernetPorts === 0 && x.ratings.plcDrivers !== undefined && !String(x.ratings.plcDrivers).startsWith('unitronics'))) {
+    assert.ok(p.ratings.serialRouteNote, `${p.partNumber}: serial-only panel needs serialRouteNote (maker driver per family)`);
+    for (const id of driversOf(p)) assert.ok(!ETHERNET_ONLY.has(id), `${p.partNumber}: ${id} on a serial-only panel (${ETHERNET_ONLY.get(id)})`);
+  }
+  assert.ok(!ok('siemens-s7-1200', 'NB5Q-TW00B') && !ok('siemens-s7-1200', 'GT2104-PMBDS'), 'NB and GT21 reach S7-1200 only over Ethernet (V108 2-1-2, SH-081199 16.1)');
+  assert.ok(ok('siemens-s7-1200', 'PFXGP4116T2D') && !ok('siemens-s7-1200', 'PFXGP4115T2D'), 'S7-1200 via CM 1243-5 needs RS-485 (SIE_MPID_39)');
+  assert.ok(ok('omron-nx1p2', 'NB7W-TW00B') && !ok('omron-nx1p2', 'GT2105-QTBDS'), 'NX1P2: NB with NX1W-CIF board yes, GOT serial no');
+  // The module the PLC needs for such a panel (shown by the picker, added to the BOM).
+  assert.match(plcModuleFor(getPart('PFXGP4116T2D')!, 'siemens-s7-1200') ?? '', /6GK7243-5DX30-0XE0/);
+  assert.match(plcModuleFor(getPart('NB7W-TW00B')!, 'omron-nx1p2') ?? '', /NX1W-CIF01/);
+  assert.equal(plcModuleFor(getPart('PFXGP4116T2D')!, 'schneider-m221'), null, 'M221: built-in serial');
+  assert.equal(plcModuleFor(getPart('2713P-T7WD1')!, 'ab-compactlogix-5370'), null, 'Ethernet panel: nothing');
+  // The bare catalog number for the BOM / rack (the modules are verified catalog parts).
+  assert.equal(plcModulePart(getPart('PFXGP4116T2D')!, 'siemens-s7-1200'), '6GK7243-5DX30-0XE0');
+  assert.equal(plcModulePart(getPart('6AV2123-2GA03-0AX0')!, 'siemens-s7-1500'), '6GK7542-5DX10-0XE0', 'CM 1542-5 successor');
+  assert.equal(plcModulePart(getPart('PFXGP4115T2D')!, 'mitsubishi-fx5u'), 'FX5-232-BD');
+  assert.equal(plcModulePart(getPart('PFXGP4115T2D')!, 'mitsubishi-fx5uc'), 'FX5-232ADP', 'FX5UC takes no board');
+  assert.equal(plcModulePart(getPart('NB7W-TW00B')!, 'omron-nx1p2'), 'NX1W-CIF01');
+  assert.equal(plcModulePart(getPart('GT2104-PMBDS')!, 'omron-cp2e'), 'CP1W-CIF11');
+  for (const p of ALL_HMIS().filter((x) => x.ratings.plcModules !== undefined)) for (const id of driversOf(p)) {
+    if (plcModuleFor(p, id)) assert.ok(plcModulePart(p, id), `${p.partNumber} + ${id}: module ${plcModuleFor(p, id)} is not a catalog part`);
+  }
+  // Interface modules are 'commModule', never I/O 'plcModule': they never take an I/O slot, so adding one leaves
+  // every I/O address (siemensAddress / CLICK slots / Logix Local:n) and the I/O module picker unchanged.
+  const comm = new Set<string>();
+  for (const p of ALL_HMIS()) for (const id of driversOf(p)) { const pn = plcModulePart(p, id); if (pn) comm.add(pn); }
+  assert.ok(comm.size >= 6, `interface modules: ${[...comm].join(', ')}`);
+  for (const pn of comm) assert.equal(getPart(pn)!.category, 'commModule', `${pn}: not an I/O module`);
+  const ioModules = new Set([...partsIn('plcModule'), ...PLATFORMS.flatMap((pl) => pl.modules.map((m) => getPart(m)!))].map((p) => p.partNumber));
+  for (const pn of comm) assert.ok(!ioModules.has(pn), `${pn} offered as an I/O module`);
+  for (const pl of PLATFORMS) for (const cpu of pl.cpus) for (const m of modulesToFit(cpu, [], need({ digitalInputs: 64, digitalOutputs: 32, analogInputs: 8 })) ?? []) assert.ok(!comm.has(m), `${cpu}: ${m} suggested as I/O`);
+  for (const p of ALL_HMIS().filter((x) => x.ratings.plcModules !== undefined)) for (const part of String(p.ratings.plcModules).split(';')) {
+    const id = part.split('=')[0].trim();
+    assert.ok(driversOf(p).includes(id), `${p.partNumber}: plcModules names ${id}, which is not in its driver list`);
+  }
+}
 // Driver ids are platform ids (agreed list; every platform that exists must be on it).
 const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'ab-compactlogix-5370', 'ab-compactlogix-5370-l1', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300', 'unitronics-unistream', 'unitronics-vision', 'unitronics-samba', 'unitronics-jazz']);
 for (const pl of PLATFORMS) assert.ok(DRIVER_IDS.has(pl.id), `platform ${pl.id} is on the driver id list`);

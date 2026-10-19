@@ -36,7 +36,7 @@ function CapacityBar({ label, need, have }: { label: string; need: number; have:
         <span className={ok ? 'text-steel-700' : 'text-red-700 font-medium'}>{need} needed · {have} available{ok ? ` · ${spare} spare` : ` · ${-spare} short`}</span>
       </div>
       <div className="h-2 rounded bg-steel-100 overflow-hidden">
-        <div className={`h-full ${ok ? 'bg-brand-500' : 'bg-red-500'}`} style={{ width: `${have ? Math.min(100, (need / have) * 100) : 100}%` }} />
+        <div className={`h-full ${ok ? 'bg-green-600' : 'bg-red-500'}`} style={{ width: `${have ? Math.min(100, (need / have) * 100) : 100}%` }} />
       </div>
     </div>
   );
@@ -212,7 +212,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
         </div>
       )}
 
-      <BrandHardwareCard need={need} />
+      <BrandHardwareCard need={need} onPick={(cpuId, mods) => set({ ...withCpu(cpuId), modules: mods })} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
         <div className="xl:col-span-2 space-y-4">
@@ -282,7 +282,9 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                   {cap && <CapacityBar label="Digital inputs" need={need.digitalInputs} have={cap.inputs} />}
                   {cap && <CapacityBar label="Digital outputs" need={need.digitalOutputs} have={cap.outputs} />}
                   {fit && !fit.ok && <p className="text-red-700 text-xs">{fit.reason}</p>}
-                  {applied ? (
+                  {applied && fit && !fit.ok ? (
+                    <p className="text-xs bg-red-50 border border-red-200 text-red-800 px-2 py-1.5">This is the project's PLC, but it cannot hold the I/O list. Choose a larger CPU or add modules.</p>
+                  ) : applied ? (
                     <p className="text-xs bg-green-50 border border-green-200 text-green-800 px-2 py-1.5">Applied to the project.</p>
                   ) : (
                     <button onClick={apply} disabled={!fit?.ok} className="w-full px-4 py-1.5 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-40">Use this selection</button>

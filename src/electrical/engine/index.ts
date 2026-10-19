@@ -94,7 +94,9 @@ export function generateDesign(input: EngineInput): EngineResult {
   const { inputs, getPart } = input;
   const supply = inputs.supply;
   const pk = new Picker(input.pref ?? DEFAULT_PREFERENCE);
-  const tags = new Tags(['PLC', 'ENC1', 'SP1', 'DS1', 'SR1']);
+  // the relay logic's devices keep their converted tags (CR1, K1, PB4…): the rules never hand those out again
+  const relayDevices = inputs.relayLogic?.devices ?? [];
+  const tags = new Tags(['PLC', 'ENC1', 'SP1', 'DS1', 'SR1', ...relayDevices.map((d) => d.tag)]);
   // Servo axes, encoders and ultrasonic sensors (src/electrical/motion.ts): wired there, left out of the rules below.
   const motion = motionDesign({ io: input.io, addresses: input.addresses, supply, region: input.region, pref: input.pref, spec: input.spec, nextTag: (p) => tags.next(p), extraParts: input.motionParts });
   const io = input.io.filter((p) => !motion.claimed.has(p.id));
@@ -164,6 +166,18 @@ export function generateDesign(input: EngineInput): EngineResult {
     }
     required.push(comp(tags.next(TAG_PREFIX[p?.category ?? 'other'] ?? 'X'), r.partNumber, r.quantity, `Required by the designer${p ? `: ${p.description}` : ''}`));
   }
+
+  // Relay logic kept from a converted machine: each device of the rungs is a part of the design under its own tag
+  // (the converter's North-American part); a device without a part, or one the catalog does not know, is to select.
+  const taken = new Set([...power.components, ...dev.components, ...plc, ...required].map((c) => c.tag));
+  const toSelect: string[] = [];
+  for (const d of relayDevices) {
+    if (taken.has(d.tag)) continue;
+    const p = d.partNumber ? getPart(d.partNumber) : undefined;
+    if (p) { required.push(comp(d.tag, p.partNumber, 1, `${d.description} (relay logic)`)); taken.add(d.tag); }
+    else toSelect.push(`${d.tag} (${d.category}${d.partNumber ? `, ${d.partNumber} not in the catalog` : ''})`);
+  }
+  if (toSelect.length) notes.push(`Relay logic: select a part for ${toSelect.join(', ')} — drawn on the ladder, not yet in the parts list.`);
 
   // a button of a station (PB1L / PB1R on station PB1) is the station's part, not an uncatalogued sensor
   const compOf = (tag: string) => dev.components.find((c) => c.tag === tag) ?? dev.components.find((c) => tag.startsWith(c.tag) && /^[A-Z]$/.test(tag.slice(c.tag.length)));

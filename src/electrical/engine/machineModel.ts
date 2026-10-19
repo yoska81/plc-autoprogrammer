@@ -157,6 +157,9 @@ function specPower(spec: string, name: string): number | undefined {
   return Number(m[1]) * (m[2].toLowerCase() === 'kw' ? 1.341 : 1);
 }
 
+/** A drive input terminal or servo-drive input signal named in an I/O description (DI1, MI3, SON, CAM, ARST…). */
+export const DRIVE_INPUT_RE = /\b(?:DI|MI)\d{1,2}\b|\b(?:S-?ON|E-?CAM|CAM|ARST|EMGS)\b/i;
+
 /**
  * Motors the I/O list runs through a VFD (run / fault on a drive) are designed on a drive whatever the motor
  * list or the AI said — otherwise the drive I/O would be wired to a drive that is not in the design.
@@ -170,7 +173,9 @@ export function drivesFromIo(model: MachineModel, io: IOPoint[], spec = ''): Mac
     return { ...m, start: 'vfd' as const };
   });
   // A drive run output no motor matches (the motor list is from another machine): a motor on a drive for it.
-  const runs = driveIo.filter((p) => p.type === 'output' && p.signal !== 'analog' && !/\b(rev|reverse|speed|preset|fault)\b/i.test(p.description));
+  // an output that switches a drive's input terminal ("U2 DI1 SON", "VFD1 MI1", "DI7 CAM engage") is a signal to a
+  // drive already on the machine, never a motor of its own
+  const runs = driveIo.filter((p) => p.type === 'output' && p.signal !== 'analog' && !/\b(rev|reverse|speed|preset|fault)\b/i.test(p.description) && !DRIVE_INPUT_RE.test(p.description));
   // drives on the motor list a run output already stands for (by shared words); generic outputs ("VFD1 run",
   // "Drive 2 run") take the drives no output names, in order — they are not extra motors
   const claimed = new Set(runs.flatMap((p) => motors.filter((m) => m.start === 'vfd' && wordsShared(p.description, m.description)).map((m) => m.tag)));

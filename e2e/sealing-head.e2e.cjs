@@ -6,6 +6,7 @@
 //
 //   VITE_PREVIEW=1 npx vite --port 5206 --strictPort &  ;  BASE_URL=http://localhost:5206 node e2e/sealing-head.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('fs');
 const OUT = __dirname + '/out-sealing-head/';
 fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true });
@@ -90,6 +91,7 @@ function reply(text) {
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 950 }, acceptDownloads: true })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
@@ -117,11 +119,11 @@ function reply(text) {
   await page.waitForTimeout(1500);
   // The user's case: a copy of the example with their own description.
   await page.evaluate(async ({ spec }) => {
-    const ps = await import('/src/store/useProjectsStore.ts');
+    const ps = await appImport('/src/store/useProjectsStore.ts');
     const { data } = ps.activeProjectData();
     ps.addProjectFromData('Sealing Head', data);
-    const { useSpecStore } = await import('/src/store/useSpecStore.ts');
-    const { EMPTY_SECTIONS } = await import('/src/spec/types.ts');
+    const { useSpecStore } = await appImport('/src/store/useSpecStore.ts');
+    const { EMPTY_SECTIONS } = await appImport('/src/spec/types.ts');
     useSpecStore.getState().setSections({ ...EMPTY_SECTIONS, overview: spec });
   }, { spec: SPEC });
   await page.goto(BASE + '/#/spec');
@@ -135,23 +137,23 @@ function reply(text) {
   await page.waitForTimeout(500);
   const build = page.getByRole('button', { name: 'Build everything from my description' });
   log('Build button enabled:', await build.isEnabled());
-  await page.evaluate(async () => { window.__stages = []; (await import('/src/lib/ai/jobs.ts')).useAiJobs.subscribe((st) => { for (const j of st.jobs) if (j.stage && window.__stages[window.__stages.length - 1] !== j.stage) window.__stages.push(j.stage); }); });
+  await page.evaluate(async () => { window.__stages = []; (await appImport('/src/lib/ai/jobs.ts')).useAiJobs.subscribe((st) => { for (const j of st.jobs) if (j.stage && window.__stages[window.__stages.length - 1] !== j.stage) window.__stages.push(j.stage); }); });
   await build.click();
   // wait for the job to finish
-  await page.waitForFunction(async () => !(await import('/src/lib/ai/jobs.ts')).useAiJobs.getState().jobs.some((j) => j.status === 'running'), null, { timeout: 120000, polling: 500 });
+  await page.waitForFunction(async () => !(await appImport('/src/lib/ai/jobs.ts')).useAiJobs.getState().jobs.some((j) => j.status === 'running'), null, { timeout: 120000, polling: 500 });
   await page.waitForTimeout(1000);
-  const jobs = await page.evaluate(async () => (await import('/src/lib/ai/jobs.ts')).useAiJobs.getState().jobs.map((j) => ({ kind: j.kind, status: j.status, stage: j.stage, error: j.error })));
+  const jobs = await page.evaluate(async () => (await appImport('/src/lib/ai/jobs.ts')).useAiJobs.getState().jobs.map((j) => ({ kind: j.kind, status: j.status, stage: j.stage, error: j.error })));
   log('Jobs:', JSON.stringify(jobs));
   const stageLog = await page.evaluate(() => window.__stages);
   log('Stage log:', JSON.stringify(stageLog));
-  log('HMI store part:', await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber));
+  log('HMI store part:', await page.evaluate(async () => (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber));
   const state = await page.evaluate(async () => {
-    const io = (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
-    const proj = (await import('/src/store/useProjectStore.ts')).useProjectStore.getState();
-    const el = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState();
-    const hmi = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState();
-    const prog = (await import('/src/store/useProgramStore.ts')).useProgramStore.getState();
-    const stages = (await import('/src/spec/useStages.ts')).stagesNow();
+    const io = (await appImport('/src/store/useIOStore.ts')).useIOStore.getState().projectIO;
+    const proj = (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState();
+    const el = (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState();
+    const hmi = (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState();
+    const prog = (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState();
+    const stages = (await appImport('/src/spec/useStages.ts')).stagesNow();
     return { io, plc: { plcId: proj.plcId, cpuId: proj.cpuId, modules: proj.modules, hmi: proj.hmiPartNumber ?? proj.hmi }, electrical: { inputs: el.inputs, design: el.design, explanation: el.explanation },
       hmi: hmi.design, program: { rungs: prog.ladder?.rungs?.length, pending: prog.pending ?? prog.proposal ?? null, userPrompt: prog.userPrompt },
       stages: Object.fromEntries(Object.entries(stages).map(([k, v]) => [k, { status: v.status, why: v.reason ?? v.why ?? '' }])) };
@@ -159,14 +161,14 @@ function reply(text) {
   fs.writeFileSync(OUT + 'state.json', JSON.stringify(state, null, 2));
   // Deliverables: everything ZIP (full package, labels, machining), machine spec
   const zip = await page.evaluate(async () => {
-    const { collectProject } = await import('/src/deliverables/collect.ts');
-    const { buildEverythingZip } = await import('/src/deliverables/files.ts');
+    const { collectProject } = await appImport('/src/deliverables/collect.ts');
+    const { buildEverythingZip } = await appImport('/src/deliverables/files.ts');
     const blob = await buildEverythingZip(collectProject());
     const buf = new Uint8Array(await blob.arrayBuffer()); let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
     return btoa(bin);
   });
   fs.writeFileSync(OUT + 'everything.zip', Buffer.from(zip, 'base64'));
-  const spec = await page.evaluate(async () => { const m = await import('/src/deliverables/machineSpec.ts').catch(() => null); if (!m) return 'NO MODULE'; const f = m.machineSpecText; const { collectProject } = await import('/src/deliverables/collect.ts'); try { return String(f(collectProject())); } catch (e) { return 'ERR ' + e.message; } });
+  const spec = await page.evaluate(async () => { const m = await appImport('/src/deliverables/machineSpec.ts').catch(() => null); if (!m) return 'NO MODULE'; const f = m.machineSpecText; const { collectProject } = await appImport('/src/deliverables/collect.ts'); try { return String(f(collectProject())); } catch (e) { return 'ERR ' + e.message; } });
   fs.writeFileSync(OUT + 'machine_spec.md', spec);
   const JSZip = require('jszip');
   const z = await JSZip.loadAsync(fs.readFileSync(OUT + 'everything.zip'));
@@ -180,8 +182,8 @@ function reply(text) {
   check(/Two-hand start/.test(spec) && /Seal heater/.test(spec), 'machine spec lists the sealing head I/O');
   // The design review says what the engines could not design (instead of a silently unsafe panel).
   const findings = await page.evaluate(async () => {
-    const { checksFor } = await import('/src/review/actions.ts');
-    const { collectProject } = await import('/src/deliverables/collect.ts');
+    const { checksFor } = await appImport('/src/review/actions.ts');
+    const { collectProject } = await appImport('/src/deliverables/collect.ts');
     return checksFor(collectProject()).map((f) => `${f.severity}|${f.title}`);
   });
   fs.writeFileSync(OUT + 'findings.txt', findings.join('\n'));

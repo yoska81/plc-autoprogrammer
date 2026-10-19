@@ -24,7 +24,7 @@ export interface SheetDxfStats { entities: number; devices: number; wireNumbers:
 export const CAD_LAYERS: [name: string, color: number][] = [
   ['BORDER', 7], ['SYMS', 7], ['WIRES', 5], ['WIRENO', 3], ['TAGS', 2], ['TEXT', 7], ['GRAPHICS', 8],
 ];
-const WIRE_SHEETS = ['power', 'motors', 'control', 'io', 'analog', 'drive', 'servo', 'jb'];
+const WIRE_SHEETS = ['power', 'motors', 'control', 'ladder', 'io', 'analog', 'drive', 'servo', 'jb'];
 const DEVICE_SHEETS = [...WIRE_SHEETS, 'panel', 'door', 'machine', 'layout'];
 
 type M = [number, number, number, number, number, number]; // a b c d e f (SVG matrix)

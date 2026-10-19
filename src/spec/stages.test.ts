@@ -1,6 +1,8 @@
 // npx tsx src/spec/stages.test.ts — stage staleness when the PLC (and so the I/O addresses) changes.
 import assert from 'node:assert/strict';
 import { addressFingerprint, computeStages, ioFingerprint } from './useStages';
+import { modulesToFit } from '../plc/core/fit';
+import { hardwareShortfall, needFromIo } from './equipmentRules';
 import type { IOPoint } from '../types/io';
 import type { SpecSections } from './types';
 
@@ -68,6 +70,28 @@ assert.equal(regionRun.program.status, 'ready');
   assert.equal(noPanel.hmi.status, 'ready', 'no HMI on this machine: nothing to design');
   const notChosen = computeStages({ fp: fp(click), sources: sources(click), ioCount: 3, hasDesign: true, hasHmi: false, hasProgram: true });
   assert.equal(notChosen.hmi.status, 'empty', 'an HMI not designed yet is still to do');
+}
+
+// The PLC must hold the I/O list: a CPU with no built-in I/O and no modules is short, and the Equipment stage says so.
+{
+  const short = hardwareShortfall('5069-L310ER', [], io);
+  assert.ok(short, 'no built-in I/O and no modules: short');
+  assert.equal(hardwareShortfall('5069-L310ER', ['5069-IB16', '5069-OB16'], io), null, 'with modules it holds the list');
+  assert.equal(hardwareShortfall('5069-L310ER', [], []), null, 'no I/O list yet: nothing to check');
+  const mods = modulesToFit('5069-L310ER', [], needFromIo(io, false, 0));
+  assert.ok(mods?.length && hardwareShortfall('5069-L310ER', mods, io) === null, 'modules are found that fit');
+  const st = computeStages({ fp: fp(click), sources: sources(click), ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true, hardwareShort: short });
+  assert.equal(st.equipment.status, 'stale');
+  assert.match(st.equipment.reason ?? '', /cannot hold the I\/O list/);
+  const ok = computeStages({ fp: fp(click), sources: sources(click), ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true, hardwareShort: null });
+  assert.notEqual(ok.equipment.status, 'stale');
+}
+
+// Another PLC brand than the one asked for: Equipment is out of date (Update all chooses it again), with the reason.
+{
+  const st = computeStages({ fp: fp(click), sources: sources(click), ioCount: 3, hasDesign: true, hasHmi: true, hasProgram: true, otherBrand: "The description asks for Siemens S7-1200 / S7-1500; the project's PLC is AutomationDirect CLICK." });
+  assert.equal(st.equipment.status, 'stale');
+  assert.match(st.equipment.reason ?? '', /asks for Siemens.*Equipment page/);
 }
 
 // Screens laid out for one panel and scaled to another: the HMI stage is out of date and says what to do.

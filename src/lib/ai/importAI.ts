@@ -41,7 +41,7 @@ export interface ImportResult {
 
 export const IO_CATEGORIES: IOCategory[] = ['Safety', 'Operator/HMI', 'External Machine', 'Product Detection', 'Conveyor', 'Pneumatic', 'Vacuum', 'Servo/Axis', 'Station 1', 'Station 2', 'Analog/Process', 'Spare'];
 export const DEVICE_TYPES: FieldDeviceType[] = ['pushbutton-no', 'pushbutton-nc', 'selector', 'estop-contact', 'sensor-pnp', 'sensor-npn', 'limit-switch', 'pressure-switch', 'safety-relay-output', 'contactor-coil', 'relay-coil', 'solenoid', 'pilot-light', 'stack-light', 'vfd-input', 'other'];
-export const CATEGORIES: CatalogCategory[] = ['enclosure', 'disconnect', 'breaker', 'fuse', 'powerSupply', 'contactor', 'overload', 'motorProtector', 'vfd', 'relay', 'safetyRelay', 'terminal', 'terminalAccessory', 'pushbutton', 'estop', 'pilotLight', 'selector', 'stackLight', 'plc', 'plcModule', 'hmi', 'sensor', 'solenoidValve', 'dinRail', 'wireDuct', 'groundBar', 'fan', 'other', 'servoDrive', 'servoMotor', 'encoder'];
+export const CATEGORIES: CatalogCategory[] = ['enclosure', 'disconnect', 'breaker', 'fuse', 'powerSupply', 'contactor', 'overload', 'motorProtector', 'vfd', 'relay', 'safetyRelay', 'terminal', 'terminalAccessory', 'pushbutton', 'estop', 'pilotLight', 'selector', 'stackLight', 'plc', 'plcModule', 'commModule', 'hmi', 'sensor', 'solenoidValve', 'dinRail', 'wireDuct', 'groundBar', 'fan', 'other', 'servoDrive', 'servoMotor', 'encoder'];
 
 const str = { type: 'string' } as const;
 const nullable = (t: string) => ({ type: [t, 'null'] });

@@ -7,7 +7,7 @@ import { buildExcelReport } from '../deliverables/excelReport';
 import { buildEngineeringPdf } from '../deliverables/engineering';
 import { buildProgramListingPdf } from '../deliverables/programListingPdf';
 import { hmiReadme, hmiTagCsv, needsHmiTagList } from '../deliverables/hmiTags';
-import { hmiImagesNote, type HmiImageFailure } from '../deliverables/hmiImages';
+import { hmiImagesNote, hmiMissingLine, type HmiImageFailure } from '../deliverables/hmiImages';
 import { buildDrawingsPdf, buildEverythingZip, dataUrlToBlob, buildHmiImages, buildHmiPdf, buildMachiningPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
 import { bomCsv, terminalPlanCsv } from '../electrical/derive';
 import { wireListCsvWithNotes } from '../edits/lists';
@@ -62,9 +62,12 @@ export default function ExportPage() {
   const [error, setError] = useState<string | null>(null);
   const [exportAnyway, setExportAnyway] = useState(false);
 
+  // after a download that left something out (an HMI screen that could not be drawn): what is missing
+  const [downloadNote, setDownloadNote] = useState<string | null>(null);
   const run = (label: string, fn: () => Promise<void> | void) => async () => {
     setBusy(label);
     setError(null);
+    setDownloadNote(null);
     try {
       await fn();
     } catch (err) {
@@ -148,6 +151,7 @@ export default function ExportPage() {
             </div>
           )}
           {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
+          {downloadNote && <div role="status" data-testid="download-note" className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900">{downloadNote}</div>}
 
           <ReviewCard />
 
@@ -159,7 +163,9 @@ export default function ExportPage() {
               <p className="text-xs text-steel-500">Excel report, full package PDF, engineering package, electrical drawings PDF with BOM / wire list / terminal plan, machining DXFs, cabinet STEP model, {p.noHmi ? '' : 'HMI screens (PDF + PNG), '}PLC program files, label files, purchasing files (with the shop build time), the certification pack, I/O list and the spec.</p>
             </div>
             <B busy={busy} label="Download everything" primary onClick={run('Download everything', async () => {
-              saveBlob(`${p.fileBase}_deliverables.zip`, await buildEverythingZip(collectProject(), (s) => setBusy(`Building ${s.toLowerCase()}`)));
+              const failed: HmiImageFailure[] = [];
+              saveBlob(`${p.fileBase}_deliverables.zip`, await buildEverythingZip(collectProject(), (s) => setBusy(`Building ${s.toLowerCase()}`), failed));
+              if (failed.length) setDownloadNote(hmiMissingLine(failed, 'hmi/SCREENS_NOT_DRAWN.txt'));
             })} />
           </div>
 
@@ -304,6 +310,7 @@ export default function ExportPage() {
                 for (const img of await buildHmiImages(collectProject(), failed)) zip.file(img.name, await dataUrlToBlob(img.dataUrl));
                 if (failed.length) zip.file('SCREENS_NOT_DRAWN.txt', hmiImagesNote(failed));
                 saveBlob(`${p.fileBase}_hmi_screens.zip`, await zip.generateAsync({ type: 'blob' }));
+                if (failed.length) setDownloadNote(hmiMissingLine(failed, 'SCREENS_NOT_DRAWN.txt'));
               })} />
               {needsHmiTagList(p) && <B busy={busy} label="HMI tag list (CSV)" onClick={run('HMI tag list (CSV)', async () => {
                 const snap = collectProject();

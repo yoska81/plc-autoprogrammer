@@ -64,6 +64,8 @@ export interface ProjectInfo {
   drawing?: DrawingOptions;
   /** Preferred brands per equipment group ("customer standard"); AutomationDirect when absent. */
   vendors?: Partial<VendorPreference>;
+  /** The user picked the PLC brand on the Brand preference card (an AutomationDirect pick is then a request, not the default). */
+  plcChosen?: boolean;
 }
 
 /** The current I/O address layout (see ProjectStore.ioLayoutVersion). */

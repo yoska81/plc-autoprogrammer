@@ -600,7 +600,7 @@ function coilOf(plan: DrawingPlan, tag: string): string | undefined {
 }
 
 /** Contact mirror under a coil: every contact of the device with its line ("NO 13-14  5.06"). */
-function ContactMirror({ plan, tag, x, y }: { plan: DrawingPlan; tag: string; x: number; y: number }) {
+export function ContactMirror({ plan, tag, x, y }: { plan: DrawingPlan; tag: string; x: number; y: number }) {
   const list = plan.contacts.get(tag) ?? [];
   if (!list.length) return null;
   const items = list.map((c) => (c.main ? `MAIN ${c.line}` : `${c.nc ? 'NC' : 'NO'} ${c.term} ${c.line}`));

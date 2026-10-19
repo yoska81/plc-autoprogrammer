@@ -137,7 +137,10 @@ export function servoControls(
       // 460 V drives: the control circuit runs on 24 VDC (never on the AC line).
       w('24+', 'TB1 24+', `${t}:24V`, `${t} control power 24 VDC`, 'BU', '18 AWG');
       w('0V', `${t}:0V`, 'TB1 0V', `${t} control power 0 V`, 'WH/BU', '18 AWG');
-    } else P.power.control.forEach((L, k) => w(`${t}-C${k + 1}`, `${t}:${line[k]}`, `${t}:${L}`, `${t} control power ${L} (jumpered from ${line[k]})`, 'BK', '14 AWG'));
+    } else {
+      // the jumper is on the line terminal's net, so it carries that terminal's number (one terminal, one wire number)
+      P.power.control.forEach((L, k) => w(`${t}-L${k + 1}${a.filter ? 'F' : ''}`, `${t}:${line[k]}`, `${t}:${L}`, `${t} control power ${L} (jumpered from ${line[k]})`, 'BK', '14 AWG'));
+    }
     w('PE', `${t}:PE`, peTag, `${t} protective earth`, 'GN/YE', '14 AWG');
     if (a.motor) {
       P.power.motor.forEach((U) => w(`${t}-${U}`, `${t}:${U}`, `${a.motor!.tag}:${U}`, `${a.motor!.tag} motor power ${U} (servo power cable)`, 'BK', '16 AWG'));
