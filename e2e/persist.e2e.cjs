@@ -3,19 +3,21 @@
 // (client-side navigation), check; reload the browser, check again.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/persist.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const log = (...a) => console.log('•', ...a);
 
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1366, height: 768 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
 
@@ -86,7 +88,7 @@ const log = (...a) => console.log('•', ...a);
   if (wiz !== 'Persist Wizard Cell') fails.push(`Wizard: project name got "${wiz}"`);
 
   // Drafts belong to the project: another project does not see them, and they come back with it.
-  await page.evaluate(async () => { const { useProjectsStore } = await import('/src/store/useProjectsStore.ts'); useProjectsStore.getState().createProject('Persist Other'); });
+  await page.evaluate(async () => { const { useProjectsStore } = await appImport('/src/store/useProjectsStore.ts'); useProjectsStore.getState().createProject('Persist Other'); });
   await page.goto(BASE + '/spec');
   const other = await page.getByPlaceholder(/Pick and place cell/).inputValue();
   if (other) fails.push(`Another project shows the example's draft: "${other}"`);

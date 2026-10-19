@@ -140,7 +140,7 @@ function OutputChip({ o, rungOn, bits, words, timers, counters, labelOf }: {
           </div>
           <div className="mt-0.5 flex items-center gap-1">
             <div className="h-1.5 flex-1 overflow-hidden rounded bg-steel-200">
-              <div className="h-full bg-brand-500" style={{ width: `${pct}%` }} />
+              <div className="h-full bg-sky-500" style={{ width: `${pct}%` }} />
             </div>
             <span className="font-mono text-[10px] text-steel-600">{shown}/{o.preset} {o.unit}</span>
           </div>

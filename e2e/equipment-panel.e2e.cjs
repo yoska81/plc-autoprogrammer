@@ -3,6 +3,7 @@
 // so (it no longer silently drops the HMI); a panel the new PLC can talk to is kept as it is.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/equipment-panel.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const log = (...a) => console.log('•', ...a);
 const fails = [];
@@ -11,12 +12,13 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1366, height: 900 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('dialog', (d) => d.dismiss());
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   await page.goto(BASE + '/equipment');

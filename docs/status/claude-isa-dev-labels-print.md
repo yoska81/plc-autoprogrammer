@@ -345,4 +345,51 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
 - **Gaps left:**
   - Only the TLP motors without a shaft seal (option A) are in the catalog; the S variants are not.
   - Measuring wheels and cables have no IP rating, because their makers give none.
-- **Swap picker:** compareStrength now refuses a power supply with a different input class. A 90-264 VAC supply is no longer "Equivalent" to a 480 V 3-phase one. A 200-500 V L-L supply (ABL8RPS) may stand in for a 1-phase or 3-phase one, but not the reverse. The cross-reference key carries the same input class (crossref.ts / strength.ts supplyInputClass).
+- **Swap picker:** compareStrength now refuses a power supply with a different input class, and a candidate whose AC input range does not hold `StrengthContext.feedVolts` (Dev 4 passes the PS feed from the picker). A 90-264 VAC supply is no longer "Equivalent" to a 480 V 3-phase one. A 200-500 V L-L supply (ABL8RPS) may stand in for a 1-phase or 3-phase one, but not the reverse. The cross-reference key carries the same input class (crossref.ts / strength.ts supplyInputClass).
+- **Touch panels for CompactLogix 5370** (both `ab-compactlogix-5370` and `-l1`). Before this, no panel listed 5370, so an L5X upgrade that keeps its 1769-L33ER could not get an HMI. Each entry gives its source in `drivers5370Source`.
+  - Rockwell names 5370 for the PanelView 800 (VIEW-SG002D p.12; product page: "5370 L1, L2, L3"), the PanelView 5310 (2713P-TD001K p.3, firmware V27+) and the PanelView 5510 (2715P-TD001G p.1).
+  - Pro-face's driver manual ROC_ETIP_27 names the 1769-L1x/L2x/L3x CPUs, in its L5K import lists.
+  - Weintek, Maple and Red Lion only say "CompactLogix", without naming a series. That is the same basis on which they already list 5380.
+  - C-more (Dev 5's HMI list) also says only "CompactLogix" (ea9drivers.pdf). Neither the PanelView Plus 7 nor the C-more is in the catalog's driver lists.
+  - Test: a 1769-L33ER has at least 10 compatible panels, including Allen-Bradley ones (platforms.test.ts).
+  - Review fixes:
+    - The serial-only Pro-face GP4100 panels (PFXGP4115T2D / T3D, PFXGP4116T2D) no longer list any CompactLogix driver.
+    - Tests: a Logix driver needs ethernetPorts > 0; the 5370 / 5370-l1 / 5380 ids stay in step; L1 works on Weintek and Red Lion panels.
+    - PanelView 5310 / 5510 carry `logixFirmwareMin: 27` (controller firmware V27 or later). The upgrade plan should check the L5X's firmware against it.
+- **PanelView Plus 7:** Standard 2711P-T7/T10/T15C22D8S and Performance 2711P-T7/T10/T15C22D9P. 6.5 / 10.4 / 15 in, 4:3, 24 VDC, 2 x Ethernet (DLR), FactoryTalk View ME.
+  - Size, resolution, power, cutout, dimensions and weight come from 2711P-TD008J / TD009M. Lifecycle is Active on each product page.
+  - CompactLogix 5370 is named in the TDs. 5380 appears only in the portfolio comparison 2711P-SP011L (Nov 2025).
+  - Standard catalog numbers end in D8S (series D needs firmware 13.x or later). "-B" means no brand label, not a series.
+- **Panels with no Ethernet port:** a panel keeps a PLC family only where the panel maker's own serial or fieldbus driver names it. Generic Modbus does not count; unclear cases are removed. The route, any module needed and the source are in `serialRouteNote`.
+  - Pro-face GP4115T2D / T3D (RS-232) keep M221, CP2E and FX5U/UC (via FX5-232 boards). GP4116T2D (RS-485) also keeps S7-1200 via a CM 1243-5.
+  - Omron NB loses S7-1200 (Ethernet only). It keeps NX1P2, which needs an NX1W-CIF option board.
+  - Mitsubishi GT21 loses S7-1200, S7-1500 and NX1P2.
+  - Delta DOP-100 serial models keep only DVP and AS300.
+  - KTP Basic DP needs a CM 1243-5 on an S7-1200, and a DP CPU or CM 1542-5 on an S7-1500.
+  - Tested in platforms.test.ts.
+- **PLC module a serial panel needs:** `ratings.plcModules` ("platform-id=module; …") on the serial-only and PROFIBUS panels. `plcModuleFor(hmi, platformId)` in platforms.ts returns it, or null when nothing is needed.
+  - Modules: CM 1243-5 on an S7-1200, CM 1542-5 on a non-DP S7-1500, FX5-232-BD/ADP on an FX5U, NX1W-CIF01 on an NX1P2, CP1W-CIF01/11 on a CP2E-N.
+  - The picker (Dev 5) shows the note and the BOM (Dev 4) adds the module. The modules themselves are not catalog parts yet.
+- **PLC interface modules as verified catalog parts** (category `commModule`, never the I/O `plcModule`, so they never take an I/O slot or shift addresses). Each comes from its maker's datasheet or manual.
+  - The parts:
+    - Siemens CM 1243-5 (6GK7243-5DX30-0XE0, 30 x 100 mm, 24 VDC 0.1 A).
+    - Siemens CM 1542-5 (6GK7542-5DX10-0XE0, which supersedes DX00; 35 x 142 mm, 200 mA at 15 V on the backplane).
+    - Mitsubishi FX5-232-BD (board; FX5S/UJ/U only, not FX5UC).
+    - Mitsubishi FX5-232ADP (17.6 x 106 mm adapter).
+    - Omron NX1W-CIF01 and CIF11.
+    - Omron CP1W-CIF01 and CIF11.
+  - The boards carry `inCpu: 'yes'`: they take no panel space.
+  - `plcModulePart(hmi, platformId)` returns the bare part number, for the BOM and the rack.
+- **Operator contacts in one form:** every maker now writes "(1) N.O." / "(1) N.C." (22 Allen-Bradley / Siemens / Schneider entries normalized). This lets the pushbutton pick choose non-AutomationDirect buttons. Enforced in catalog.test.
+- **Siemens SIRIUS ACT 3SU1 complete units**, from the Siemens TED datasheets:
+  - 1 NO, plain: blue (reset), black, yellow, white.
+  - 1 NO, illuminated with a 24 V AC/DC LED: white and blue.
+  - Front IP66/67/69K, 22.3 mm hole, 49.7 mm behind the panel.
+  - The 230 V and metal variants are left out.
+- **More Siemens panel parts**, each from its Siemens TED datasheet:
+  - 3SU1 pilot lights, white and blue (24 V LED).
+  - 3RT2 contactors from 32 to 110 A: 3RT2027/2028-1BB40 (S0), 3RT2035-2038-1NB30 (S2) and 3RT2045-2047-1NB30 (S3). The S2/S3 coil is 20-33 V AC/DC, which runs on 24 VDC. Each has AC-3 at 400 V and UL FLA / hp at 480 V.
+  - 3SU1400-1AA10-1CA0 1 NC contact module (front-plate mounting in the 3SU1 holder; sold in packs of 5).
+  - 3SU1900-0BC31-0DA0 yellow 75 mm EMERGENCY STOP backing plate.
+  - 8WD44 70 mm column parts: connection element 8WD4408-0AB, LED elements red / yellow / green (8WD4420-5AB/5AD/5AC) and buzzer 8WD4420-0FA.
+- **Gap:** Siemens has no verified pre-assembled red / yellow / green 8WD column, so there is no single Siemens stack-light part. A column is built from the elements above.

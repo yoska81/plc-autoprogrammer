@@ -48,7 +48,7 @@ const itemName = (it: ReviewItem) => {
 let handSeq = 0;
 
 /** A device or terminal strip added by hand (no AI, or something the photos missed). */
-function AddByHand({ onAdd }: { onAdd: (it: ReviewItem) => void }) {
+function AddByHand({ onAdd, taken }: { onAdd: (it: ReviewItem) => void; taken: string[] }) {
   const [kind, setKind] = useState<CatalogCategory>('contactor');
   const [tag, setTag] = useState('');
   const [part, setPart] = useState('');
@@ -56,7 +56,11 @@ function AddByHand({ onAdd }: { onAdd: (it: ReviewItem) => void }) {
   const [rail, setRail] = useState('1');
   const [order, setOrder] = useState('1');
   const [wires, setWires] = useState('');
+  // the tag is how the drawings, the BOM and the wire list name it: required, and not one already in the review
+  const t = tag.trim();
+  const problem = !t ? 'Enter the tag printed on the device (K1, CB2, TB1…).' : taken.some((x) => x.toUpperCase() === t.toUpperCase()) ? `${t} is already in the review.` : null;
   const add = () => {
+    if (problem) return;
     const ws = wires.split(',').map((w) => w.split('=').map((x) => x.trim())).filter((w) => w.length === 2 && w[0] && w[1]).map(([terminal, wire]) => ({ terminal, wire }));
     const at = { rail: Math.max(0, Number(rail) || 0), order: Math.max(1, Number(order) || 1) };
     const key = `h${++handSeq}-${Date.now().toString(36)}`;
@@ -77,7 +81,11 @@ function AddByHand({ onAdd }: { onAdd: (it: ReviewItem) => void }) {
         <input value={order} onChange={(e) => setOrder(e.target.value)} placeholder="Position" aria-label="Position of the new device on its rail" className={input} />
         <input value={wires} onChange={(e) => setWires(e.target.value)} placeholder="Wires: A1=2001, A2=0V" aria-label="Wire numbers at the new device's terminals" className={input} />
       </div>
-      <button type="button" onClick={add} className="rounded border border-brand-600 px-2 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-50">Add</button>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={add} disabled={Boolean(problem)} className="rounded border border-brand-600 px-2 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-40">Add</button>
+        {problem && tag !== '' && <span className="text-xs text-red-700" data-testid="photos-add-problem">{problem}</span>}
+        {!t && <span className="text-xs text-steel-500">A tag is needed to add a device.</span>}
+      </div>
     </div>
   );
 }
@@ -261,7 +269,7 @@ export default function PhotosImport() {
               </tbody>
             </table>
           </div>
-          <AddByHand onAdd={(it) => setItems([...items, it])} />
+          <AddByHand onAdd={(it) => setItems([...items, it])} taken={items.filter((it) => it.status !== 'rejected').map(itemTag).filter(Boolean)} />
           <TracedWires items={items} reading={read.reading} />
           {read.reading.unseen.length > 0 && (
             <div className="text-xs text-steel-600"><span className="font-semibold">Not visible in the photos (asked on the Machine description page):</span>

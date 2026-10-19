@@ -3,21 +3,30 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
-      // Brand palette: bright blue #0d6efd for actions and selection (white text on it),
-      // deep blue 800–950 for brand-coloured text.
+      // Brand palette: the red accent. 600 #d32f2f carries white text (4.98:1) on primary buttons and
+      // selections; 700 is its hover; 800–950 for brand-coloured text.
+      // Faults and errors keep Tailwind's red with an icon or words, never this colour alone.
       colors: {
         brand: {
-          50: '#eef4ff',
-          100: '#dce8fe',
-          200: '#bcd3fd',
-          300: '#8fb6fb',
-          400: '#5a93f8',
-          500: '#2f7bf5',
-          600: '#0d6efd',
-          700: '#0b5ed7',
-          800: '#0a52c0',
-          900: '#0a3f8f',
-          950: '#0b2a5c',
+          50: '#fdf2f2',
+          100: '#fbe2e1',
+          200: '#f5c2c0',
+          300: '#ee9491',
+          400: '#e8625e',
+          500: '#e53935',
+          600: '#d32f2f',
+          700: '#b42626',
+          800: '#9a1f1f',
+          900: '#7c1a1a',
+          950: '#4a0f0f',
+        },
+        // The app shell: title, menu and tool bars, project navigation and status bar.
+        shell: {
+          600: '#3a4045',
+          700: '#2b2f33',
+          800: '#25292c',
+          900: '#1f2326',
+          950: '#1a1d20',
         },
         // Tailwind's gray/slate-400 (2.5:1 on white) made hint text hard to read.
         gray: { 400: '#7d8590' },

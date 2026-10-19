@@ -30,7 +30,7 @@ interface Props {
 }
 
 function Dot({ on, color }: { on: boolean; color: 'sky' | 'emerald' | 'violet' }) {
-  const bg = { sky: 'bg-brand-500', emerald: 'bg-emerald-500', violet: 'bg-violet-500' }[color];
+  const bg = { sky: 'bg-sky-500', emerald: 'bg-emerald-500', violet: 'bg-violet-500' }[color];
   return <span className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full border border-black/10 ${on ? bg : 'bg-steel-200'}`} />;
 }
 
@@ -130,7 +130,7 @@ export default function IOPanel(p: Props) {
                     <span className="font-mono text-[10.5px] text-steel-600">TD{a.slice(1)} = {p.words.get(`TD${a.slice(1)}`) ?? 0}</span>
                   </div>
                   <div className="ml-[18px] mt-0.5 flex items-center gap-2">
-                    <div className="h-1.5 flex-1 overflow-hidden rounded bg-steel-200"><div className="h-full bg-brand-500" style={{ width: `${pct}%` }} /></div>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded bg-steel-200"><div className="h-full bg-sky-500" style={{ width: `${pct}%` }} /></div>
                     <span className="w-24 text-right font-mono text-[10px] text-steel-500">{t ? `${(t.accMs / 1000).toFixed(2)} / ${(t.presetMs / 1000).toFixed(2)} s` : '—'}</span>
                   </div>
                 </div>

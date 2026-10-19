@@ -278,6 +278,30 @@ export function protocolsOf(p: CatalogPart): Protocol[] {
 export const driversOf = (hmi: CatalogPart): string[] => String(hmi.ratings.plcDrivers ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
 /**
+ * The interface module the PLC needs before this panel can reach it (serial / PROFIBUS panels: a CM 1243-5 on an
+ * S7-1200, an FX5-232 board on an FX5U …), from ratings.plcModules ("platform-id=module; …"). null when none is needed.
+ */
+export function plcModuleFor(hmi: CatalogPart, platformId: string): string | null {
+  for (const part of String(hmi.ratings.plcModules ?? '').split(';')) {
+    const [id, ...rest] = part.split('=');
+    if (id.trim() === platformId) return rest.join('=').trim() || null;
+  }
+  return null;
+}
+
+/**
+ * The catalog part number of the module plcModuleFor() names: the first catalog number in its text that is a
+ * catalog part ("FX5-232-BD or FX5-232ADP" → FX5-232-BD on an FX5U). null when none is needed or the module is not
+ * in the catalog yet (plcModuleFor() still gives the text for a BOM note).
+ */
+export function plcModulePart(hmi: CatalogPart, platformId: string): string | null {
+  const text = plcModuleFor(hmi, platformId);
+  if (!text) return null;
+  for (const token of text.match(/[A-Z0-9][A-Z0-9.\-/]{4,}/g) ?? []) if (getPart(token)) return token;
+  return null;
+}
+
+/**
  * Can this touch panel talk to the platform? Panels with a maker's PLC driver
  * list: only the families on it. Same brand: yes unless its protocols are stated and
  * don't match. Another brand: only when a shared Ethernet protocol is stated

@@ -38,7 +38,7 @@ e2e/out-enclosure-fit/
 e2e/out-convert/
 e2e/out-cad-export/
 tools/out/
-tools/.venv/
+tools/.venv
 __pycache__/
 
 # Desktop app

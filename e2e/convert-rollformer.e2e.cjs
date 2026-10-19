@@ -6,6 +6,7 @@
 // safety relay + STO; the rebuild keeps every I/O, both panel motors, the axis and the E-stop.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/convert-rollformer.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('fs');
 const OUT = __dirname + '/out-convert/rollformer/';
 fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true });
@@ -60,6 +61,7 @@ function sse(model, text) {
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   // the app's own summary of each build run: "[update] … equipment done · hmi skipped · electrical done · program done"
@@ -75,7 +77,7 @@ function sse(model, text) {
   });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE);
-  MACHINE = await page.evaluate(async () => (await import('/src/convert/__fixtures__/rollFormer.ts')).ROLL_FORMER);
+  MACHINE = await page.evaluate(async () => (await appImport('/src/convert/__fixtures__/rollFormer.ts')).ROLL_FORMER);
   await page.evaluate(() => {
     localStorage.clear();
     localStorage.setItem('plc-settings-store', JSON.stringify({ state: { provider: 'anthropic', anthropicApiKey: 'sk-ant-test', anthropicModel: 'claude-opus-5-5', effort: 'high', openaiApiKey: '', openaiModel: 'gpt-4o' }, version: 4 }));

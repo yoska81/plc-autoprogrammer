@@ -73,6 +73,21 @@ interface RunCtx {
  * answered from the cache. I/O, electrical and HMI are applied; a change to an existing PLC program is
  * left as a proposal. A failed stage stops the stages after it.
  */
+/**
+ * The panel to apply with a CPU: the one picked when it talks to the CPU; else the closest listed panel that can;
+ * else one is kept (the current one if it talks to the CPU, else the one picked), never none: no panel would make
+ * the project "no touch panel" and add the door pushbuttons and lamps to the I/O list. `say` is what the step tells.
+ */
+export function panelForCpu(picked: string | null, current: string | null, cpuId: string, need: Need, nearest: typeof nearestPanel = nearestPanel): { panel: string | null; say: string } {
+  const model = picked && !hasBuiltInPanel(getPart(picked)) ? getHmi(picked) : undefined;
+  if (!model || hmiFit(model, need, cpuId).ok) return { panel: picked, say: '' };
+  const swap = nearest(cpuId, need, { w: model.widthPx, h: model.heightPx }, vendorPreference().hmi);
+  if (swap) return { panel: swap.partNumber, say: ` The ${picked} panel cannot talk to the ${cpuId}: ${swap.partNumber} (${swap.sizeIn}") instead; change it on the Equipment page.` };
+  const cur = current && !hasBuiltInPanel(getPart(current)) ? getHmi(current) : undefined;
+  if (cur && current !== picked && hmiFit(cur, need, cpuId).ok) return { panel: current, say: ` The ${picked} panel cannot talk to the ${cpuId}: kept your ${current}.` };
+  return { panel: picked, say: ` The ${picked} panel cannot talk to the ${cpuId} and no listed panel can: it is kept for now (no door pushbuttons added); choose a panel that can on the Equipment page.` };
+}
+
 export async function runUpdateAll(steps: UpdateStep[], onStep: (r: StepResult) => void, opts: { signal?: AbortSignal; shouldStop?: () => boolean } = {}): Promise<void> {
   const { signal, shouldStop = () => false } = opts;
   const running = new Map<UpdateStep, Promise<boolean>>();
@@ -182,18 +197,9 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         const mods = modulesToFit(choice.cpuId, choice.modules, need);
         if (!mods) { onStep({ step, status: 'failed', message: `${choice.cpuId} cannot cover ${need.digitalInputs} inputs / ${need.digitalOutputs} outputs even with modules: choose a bigger CPU on the Equipment page.` }); return false; }
         // The panel the AI picked must talk to its CPU: else the closest one that can (said).
-        const panelPn = choice.hmiPartNumber;
-        const panelModel = panelPn && !hasBuiltInPanel(getPart(panelPn)) ? getHmi(panelPn) : undefined;
-        const panelOk = !panelModel || hmiFit(panelModel, { ...need, ethernetHmi: true }, choice.cpuId).ok;
-        const swapAi = panelOk ? undefined : nearestPanel(choice.cpuId, { ...need, ethernetHmi: true }, { w: panelModel!.widthPx, h: panelModel!.heightPx }, vendorPreference().hmi);
-        // No listed panel can: keep a panel (the current one if it talks to the CPU, else the AI's), never none. No
-        // panel would make the project "no touch panel" and add the door pushbuttons and lamps to the I/O list.
-        const curModel = curHmi && !hasBuiltInPanel(getPart(curHmi)) ? getHmi(curHmi) : undefined;
-        const keep = curModel && hmiFit(curModel, { ...need, ethernetHmi: true }, choice.cpuId).ok ? curHmi : panelPn;
-        if (!panelOk) choice.hmiPartNumber = swapAi?.partNumber ?? keep;
-        const panelSay = panelOk ? '' : swapAi ? ` The ${panelPn} panel cannot talk to the ${choice.cpuId}: ${swapAi.partNumber} (${swapAi.sizeIn}") instead; change it on the Equipment page.`
-          : keep === curHmi && keep !== panelPn ? ` The ${panelPn} panel cannot talk to the ${choice.cpuId}: kept your ${curHmi}.`
-          : ` The ${panelPn} panel cannot talk to the ${choice.cpuId} and no listed panel can: it is kept for now (no door pushbuttons added); choose a panel that can on the Equipment page.`;
+        const { panel: applied, say: panelSay } = panelForCpu(choice.hmiPartNumber, curHmi, choice.cpuId, { ...need, ethernetHmi: true });
+        choice.hmiPartNumber = applied;
+        const panelOk = !panelSay;
         // The stored recommendation names the panel applied, so later sizing (minHmiSizeIn) and its suggestion agree.
         const stored = choice.hmiPartNumber === (rec.hmi?.partNumber ?? null) || !choice.hmiPartNumber ? rec
           : { ...rec, hmi: { partNumber: choice.hmiPartNumber, why: `${rec.hmi?.partNumber ?? 'The suggested panel'} cannot talk to the ${choice.cpuId}.` } };
@@ -220,6 +226,8 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         plan.added.map(generatedToPoint),
         plan.removed.map((p) => p.id),
       );
+      // What the reading left open goes to the one question list (Machine description page, src/components/questions/qa.ts).
+      useDraftStore.getState().setDraft('io.updateQuestions', r.questions.map((text) => ({ text })));
       if (ioFingerprint(ioNow()) !== before) ctx.changed.add('io');
       mark('io', { specFp, spec, ioFp: ioFingerprint(ioNow()) });
       // The real I/O list may need more than the equipment step's estimate: add modules, or stop with a clear error.
@@ -336,13 +344,18 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         onStep({ step, status: 'done', message: `${r.program.rungs.length} rungs written.` });
         return true;
       }
-      if (mode === 'quick') {
-        // Quick on an existing program: the rules' program becomes a proposal (nothing written by hand is lost).
+      // The rules' program for an existing one goes in as a proposal (nothing written by hand is lost); `why` says
+      // why the AI did not write it, and a proposal still waiting is named as replaced.
+      const rulesProposal = async (why: string | null) => {
         const q = await rulesProgram(false);
-        prog.setProposal({ program: q.program, explanation: q.explanation, reasoning: null, specUpdate: true });
-        onStep({ step, status: 'proposal', message: `A rules program (${q.program.rungs.length} rungs, default cycle) is waiting for your approval on the PLC Program page.` });
+        const replaced = useProgramStore.getState().proposal ? ' It replaces the proposal that was waiting.' : '';
+        const note = [why ? `${why}: the rules' program (default cycle) for the current spec, I/O and HMI.` : '', replaced.trim()].filter(Boolean).join(' ');
+        prog.setProposal({ program: q.program, explanation: `${note ? `${note} ` : ''}${q.explanation}`, reasoning: null, specUpdate: true, ...(note ? { note } : {}) });
+        onStep({ step, status: 'proposal', message: `${why ? `${why}: a` : 'A'} rules program (${q.program.rungs.length} rungs, default cycle) is waiting for your approval on the PLC Program page.${replaced}` });
         return true;
-      }
+      };
+      if (mode === 'quick') return rulesProposal(null);
+      if (!aiCfg.apiKey) return rulesProposal('No API key — built from rules');
       const changed = changedSections(useStageStore.getState().sources.program?.spec ?? null, spec);
       const request = `The machine specification, I/O list and/or HMI changed${changed.length ? ` (spec sections: ${changed.join(', ')})` : ''}. Update the program to match, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specToText(spec)}`;
       const ioSet = new Set([...addresses.values()].filter(Boolean));
@@ -353,11 +366,7 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         // Cancel stops the stage; any other AI failure falls back to the rules, as the electrical and HMI stages
         // do: the rules' program becomes a proposal (the program written by hand stays until it is approved).
         if (signal?.aborted) throw err;
-        const why = err instanceof Error ? err.message : String(err);
-        const q = await rulesProgram(false);
-        prog.setProposal({ program: q.program, explanation: `The AI could not update the program (${why}): this is the rules' program (default cycle) for the current spec, I/O and HMI. ${q.explanation}`, reasoning: null, specUpdate: true });
-        onStep({ step, status: 'proposal', message: `The AI could not update the program (${why}): a rules program (${q.program.rungs.length} rungs, default cycle) is waiting for your approval on the PLC Program page.` });
-        return true;
+        return rulesProposal(`The AI could not update the program (${err instanceof Error ? err.message : String(err)})`);
       }
       prog.addChat({ role: 'user', text: 'Update the program for the latest spec, I/O and HMI changes.' });
       if (r.program) {

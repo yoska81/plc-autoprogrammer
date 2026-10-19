@@ -5,6 +5,7 @@
 // Machine description page. Checks what is sent to the AI (every photo, labelled with its index).
 //   npm run dev -- --port 5204 &  ;  BASE_URL=http://localhost:5204 node e2e/photos.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('fs');
 const OUT = __dirname + '/out-photos/';
 fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true });
@@ -34,6 +35,7 @@ async function png(page, shade) {
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -47,7 +49,7 @@ async function png(page, shade) {
   });
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  READING = await page.evaluate(async () => (await import('/src/convert/photos/__fixtures__/smallCabinet.ts')).SMALL_CABINET);
+  READING = await page.evaluate(async () => (await appImport('/src/convert/photos/__fixtures__/smallCabinet.ts')).SMALL_CABINET);
   await page.evaluate(() => {
     localStorage.clear();
     localStorage.setItem('plc-settings-store', JSON.stringify({ state: { provider: 'anthropic', anthropicApiKey: 'sk-ant-test', anthropicModel: 'claude-opus-5-5', effort: 'high', openaiApiKey: '', openaiModel: 'gpt-4o' }, version: 4 }));
@@ -91,13 +93,13 @@ async function png(page, shade) {
   // 3. As-built design.
   await page.getByRole('button', { name: 'Make the as-built panel layout and BOM' }).click();
   await page.getByTestId('photos-applied').waitFor();
-  const d = await page.evaluate(async () => { const s = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState(); return { rails: s.design?.asBuilt?.rails, tags: s.design?.components.map((c) => c.tag), notes: s.design?.notes, source: s.source }; });
+  const d = await page.evaluate(async () => { const s = (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState(); return { rails: s.design?.asBuilt?.rails, tags: s.design?.components.map((c) => c.tag), notes: s.design?.notes, source: s.source }; });
   log('As-built rails:', JSON.stringify(d.rails));
   check(JSON.stringify(d.rails) === JSON.stringify([['CB1', 'CB2', 'PS24'], ['PLC1', 'IO1', 'K1', 'OL1'], ['TB1']]), 'rails in the photographed order with the corrected tag');
   check(!d.tags.some((t) => /^CR/.test(t)), 'the unconfirmed hidden relay is left out');
   check(/As-built from photos — verify/.test(d.notes?.[0] ?? ''), 'marked "as-built from photos — verify"');
   check(/4 I\/O traced · 6 wires/.test(await page.getByTestId('photos-applied').innerText()), 'apply reports the traced I/O and wires');
-  const io = await page.evaluate(async () => (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.map((p) => `${p.plcAddress}:${p.type}`));
+  const io = await page.evaluate(async () => (await appImport('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.map((p) => `${p.plcAddress}:${p.type}`));
   check(JSON.stringify(io) === JSON.stringify(['X1:input', 'X2:input', 'X101:input', 'Y1:output']), `I/O list at the addresses read (${io.join(', ')})`);
 
   // Or convert: the photographed devices go to the shared review below the tab (same path as drawings).
@@ -133,8 +135,8 @@ async function png(page, shade) {
   await page.locator('[data-cad-sheet="asbuilt"]').first().screenshot({ path: OUT + 'asbuilt-sheet.png' });
   check(/PS24:\+V/.test(abText) && /TB1:1/.test(abText) && /READ AT ONE END ONLY/.test(abText) && /102 @ CB2:2/.test(abText), 'drops to every terminal; single-ended wires listed');
   const bom = await page.evaluate(async () => {
-    const { collectProject } = await import('/src/deliverables/collect.ts');
-    const { billOfMaterials } = await import('/src/electrical/derive.ts');
+    const { collectProject } = await appImport('/src/deliverables/collect.ts');
+    const { billOfMaterials } = await appImport('/src/electrical/derive.ts');
     const p = collectProject();
     return billOfMaterials(p.drawingCtx).flatMap((g) => g.lines.map((l) => l.partNumber));
   });
@@ -160,10 +162,17 @@ async function png(page, shade) {
   await addDev('PLC CPU', 'PLC1', 'C0-10DD1E-D', '1', '1', 'Y1=2001');
   await addDev('Contactor', 'K1', 'SC-E02PG-24VDC', '1', '2', 'A1=2001');
   check(/2 confirmed/.test(await page.getByTestId('photos-counts').innerText()), 'devices added by hand are confirmed');
+  // a device needs a tag, and one not already in the review
+  const addForm = page.getByTestId('photos-add');
+  await addForm.getByLabel('Tag of the new device').fill('');
+  check(await addForm.getByRole('button', { name: 'Add' }).isDisabled(), 'no device without a tag');
+  await addForm.getByLabel('Tag of the new device').fill('k1');
+  check(await addForm.getByRole('button', { name: 'Add' }).isDisabled() && /k1 is already in the review/.test(await page.getByTestId('photos-add-problem').innerText()), 'no second device with the same tag');
+  await addForm.getByLabel('Tag of the new device').fill('');
   check(/2001: PLC1:Y1 – K1:A1/.test(await page.getByTestId('photos-traced').innerText()), 'hand-entered wires are traced too');
   await page.getByRole('button', { name: 'Make the as-built panel layout and BOM' }).click();
   await page.getByTestId('photos-applied').waitFor();
-  const byHand = await page.evaluate(async () => { const s = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState(); return { rails: s.design?.asBuilt?.rails, wiring: s.design?.ioWiring.map((w) => `${w.address}:${w.deviceTag}`) }; });
+  const byHand = await page.evaluate(async () => { const s = (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState(); return { rails: s.design?.asBuilt?.rails, wiring: s.design?.ioWiring.map((w) => `${w.address}:${w.deviceTag}`) }; });
   check(JSON.stringify(byHand.rails) === '[["PLC1","K1"]]' && JSON.stringify(byHand.wiring) === '["Y1:K1"]', `as-built from hand entry (${JSON.stringify(byHand)})`);
 
   for (const e of errors) fails.push(`page error: ${e.slice(0, 160)}`);

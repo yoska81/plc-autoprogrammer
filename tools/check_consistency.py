@@ -258,16 +258,73 @@ def check(vdir: Path):
         npn = g['commonTo'] == '24+'
         for q in g['points']:
             t = q['deviceType']
+            # the program reads an E-stop / N.C. button input as N.C. (ON = released): its signal must come off an
+            # N.C. contact (12, 22, 32, NC), or the machine never starts (E-stop) / the stop never stops (button)
+            sf = q.get('signalFrom') or ''
+            if t in ('estop-contact', 'pushbutton-nc') and sf and not re.search(r':(1|2|3|4)2$|:NC$', sf):
+                report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is read N.C. by the program but wired from {sf} — use an N.C. contact')
             if t in ('sensor-pnp', 'sensor-npn'):
                 if (t == 'sensor-npn') != npn:
                     report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is {t} on a common to {g["commonTo"]} — it can never turn ON')
                 continue
             if not q['feed']:
-                continue  # no separate feed wire (drive / relay internal contacts are checked on their own sheets)
+                if q.get('feedTo'):
+                    report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} has no wire on its feed terminal {q["feedTo"]} — it can never turn ON')
+                continue  # no feed terminal: the signal comes from the device itself (drive output, analog)
             want = '0V' if npn else '24+'
             bad = [w for w in q['feed'] if w in ('0V', '24+') and w != want]
             if bad:
                 report('FAIL', v, f'{g["group"]}: {q["address"]} {q["tag"]} is fed {bad[0]} on a common to {g["commonTo"]} — it can never turn ON')
+    # ---- One device pin, one net, generator-wide: a pin with two different wire numbers is a short on paper, or a
+    # series contact whose in and out land on the same pin (the over-temperature limit then never breaks the heater
+    # contactor's coil). A bridge or jumper is one net with one number, so it passes.
+    pins = {}
+    for w in data['wires']:
+        if w['wire'] == 'PE':
+            continue
+        for e in (w['from'], w['to']):
+            if re.fullmatch(r'[A-Z][A-Z0-9-]*:[^\s?]+', e):
+                pins.setdefault(e, set()).add(w['wire'])
+    for pin, ws in sorted(pins.items()):
+        if len(ws) > 1:
+            report('FAIL', v, f'pin {pin} carries wire numbers {", ".join(sorted(ws))} — one pin is one net')
+
+    # ---- Wire list vs cable schedule: every field wire leaving a strip terminal rides a cable core with the same
+    # number at that terminal, and every core landing on a strip terminal is a wire-list wire there (a 0V the wire
+    # list returns via TB3-2 while the cable routes it on another core to other JB terminals is a wiring error).
+    cs = read_csv(z / 'electrical' / 'cable_schedule.csv')
+    strip = re.compile(r'TB[A-Z0-9]*-\d+')
+    tag = lambda e: re.split(r'[:\s]', e.strip(), maxsplit=1)[0]  # noqa: E731
+    cores = [c for c in cs if c['Wire'] and c['Wire'] != 'PE' and strip.fullmatch(c['Core From'].strip())]
+    field = {tag(c['Core To']) for c in cs if c['Core To']} | {tag(c['To']) for c in cs if c['To']}
+    at = {(c['Wire'], c['Core From'].strip()) for c in cores}
+    for c in cores:
+        if not any(r['Wire'] == c['Wire'] and c['Core From'].strip() in (r['From'], r['To']) for r in wl):
+            report('FAIL', v, f'cable {c["Cable"]} core {c["Core"]} carries {c["Wire"]} at {c["Core From"]}, but the wire list has no {c["Wire"]} on {c["Core From"]}')
+    for r in wl:
+        if not r['Wire'] or r['Wire'] == 'PE':
+            continue
+        for t, o in ((r['From'], r['To']), (r['To'], r['From'])):
+            if strip.fullmatch(t) and not strip.fullmatch(o) and tag(o) in field and (r['Wire'], t) not in at:
+                report('FAIL', v, f'wire {r["Wire"]} {t} → {o} (wire list) rides no cable core at {t}')
+    # ---- Relay logic (ladder sheets): one device terminal = one net = one wire number; every coil is rated for the
+    # voltage of its rung's rail (a 120 VAC contactor on the 24 VDC ladder never pulls in)
+    rel = data.get('relay')
+    if rel:
+        nets = {}
+        for w in rel['wires']:
+            for e in (w['from'], w['to']):
+                if '?' in e or e.startswith('TB1 '):
+                    continue
+                nets.setdefault(e, set()).add(w['wire'])
+        for t, ws in nets.items():
+            if len(ws) > 1:
+                report('FAIL', v, f'relay logic: terminal {t} carries wire numbers {", ".join(sorted(ws))} — one terminal is one net')
+        for c in rel['coils']:
+            if c['ok'] is False:
+                report('FAIL', v, f'relay logic: coil {c["tag"]} {c["partNumber"]} rated {c["rating"]} on the {rel["supply"]} rail')
+            if c['partNumber'] and not any(w.startswith(f'Relay logic: {c["tag"]} ') for w in data['warnings']) and c['ok'] is None:
+                report('WARN', v, f'relay logic: coil {c["tag"]} has no rating to check against the {rel["supply"]} rail')
     # ---- Drive branches: the drive's listed Class T fuses (its SCCR condition), or the review says why not
     iec = str(data.get('region', '')) not in ('US', 'Canada', '')
     for dr in data.get('drives', []):

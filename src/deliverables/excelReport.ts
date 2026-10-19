@@ -35,6 +35,14 @@ function header(ws: Worksheet, cols: { header: string; key: string; width: numbe
   ws.views = [{ state: 'frozen', ySplit: 1 }];
 }
 
+/** Long text wraps in its column (descriptions, functions, notes) instead of running across the next cells. */
+export function wrapCells(ws: Worksheet, fromRow = 2) {
+  ws.eachRow((row, n) => {
+    if (n < fromRow) return;
+    row.eachCell((c) => { c.alignment = { ...c.alignment, wrapText: true, vertical: c.alignment?.vertical ?? 'top' }; });
+  });
+}
+
 /** A sheet from a shared DocTable (same rows as the engineering package PDF). */
 function tableSheet(wb: Workbook, name: string, t: DocTable, note?: string): Worksheet {
   const ws = wb.addWorksheet(name);
@@ -184,6 +192,7 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
     for (const g of billOfMaterials(p.drawingCtx)) {
       for (const l of g.lines) bom.addRow({ i: l.note ? '' : l.item, q: l.qty, pn: l.partNumber, m: l.manufacturer, d: l.description, tags: l.tags.join(', '), c: g.title });
     }
+    wrapCells(bom);
 
     tableSheet(wb, 'Protective Devices', protectiveDeviceTable(p));
     const sc = sccrTable(p);
@@ -197,6 +206,7 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
     const wireList = wireNumbers(p.drawingCtx);
     const keys = wireKeys(wireList);
     wireList.forEach((w, i) => wires.addRow({ w: w.wire, f: w.from, t: w.to, c: w.color, s: w.size, fn: w.function, n: noteOf(keys[i]) }));
+    wrapCells(wires);
 
     const cab = wb.addWorksheet('Cable Schedule');
     header(cab, [
@@ -208,6 +218,7 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
       cab.addRow({ c: c.tag, z: c.zone, f: c.from, t: c.to, ty: c.type, pn: c.partNumber ?? '', s: c.size, l: c.length, n: noteOf(cableKey(c)) }).font = { bold: true };
       for (const k of c.cores) cab.addRow({ core: k.core, w: k.wire, col: k.color, f: k.from, t: k.to });
     }
+    wrapCells(cab);
 
     const tb = wb.addWorksheet('Terminal Plan');
     header(tb, [
@@ -236,6 +247,7 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
       { header: 'Access', key: 'x', width: 11 }, { header: 'Description', key: 'd', width: 70 },
     ]);
     for (const t of p.hmi.tags) tags.addRow({ a: t.address, n: t.name, t: t.dataType, x: t.access, d: t.description });
+    wrapCells(tags);
     const al = wb.addWorksheet('HMI Alarms');
     header(al, [{ header: 'Address', key: 'a', width: 10 }, { header: 'Severity', key: 's', width: 10 }, { header: 'Message', key: 'm', width: 80 }]);
     for (const a of p.hmi.alarms) al.addRow({ a: a.address, s: a.severity, m: a.message });

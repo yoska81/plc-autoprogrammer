@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import { setClaudeInterceptor } from '../lib/ai/anthropic';
 import { clearAiCache } from '../lib/ai/cache';
-import { runUpdateAll, type StepResult } from './updateAll';
+import { panelForCpu, runUpdateAll, type StepResult } from './updateAll';
 import { EMPTY_SECTIONS } from './types';
 import { useSpecStore } from '../store/useSpecStore';
 import { useIOStore } from '../store/useIOStore';
@@ -42,14 +42,25 @@ async function run(cpuId: string, hmi: string): Promise<StepResult[]> {
   return rs;
 }
 
-// 1769-L33ER: no listed panel talks to it. The AI's CM5-T7W is kept and said; no door pushbuttons or lamps added.
+// No listed panel talks to the CPU: a panel is kept and said, never none (no door pushbuttons or lamps added).
+{
+  const need = { digitalInputs: 2, digitalOutputs: 1, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null };
+  const none = () => null;
+  const kept = panelForCpu('CM5-T7W', null, '5069-L306ER', need, none);
+  assert.equal(kept.panel, 'CM5-T7W', 'a panel is kept, never none');
+  assert.match(kept.say, /CM5-T7W panel cannot talk to the 5069-L306ER and no listed panel can: it is kept for now \(no door pushbuttons added\)/);
+  assert.deepEqual(panelForCpu('6AV2123-2GB03-0AX0', null, '6ES7214-1AG40-0XB0', need, none), { panel: '6AV2123-2GB03-0AX0', say: '' }, 'a panel that talks is kept silently');
+}
+
+// 1769-L33ER (CompactLogix 5370) on the AI path: the AI's CM5-T7W is swapped for a panel that talks to it; the
+// I/O list is untouched and a brand change is not "no longer enough".
 {
   const rs = await run('1769-L33ER', 'CM5-T7W');
   const done = rs.filter((r) => r.step === 'equipment' && r.status === 'done').at(-1);
   assert.ok(done, JSON.stringify(rs));
   assert.equal(useProjectStore.getState().cpuId, '1769-L33ER');
-  assert.equal(useHmiStore.getState().hmiPartNumber, 'CM5-T7W', 'a panel is kept, never none');
-  assert.match(done.message ?? '', /CM5-T7W panel cannot talk to the 1769-L33ER and no listed panel can: it is kept for now/);
+  const now = useHmiStore.getState().hmiPartNumber;
+  assert.ok(now && now !== 'CM5-T7W', `swapped: ${now}`);
   assert.equal(useIOStore.getState().projectIO.length, IO.length, `no door I/O added: ${useIOStore.getState().projectIO.map((p) => p.description).join(', ')}`);
   assert.doesNotMatch(done.message ?? '', /no longer enough/, 'a brand change is not "no longer enough"');
 }

@@ -8,6 +8,7 @@ import { useFingerprints, useStages, hmiFingerprint } from '../spec/useStages';
 import { HMI_MODELS, MIN_DESIGN_PX, designable, getHmi, hmiCommsText, hmiMaker, hmiMakerOf, isCmore, HMI_DESIGN_GUIDELINES, type HmiModel } from '../hmi/hmiCatalog';
 import { catalogPanels } from '../hmi/panels';
 import { setProjectPanel } from '../hmi/retarget';
+import { hmiAddressProblem } from '../hmi/addressField';
 import { hmiFit, type Need } from '../plc/core/fit';
 import { generateHmiDesign, recreateScreenFromPicture } from '../lib/ai/hmiAI';
 import { generateRuleBasedHmi, projectHmiContent } from '../lib/ai/hmiContentAI';
@@ -76,7 +77,10 @@ function AddressCell({ address, tag }: { address: string; tag?: string | null })
   return <span className="inline-flex flex-col leading-tight"><span>{tag}</span><span className="text-[10px] text-gray-400">{address}</span></span>;
 }
 
-function ElementEditor({ el, screens, onChange, onDelete, tagName }: { el: HmiElement; screens: HmiScreen[]; onChange: (e: HmiElement) => void; onDelete: () => void; tagName?: ((a: string) => string | null) | null }) {
+function ElementEditor({ el, screens, onChange, onDelete, tagName, addressProblem }: { el: HmiElement; screens: HmiScreen[]; onChange: (e: HmiElement) => void; onDelete: () => void; tagName?: ((a: string) => string | null) | null; addressProblem?: (kind: HmiElement['kind'], address: string | null | undefined) => string | null }) {
+  const problem = addressProblem?.(el.kind, el.address) ?? null;
+  // The interlock is read as a bit, like a lamp.
+  const interlockProblem = el.kind === 'button' ? addressProblem?.('indicator', el.interlock) ?? null : null;
   const [statesText, setStatesText] = useState(() => statesToText(el.states));
   const [symbolsText, setSymbolsText] = useState(() => JSON.stringify(el.symbols ?? [], null, 1));
   const [symbolsError, setSymbolsError] = useState<string | null>(null);
@@ -109,6 +113,7 @@ function ElementEditor({ el, screens, onChange, onDelete, tagName }: { el: HmiEl
         <label className={fieldLabel}>{el.kind === 'header' ? 'Mode bit / register' : 'PLC address'}
           <input value={el.address ?? ''} onChange={(e) => onChange({ ...el, address: e.target.value.toUpperCase().trim() || null, lostIo: undefined })} className={`${input} w-full font-mono`} placeholder="e.g. C1001, DS1001" list="hmi-address-options" aria-label="PLC address" />
           {el.address && tagName?.(el.address) && <span className="block mt-0.5 text-[11px] font-mono text-gray-600 normal-case" data-testid="plc-tag">PLC tag: {tagName(el.address)}</span>}
+          <span aria-live="polite" className="block">{problem && <span className="block mt-0.5 text-[11px] text-red-700 normal-case" data-testid="address-problem">{problem}</span>}</span>
         </label>
       )}
       {el.kind === 'button' && (
@@ -119,7 +124,8 @@ function ElementEditor({ el, screens, onChange, onDelete, tagName }: { el: HmiEl
             </select>
           </label>
           <label className={fieldLabel}>Interlock bit
-            <input value={el.interlock ?? ''} onChange={(e) => onChange({ ...el, interlock: e.target.value.toUpperCase().trim() || null })} className={`${input} w-full font-mono`} placeholder="none" list="hmi-address-options" />
+            <input value={el.interlock ?? ''} onChange={(e) => onChange({ ...el, interlock: e.target.value.toUpperCase().trim() || null })} className={`${input} w-full font-mono`} placeholder="none" list="hmi-address-options" aria-label="Interlock bit" />
+            <span aria-live="polite" className="block">{interlockProblem && <span className="block mt-0.5 text-[11px] text-red-700 normal-case" data-testid="interlock-problem">{interlockProblem}</span>}</span>
           </label>
         </div>
       )}
@@ -265,7 +271,12 @@ export default function HmiPage() {
   const hmi = useHmiStore();
   const settings = useSettingsStore();
   const showExperimental = !!settings.showExperimental;
-  const { profile, cpu, io, addresses } = usePlc();
+  const { profile, cpu, io, addresses, modules } = usePlc();
+  // Typed HMI addresses: this PLC's memory of the right kind, or an input / output of the I/O list.
+  const addressProblem = useMemo(() => {
+    const ioSet = new Set(io.map((p) => (addresses.get(p.id) ?? '').toUpperCase()).filter(Boolean));
+    return (kind: HmiElement['kind'], address: string | null | undefined) => hmiAddressProblem({ profile, cpu, modules }, ioSet, kind, address);
+  }, [profile, cpu, modules, io, addresses]);
   const fp = useFingerprints();
   const stages = useStages();
 
@@ -766,7 +777,7 @@ export default function HmiPage() {
                 <section className="bg-white rounded-lg border border-gray-200 p-4">
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{selectedEl ? 'Element properties' : sel.length > 1 ? `${sel.length} elements selected` : 'Screen'}</h3>
                   {selectedEl ? (
-                    <ElementEditor key={selectedEl.id} el={selectedEl} screens={design.screens} tagName={tagName}
+                    <ElementEditor key={selectedEl.id} el={selectedEl} screens={design.screens} tagName={tagName} addressProblem={addressProblem}
                       onChange={(e) => updateScreen({ ...screen, elements: screen.elements.map((x) => (x.id === e.id ? withAnalogScale(x, e, io, addresses) : x)) })}
                       onDelete={() => { updateScreen(deleteElements(screen, [selectedEl.id])); setSelected(null); }} />
                   ) : sel.length > 1 ? (

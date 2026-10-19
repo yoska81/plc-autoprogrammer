@@ -4,6 +4,7 @@
 // review (rule findings, AI findings with a one-click swap) and the review package for a human engineer.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/sourcing.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const JSZip = require('jszip');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const log = (...a) => console.log('•', ...a);
@@ -26,6 +27,7 @@ function sse(model, blocks) {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 950 }, acceptDownloads: true });
   const page = await ctx.newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -58,7 +60,7 @@ function sse(model, blocks) {
   await page.evaluate(async () => {
     localStorage.clear();
     localStorage.setItem('plc-settings-store', JSON.stringify({ state: { provider: 'anthropic', anthropicApiKey: 'sk-ant-test', anthropicModel: 'claude-opus-5-5', effort: 'low', openaiApiKey: '', openaiModel: 'gpt-4o' }, version: 4 }));
-    (await import('/src/preview/sampleProject.ts')).seedSampleProject();
+    (await appImport('/src/preview/sampleProject.ts')).seedSampleProject();
   });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
@@ -85,10 +87,10 @@ function sse(model, blocks) {
   await page.waitForTimeout(500);
   const impact = page.getByTestId('swap-impact');
   check(await impact.count() === 1 && new RegExp(`${from} → ${to}`).test(await impact.innerText()), 'swap reported with what changed');
-  const pns = await page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().design.components.map((c) => c.partNumber));
+  const pns = await page.evaluate(async () => (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState().design.components.map((c) => c.partNumber));
   check(pns.includes(to) && !pns.includes(from), 'the design uses the replacement');
   await impact.getByRole('button', { name: 'Undo' }).click();
-  const back = await page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().design.components.map((c) => c.partNumber));
+  const back = await page.evaluate(async () => (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState().design.components.map((c) => c.partNumber));
   check(back.includes(from) && !back.includes(to), 'Undo restores the part');
 
   // 2. Live check (mocked web search): values with their source page and date.
@@ -109,8 +111,8 @@ function sse(model, blocks) {
 
   // 4. Engineer review: rule findings, AI finding with a one-click swap.
   engineerPart = await page.evaluate(async () => {
-    const { equivalentsOf } = await import('/src/sourcing/data.ts');
-    const d = (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().design;
+    const { equivalentsOf } = await appImport('/src/sourcing/data.ts');
+    const d = (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState().design;
     const c = d.components.find((x) => equivalentsOf(x.partNumber).length);
     return { tag: c.tag, from: c.partNumber, to: equivalentsOf(c.partNumber)[0].part.partNumber };
   });
@@ -124,7 +126,7 @@ function sse(model, blocks) {
   await page.getByRole('button', { name: `Use ${engineerPart.to}` }).first().click();
   await page.waitForTimeout(400);
   check(await page.getByTestId('engineer-fixed').count() === 1, 'one-click fix applied and reported');
-  const fixedPns = await page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().design.components.map((c) => c.partNumber));
+  const fixedPns = await page.evaluate(async () => (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState().design.components.map((c) => c.partNumber));
   check(fixedPns.includes(engineerPart.to), 'the one-click fix swapped the part');
 
   // 5. Ask a human engineer: the review package.
@@ -135,8 +137,8 @@ function sse(model, blocks) {
   for (const f of ['bom.csv', 'io_list.csv', 'machine_specification.md', 'engineer_findings.csv', 'engineer_review.md']) check(names.includes(f), `package has ${f}`);
   check(names.some((n) => n.endsWith('_drawings.pdf')), 'package has the drawings PDF');
   const mailto = await page.evaluate(async () => {
-    const { reviewMailto } = await import('/src/engineer/package.ts');
-    return reviewMailto((await import('/src/deliverables/collect.ts')).collectProject(), [], 'x.zip', 'eng@example.com');
+    const { reviewMailto } = await appImport('/src/engineer/package.ts');
+    return reviewMailto((await appImport('/src/deliverables/collect.ts')).collectProject(), [], 'x.zip', 'eng@example.com');
   });
   check(/^mailto:eng%40example\.com\?subject=Design%20review%20request/.test(mailto), 'e-mail draft');
 

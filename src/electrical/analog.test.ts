@@ -42,13 +42,17 @@ for (const c of w.cables) {
 // Loop power: a 2-wire transmitter takes +24 V on + and returns on - to the channel.
 const lt = w.wires.filter((x) => x.wire.startsWith('DF1'));
 assert.deepEqual(lt.map((x) => [x.wire, x.from, x.to]), [['DF1+', '24+', 'TBA-1'], ['DF1-', 'TBA-2', 'AI1:CH1'], ['DF1SH', 'TBA-3', 'GB1']]);
-// Voltage input: + to the channel, - to 0V. Output: channel to +, - back to 0V.
-assert.deepEqual(w.wires.filter((x) => x.wire.startsWith('DF2')).map((x) => x.to), ['PLC:AD1V', 'PLC:0V', 'GB1']);
-assert.deepEqual(w.wires.filter((x) => x.wire.startsWith('DF5')).map((x) => [x.from, x.to]), [['AI2:CH1', 'TBA-7'], ['TBA-8', 'AI2:0V'], ['TBA-9', 'GB1']]);
+// Voltage input: + to the channel, - to 0V. Output: channel to +, - back to 0V. The minus on the 0V terminal is the
+// 0V net, so it carries 0V's wire number (one terminal, one wire number).
+const of = (d: string) => w.wires.filter((x) => x.function.includes(d));
+assert.deepEqual(of('Oven temperature').map((x) => [x.wire, x.to]), [['DF2+', 'PLC:AD1V'], ['0V', 'PLC:0V'], ['DF2SH', 'GB1']]);
+assert.deepEqual(of('Pump speed reference').map((x) => [x.wire, x.from, x.to]), [['DF5+', 'AI2:CH1', 'TBA-7'], ['0V', 'TBA-8', 'AI2:0V'], ['DF5SH', 'TBA-9', 'GB1']]);
+assert.deepEqual(w.circuits.map((c) => c.wires.minus), ['DF1-', '0V', '0V']);
 // Shield grounded at the panel end only: one ground wire per signal, none at the device.
 assert.equal(w.wires.filter((x) => x.to === 'GB1').length, 3);
-// Wire numbers are unique.
-assert.equal(new Set(w.wires.map((x) => x.wire)).size, w.wires.length);
+// Wire numbers are unique, apart from the shared 0V net.
+const own = w.wires.filter((x) => x.wire !== '0V');
+assert.equal(new Set(own.map((x) => x.wire)).size, own.length);
 // Drawing text stays in the PDF font's character set (no −, →, ≤, Ω).
 assert.ok(!/[−→≤Ω]/.test(JSON.stringify(w)), 'ASCII-safe text');
 

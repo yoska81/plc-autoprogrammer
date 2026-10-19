@@ -5,6 +5,7 @@
 //
 //   npm run dev -- --port 5204 &  ;  BASE_URL=http://localhost:5204 node e2e/enclosure-fit.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const fs = require('fs');
 const OUT = __dirname + '/out-enclosure-fit/';
 fs.rmSync(OUT, { recursive: true, force: true });
@@ -16,19 +17,20 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
   await page.goto(BASE + '/spec');
   await page.evaluate(async () => {
-    const m = await import('/src/preview/sampleProject.ts');
-    const ps = await import('/src/store/useProjectsStore.ts');
+    const m = await appImport('/src/preview/sampleProject.ts');
+    const ps = await appImport('/src/store/useProjectsStore.ts');
     localStorage.clear();
     m.seedSampleProject();
     ps.useProjectsStore.getState().openProject(m.EXAMPLE_ID);
     // NEMA 4X in the 16x12 stainless: far too small for the example's parts
-    const { useElectricalStore } = await import('/src/store/useElectricalStore.ts');
+    const { useElectricalStore } = await appImport('/src/store/useElectricalStore.ts');
     const el = useElectricalStore.getState();
     const d = el.design;
     el.setInputs({ ...el.inputs, enclosureRating: 'NEMA 4X' });
@@ -48,8 +50,8 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
   await banner.getByRole('button', { name: /^Use a larger NEMA 4X/ }).click();
   await banner.waitFor({ state: 'detached', timeout: 20000 });
   const enc = await page.evaluate(async () => {
-    const { useElectricalStore } = await import('/src/store/useElectricalStore.ts');
-    const { getPart } = await import('/src/electrical/catalog.ts');
+    const { useElectricalStore } = await appImport('/src/store/useElectricalStore.ts');
+    const { getPart } = await appImport('/src/electrical/catalog.ts');
     const c = useElectricalStore.getState().design.components.find((x) => x.tag === 'ENC1');
     return { pn: c.partNumber, material: getPart(c.partNumber)?.ratings.material };
   });
@@ -76,7 +78,7 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
   log('After a too-small pick:', cur, '|', await page.getByTestId('enclosure-note').innerText());
   check(!/SCE-16EL1206SSLP/.test(cur), 'too-small pick bumped');
   check(await page.getByTestId('enclosure-fit-banner').count() === 0, 'no fit banner after the bump');
-  const pref = await page.evaluate(async () => (await import('/src/store/useElectricalStore.ts')).useElectricalStore.getState().inputs.enclosurePreference);
+  const pref = await page.evaluate(async () => (await appImport('/src/store/useElectricalStore.ts')).useElectricalStore.getState().inputs.enclosurePreference);
   check(pref === 'SCE-16EL1206SSLP', 'the pick stays recorded: ' + pref);
   await page.screenshot({ path: OUT + '04-too-small.png' });
 

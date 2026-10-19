@@ -298,11 +298,11 @@ export async function addPackageToZip(zip: JSZip, p: ProjectSnapshot, pre: Prebu
     const { buildCheckoutPdf } = await import('../online/checkoutPdf');
     zip.file(`commissioning/${p.fileBase}_IO_checkout.pdf`, await buildCheckoutPdf(p, p.checkout));
   }
-  // The commissioning checklist once work on site has started (ticks, notes or a signature).
+  // The commissioning checklist: a blank form to take to site, or as filled in once work there has started.
   const comm = commissioningFor(useProjectsStore.getState().activeId);
-  if (Object.keys(comm.results).length || comm.signoff) {
-    const [{ commissioningItems }, { commissioningPdf, commissioningXlsx }] = await Promise.all([import('../commissioning/checklist'), import('../commissioning/export')]);
-    const items = commissioningItems(p);
+  const [{ commissioningItems }, { commissioningPdf, commissioningXlsx }] = await Promise.all([import('../commissioning/checklist'), import('../commissioning/export')]);
+  const items = commissioningItems(p);
+  if (items.length) {
     zip.file(`commissioning/${p.fileBase}_commissioning_checklist.pdf`, await commissioningPdf(p, items, comm));
     zip.file(`commissioning/${p.fileBase}_commissioning_checklist.xlsx`, await commissioningXlsx(p.projectName, items, comm));
   }

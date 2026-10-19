@@ -65,6 +65,7 @@ const REQUIRED: Partial<Record<CatalogCategory, string[]>> = {
   vfd: ['inputVolts', 'inputPhases', 'outputAmps'],
   plc: ['supplyVolts'],
   plcModule: ['family'],
+  commModule: ['family', 'interface', 'forUse'],
   enclosure: [],
   estop: ['contacts'],
   pushbutton: ['contacts', 'color'],
@@ -219,8 +220,10 @@ test('ratings in the part number agree with the ratings (breakers, power supplie
 test('parts of other vendors give a datasheet footprint for back-panel parts', () => {
   // AutomationDirect parts may still use the category footprint estimate (shown as estimated on the layout);
   // new vendors' back-panel parts must state width x height from the datasheet.
-  const bad = CATALOG.filter((p) => !isAdHost(p.url) && p.mount === 'backplate' && !['enclosure', 'dinRail', 'wireDuct', 'terminalAccessory'].includes(p.category) && !(p.widthMm && p.heightMm)).map((p) => p.partNumber);
+  const bad = CATALOG.filter((p) => !isAdHost(p.url) && p.mount === 'backplate' && !['enclosure', 'dinRail', 'wireDuct', 'terminalAccessory'].includes(p.category) && p.ratings.inCpu !== 'yes' && !(p.widthMm && p.heightMm)).map((p) => p.partNumber);
   assert.deepEqual(bad, []);
+  // Option boards that plug into the CPU (FX5-232-BD, NX1W-CIF, CP1W-CIF) take no panel space of their own.
+  for (const p of CATALOG.filter((x) => x.ratings.inCpu === 'yes')) assert.ok(p.category === 'commModule' && !p.widthMm, `${p.partNumber}: in-CPU board`);
 });
 
 test('prices belong to catalog parts and come from the same site', () => {
@@ -238,6 +241,14 @@ test('prices belong to catalog parts and come from the same site', () => {
 test('safety relays and expansions state their safety outputs as a count', () => {
   // The drawing converter sizes the safety relay (base + expansion) from these: '(4) N.O.' and safetyOutputCount 4.
   const bad = CATALOG.filter((p) => p.category === 'safetyRelay' && !(/^\(\d+\) N\.O\.$/.test(String(p.ratings.safetyOutputs)) && Number(p.ratings.safetyOutputCount) === Number(String(p.ratings.safetyOutputs).match(/\d+/)?.[0]))).map((p) => p.partNumber);
+  assert.deepEqual(bad, []);
+});
+
+test('operator devices write their contacts in one form: "(1) N.O." / "(1) N.C."', () => {
+  // The pushbutton / E-stop / selector picks match this form for every maker (AutomationDirect's spelling).
+  const ONE = /^\(\d+\) N\.[OC]\.(\/\(\d+\) N\.[OC]\.)?$/;
+  const bad = CATALOG.filter((p) => ['pushbutton', 'estop', 'selector'].includes(p.category) && p.ratings.contacts !== undefined
+    && !/\dx \(/.test(String(p.ratings.contacts)) && !ONE.test(String(p.ratings.contacts))).map((p) => `${p.partNumber}: ${p.ratings.contacts}`);
   assert.deepEqual(bad, []);
 });
 

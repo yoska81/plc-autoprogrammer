@@ -8,6 +8,7 @@
 // Sealing Head: a practice wiring fault in the simulator found with the meter steps, then the fault log entry.
 //   npm run dev -- --port 5204 &  ;  BASE_URL=http://localhost:5204 node e2e/journeys.e2e.cjs [machine]
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const JSZip = require('jszip');
 const fs = require('fs');
 const OUT = __dirname + `/out-journeys/${process.argv[2] || 'all'}/`;
@@ -229,6 +230,7 @@ async function sweep(page, mc, where) {
 async function journey(browser, mc) {
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 950 }, acceptDownloads: true });
   const page = await ctx.newPage();
+  await useAppModules(page);
   page.on('pageerror', (e) => problem(mc.key, 'page error', e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.googleapis|net::ERR_FAILED|Failed to load resource/.test(m.text())) problem(mc.key, 'console', m.text().slice(0, 300)); });
   page.on('dialog', (d) => d.accept());
@@ -254,7 +256,7 @@ async function journey(browser, mc) {
 
   if (mc.start) await step(`import (${mc.start})`, async () => {
     // A machine that already exists: the start option for existing drawings / programs, then the Import page.
-    if (mc.start === 'drawings') mc.drawings = await page.evaluate(async () => (await import('/src/convert/__fixtures__/chineseConveyor.ts')).CHINESE_CONVEYOR);
+    if (mc.start === 'drawings') mc.drawings = await page.evaluate(async () => (await appImport('/src/convert/__fixtures__/chineseConveyor.ts')).CHINESE_CONVEYOR);
     await page.getByRole('button', { name: 'New project' }).first().click();
     await page.getByTestId('start-option').getByRole('button', { name: /^From existing drawings \/ program/ }).click();
     await page.getByPlaceholder('e.g. Line 3 case packer').fill(mc.name);
@@ -268,10 +270,10 @@ async function journey(browser, mc) {
       await page.screenshot({ path: `${OUT}${mc.key}_review.png`, fullPage: true });
       await page.getByTestId('convert-build').click();
       for (let t = 0; t < 360; t++) {
-        if (await page.evaluate(async () => Boolean((await import('/src/spec/updateRun.ts')).useUpdateRun.getState().finishedAt))) break;
+        if (await page.evaluate(async () => Boolean((await appImport('/src/spec/updateRun.ts')).useUpdateRun.getState().finishedAt))) break;
         await page.waitForTimeout(500);
       }
-      const run = await page.evaluate(async () => (await import('/src/spec/updateRun.ts')).useUpdateRun.getState().results.map((r) => `${r.step}:${r.status}${r.status === 'done' ? '' : ` (${r.message})`}`));
+      const run = await page.evaluate(async () => (await appImport('/src/spec/updateRun.ts')).useUpdateRun.getState().results.map((r) => `${r.step}:${r.status}${r.status === 'done' ? '' : ` (${r.message})`}`));
       log(mc.key, 'build', run.join(' | '));
       for (const r of run) if (!/:done$/.test(r) && !/^hmi:skipped/.test(r)) problem(mc.key, 'convert build', r);
       await page.getByRole('button', { name: 'Close', exact: true }).click().catch(() => {});
@@ -289,8 +291,8 @@ async function journey(browser, mc) {
       log(mc.key, 'found', (await page.getByTestId('program-found').innerText()).split('\n').slice(0, 3).join(' | '));
       await page.getByTestId('program-apply').click();
       await page.waitForTimeout(1500);
-      mc.rungs = await page.evaluate(async () => (await import('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.length);
-      const io = await page.evaluate(async () => (await import('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.length);
+      mc.rungs = await page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.length);
+      const io = await page.evaluate(async () => (await appImport('/src/store/useIOStore.ts')).useIOStore.getState().projectIO.length);
       log(mc.key, 'program used', mc.rungs, 'rungs,', io, 'I/O');
     }
   });
@@ -329,9 +331,9 @@ async function journey(browser, mc) {
     await page.goto(BASE + '/hmi');
     await page.getByText('This machine has no touch panel.').waitFor({ timeout: 15000 });
     const door = await page.evaluate(async () => {
-      const { collectProject } = await import('/src/deliverables/collect.ts');
+      const { collectProject } = await appImport('/src/deliverables/collect.ts');
       const p = collectProject();
-      const { getPart } = await import('/src/electrical/catalog.ts');
+      const { getPart } = await appImport('/src/electrical/catalog.ts');
       return { hmi: p.hmi, door: (p.electrical?.components ?? []).map((c) => `${c.tag} ${getPart(c.partNumber)?.description ?? ''} ${c.function}`).filter((d) => /pushbutton|selector|pilot light/i.test(d)) };
     });
     if (door.hmi) problem(mc.key, 'HMI', 'an HMI design exists for a machine with no touch panel');
@@ -352,7 +354,7 @@ async function journey(browser, mc) {
   });
   if (mc.keepProgram) await step('program kept', async () => {
     // The program that came with the machine must not be replaced by the later stages.
-    const n = await page.evaluate(async () => (await import('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.length);
+    const n = await page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.length);
     if (mc.rungs && n !== mc.rungs) problem(mc.key, 'program', `${mc.rungs} rungs read, ${n} now`);
     log(mc.key, 'program rungs', n);
   });
@@ -377,8 +379,8 @@ async function journey(browser, mc) {
   });
   await step('review after build', async () => {
     const f = await page.evaluate(async () => {
-      const { checksFor } = await import('/src/review/actions.ts');
-      const { collectProject } = await import('/src/deliverables/collect.ts');
+      const { checksFor } = await appImport('/src/review/actions.ts');
+      const { collectProject } = await appImport('/src/deliverables/collect.ts');
       return checksFor(collectProject()).filter((x) => x.severity === 'critical' || x.severity === 'major').map((x) => `${x.severity}: ${x.title}`);
     });
     fs.writeFileSync(`${OUT}${mc.key}_review.txt`, f.join('\n'));
@@ -388,8 +390,8 @@ async function journey(browser, mc) {
   // Troubleshooter: break a sensor wire in the simulator, find it with the guided meter steps, see it logged.
   if (mc.practice) await step('troubleshoot practice', async () => {
     const pt = await page.evaluate(async (desc) => {
-      const { collectProject } = await import('/src/deliverables/collect.ts');
-      const { wiringPaths } = await import('/src/troubleshoot/wiringPath.ts');
+      const { collectProject } = await appImport('/src/deliverables/collect.ts');
+      const { wiringPaths } = await appImport('/src/troubleshoot/wiringPath.ts');
       const w = wiringPaths(collectProject().drawingCtx).find((p) => p.type === 'input' && p.description === desc);
       return w && { address: w.address, wire: w.signal.find((h) => h.kind === 'plc')?.wire };
     }, mc.practice);
@@ -439,7 +441,7 @@ async function journey(browser, mc) {
     if (!(await page.getByLabel('Fault log').innerText()).includes(pt.address)) problem(mc.key, 'fault log', 'not on the Online page');
     await page.getByRole('button', { name: 'Monitor', exact: true }).click();
     const saved = await page.evaluate(async () => {
-      const { buildProjectFile, readProjectFile } = await import('/src/project/projectFile.ts');
+      const { buildProjectFile, readProjectFile } = await appImport('/src/project/projectFile.ts');
       const { body } = await readProjectFile((await buildProjectFile()).blob);
       return (body.perProject.faultLog ?? []).length;
     });
