@@ -393,3 +393,14 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - 3SU1900-0BC31-0DA0 yellow 75 mm EMERGENCY STOP backing plate.
   - 8WD44 70 mm column parts: connection element 8WD4408-0AB, LED elements red / yellow / green (8WD4420-5AB/5AD/5AC) and buzzer 8WD4420-0FA.
 - **Gap:** Siemens has no verified pre-assembled red / yellow / green 8WD column, so there is no single Siemens stack-light part. A column is built from the elements above.
+- **Siemens 8WD44 stack light as a kit:** Siemens sells no pre-assembled red / yellow / green column.
+  - The `stackLight` entry is named by its real parts ("8WD4408-0AB + 8WD4420-5AB + 8WD4420-5AD + 8WD4420-5AC"). `kitParts` lists "PN xN"; the BOM expands it into one line per part (Dev 4).
+  - Total 105 mA at 24 V; with the buzzer variant, 130 mA.
+  - Tests: every kit part is a verified catalog part, and the kit name equals its parts.
+- **Siemens relays:**
+  - 3RQ4018-1AB00: slim 6.2 mm, 24 V AC/DC, 1 CO.
+  - 3RQ2000-1BW00: 22.5 mm, 24-240 V AC/DC, 2 CO.
+  - Both cULus.
+- **Siemens SENTRON 3LD switch disconnectors:**
+  - Parts: 3LD2203-0TK51 (32 A), 3LD2504-0TK51 (63 A), 3LD2704-0TK51 (100 A), and the red/yellow EMERGENCY-OFF 3LD2203-0TK53.
+  - UL 508 manual motor controller / motor disconnect only (`ulUse`). They are not a UL 98 / UL 489 supply-circuit disconnect, so they must not be the panel's main disconnect.
