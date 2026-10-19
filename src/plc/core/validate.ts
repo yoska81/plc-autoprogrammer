@@ -34,7 +34,7 @@ export function validateProgram(
       issues.push({ rungId: rung.id, severity, message });
     const a = address.trim();
     if (!a) return add('error', `${role} has no address.`);
-    if (isDeletedOperand(a)) return add('error', `${role} used ${deletedAddress(a)}, whose I/O point was deleted — pick its new input / output (or delete the rung).`);
+    if (isDeletedOperand(a)) return add('error', `${role} used ${deletedAddress(a)}, whose I/O point was deleted or has no address on this PLC — pick its new input / output (or delete the rung).`);
     const info = profile.parseAddress(a);
     if (!info) return add('error', `${role} "${a}" is not a valid ${profile.name} address.`);
     if (info.kind === 'constant' && !opts.valueOk) return add('error', `${role} cannot be a constant (${a}).`);

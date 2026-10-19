@@ -14,7 +14,7 @@ import { useIOStore } from '../store/useIOStore';
 import { missingOperatorIo } from './operatorIo';
 import { generatedToPoint } from '../lib/ai/ioAI';
 import { modulesInSlotOrder, type EquipmentRecommendation } from '../lib/ai/equipmentAI';
-import { withIoRemap } from '../plc/core/ioChange';
+import { undoIoDelete, withIoRemap } from '../plc/core/ioChange';
 import { notify } from '../store/useNoticeStore';
 
 export interface EquipmentChoice {
@@ -62,8 +62,8 @@ export function applyEquipment(choice: EquipmentChoice, rec: EquipmentRecommenda
     if (missing.length) io.applyIOUpdate([], missing.map(generatedToPoint), []);
     project.setPlc(profile.id, choice.cpuId);
     project.setModules(modules.slice(0, 8));
-  });
-  if (remapped.length) notify(`The new PLC renumbered the I/O; the program and the HMI followed. ${remapped.join(' ')}`);
+  }, `Equipment change to ${choice.cpuId}`);
+  if (remapped.length) notify(`The new PLC renumbered the I/O; the program and the HMI followed. ${remapped.join(' ')}`, { label: 'Undo', run: () => { undoIoDelete(); } });
   if (rec) project.setRecommendation(rec);
   // A designed HMI follows a new panel (scaled to its resolution).
   setProjectPanel(choice.hmiPartNumber ?? '');

@@ -154,4 +154,25 @@ const many = Array.from({ length: 12 }, (_, i) => ({ id: `S${i}`, description: `
 const shrink = applyIoChange(many, many, { plcId: 'click', cpuId: 'C0-11DD2E-D', modules: ['C0-16ND3'] }, { plcId: 'click', cpuId: 'C0-11DD2E-D', modules: ['C0-16TD1'] });
 assert.ok(shrink.messages.some((m) => /4 I\/O points have no address on the new PLC/.test(m)), shrink.messages.join(' | '));
 
+// CLICK → Micro800 with an analog point (side manager): Micro800 gives it no address, so its operands are marked
+// ?DF1 (on a Micro800, DF1 would be a plain register and the checker would see nothing wrong).
+useIOStore.setState({ projectIO: [
+  { id: 'I001', description: 'Start', type: 'input', category: 'Operator/HMI' },
+  { id: 'I002', description: 'Tank level', type: 'input', category: 'Analog/Process', signal: 'analog', analog: { range: '4-20mA', min: 0, max: 100, units: '%' } },
+] });
+useProjectStore.setState({ plcId: 'click', cpuId: 'C0-12DD1E-D', modules: [] });
+assert.equal(ioAddresses(useIOStore.getState().projectIO).get('I002'), 'DF1', 'CLICK: the CPU\'s analog input');
+const tankRung = { id: 'rt', comment: 'Tank high', branches: [[{ type: 'CMP' as const, left: 'DF1', op: '>' as const, right: '90' }]], outputs: [{ type: 'OUT' as const, address: 'C10' }] };
+useProgramStore.getState().editLadder({ rungs: [tankRung], tags: [] });
+const m800 = getProfile('micro800');
+withIoRemap(() => useProjectStore.getState().setPlc('micro800', m800.defaultCpuId), 'PLC change');
+const io800 = ioAddresses(useIOStore.getState().projectIO);
+assert.equal(io800.get('I002') ?? '', '', 'no analog channel on the Micro800 profile');
+{
+  const cmp = useProgramStore.getState().ladder.rungs[0].branches[0][0];
+  assert.equal(cmp.type === 'CMP' && cmp.left, '?DF1', 'the analog point with no Micro800 address is marked');
+  assert.ok(validateProgram(useProgramStore.getState().ladder, m800, new Set([...io800.values()])).some((i) => i.severity === 'error' && /used DF1, whose I\/O point was deleted or has no address on this PLC/.test(i.message)), 'and the checker errors');
+}
+undoIoDelete();
+
 console.log('ioChange tests passed');

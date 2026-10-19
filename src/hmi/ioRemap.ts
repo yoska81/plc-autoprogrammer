@@ -38,7 +38,7 @@ export function remapHmiDesign(design: HmiDesign, r: IoRemap, describe: (ioId: s
   }).map((a) => ({ ...a, address: move(a.address) }));
   const screens = design.screens.map((s) => ({ ...s, elements: s.elements.map(el) }));
   const unbound = screens.flatMap((s) => s.elements.filter((e) => e.lostIo && !design.screens.find((o) => o.id === s.id)?.elements.find((o) => o.id === e.id)?.lostIo).map((e) => `“${e.label || e.id}” on ${s.name}`));
-  if (unbound.length) notes.push(`Unbound ${unbound.length} element(s) whose I/O point was deleted: ${unbound.slice(0, 5).join(', ')}${unbound.length > 5 ? '…' : ''}. Bind them again or delete them.`);
+  if (unbound.length) notes.push(`Unbound ${unbound.length} element(s) whose I/O point was deleted or lost its address: ${unbound.slice(0, 5).join(', ')}${unbound.length > 5 ? '…' : ''}. Bind them again or delete them.`);
   return { design: { ...design, screens, tags, alarms }, notes };
 }
 
