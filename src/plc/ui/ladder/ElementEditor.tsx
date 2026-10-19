@@ -1,7 +1,7 @@
 /**
  * Floating popover for editing one contact/compare element or one output.
  * Positioned with `position: fixed` from the clicked cell's bounding rect;
- * closes on Escape, outside click, or page scroll.
+ * closes on Escape, an outside click, or the user scrolling the page.
  */
 import { useEffect, useRef } from 'react';
 import { TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
@@ -180,13 +180,53 @@ function OutputFields({ value, onChange }: { value: LadderOutput; onChange: (v: 
   }
 }
 
+/** One address the project knows (an I/O point in the chosen PLC's own addressing, or a named internal tag). */
+export interface AddressChoice {
+  address: string;
+  label: string;
+  /** The PLC's own name of the address when it differs (%I0.0 for X001 on an S7); the program keeps `address`. */
+  native?: string | null;
+}
+
+/** The target with its main address (the contact's / coil's address, a compare's left side, a copy's or math's result) set. */
+function withAddress<T extends LadderElement | LadderOutput>(v: T, address: string): T {
+  switch (v.type) {
+    case 'RAW': return v;
+    case 'CMP': return { ...v, left: address };
+    case 'COPY': case 'MATH': return { ...v, dest: address };
+    default: return { ...v, address };
+  }
+}
+
+function mainAddress(v: LadderElement | LadderOutput): string {
+  switch (v.type) {
+    case 'RAW': return '';
+    case 'CMP': return v.left;
+    case 'COPY': case 'MATH': return v.dest;
+    default: return v.address;
+  }
+}
+
+/** Pick the address from the project's I/O list instead of typing it. */
+function AddressPicker({ choices, value, onPick }: { choices: AddressChoice[]; value: string; onPick: (a: string) => void }) {
+  return (
+    <Field label="Pick from the project's I/O">
+      <select className={inputCls} data-testid="ladder-address-pick" value={choices.some((c) => c.address === value) ? value : ''}
+        onChange={(e) => { if (e.target.value) onPick(e.target.value); }}>
+        <option value="">— choose a signal —</option>
+        {choices.map((c) => <option key={c.address} value={c.address}>{c.native ?? c.address}{c.label ? ` — ${c.label}` : ''}</option>)}
+      </select>
+    </Field>
+  );
+}
+
 type EditorTarget =
   | { kind: 'element'; value: LadderElement; onChange: (v: LadderElement) => void }
   | { kind: 'output'; value: LadderOutput; onChange: (v: LadderOutput) => void };
 
 export default function ElementEditor({
-  anchor, target, onDelete, onClose,
-}: { anchor: Anchor; target: EditorTarget; onDelete: () => void; onClose: () => void }) {
+  anchor, target, onDelete, onClose, choices = [],
+}: { anchor: Anchor; target: EditorTarget; onDelete: () => void; onClose: () => void; choices?: AddressChoice[] }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -194,17 +234,21 @@ export default function ElementEditor({
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    // The user scrolling the page (wheel / touch) closes it; a scroll the edit itself causes (the pane getting
+    // shorter and the browser moving it back) does not.
     const onScroll = (e: Event) => {
       if (ref.current && e.target instanceof Node && ref.current.contains(e.target)) return;
       onClose();
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
-    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('wheel', onScroll, { capture: true, passive: true });
+    window.addEventListener('touchmove', onScroll, { capture: true, passive: true });
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
-      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('wheel', onScroll, { capture: true });
+      window.removeEventListener('touchmove', onScroll, { capture: true });
     };
   }, [onClose]);
 
@@ -226,13 +270,17 @@ export default function ElementEditor({
         </button>
       </div>
       <div className="space-y-2">
+        {choices.length > 0 && target.value.type !== 'RAW' && (
+          <AddressPicker choices={choices} value={mainAddress(target.value)}
+            onPick={(a) => (target.kind === 'element' ? target.onChange(withAddress(target.value, a)) : target.onChange(withAddress(target.value, a)))} />
+        )}
         {target.kind === 'element'
           ? <ElementFields value={target.value} onChange={target.onChange} />
           : <OutputFields value={target.value} onChange={target.onChange} />}
       </div>
       <div className="mt-3 flex justify-between border-t border-slate-100 pt-2">
         <button type="button" onClick={onDelete} className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">
-          <TrashIcon className="h-3.5 w-3.5" /> Delete
+          <TrashIcon className="h-3.5 w-3.5" /> Delete this {target.kind === 'element' ? 'contact' : 'output'}
         </button>
         <button type="button" onClick={onClose} className="rounded bg-slate-800 px-3 py-1 text-xs font-medium text-white hover:bg-slate-700">
           Done

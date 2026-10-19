@@ -17,6 +17,8 @@ import { diffPrograms, summarizeDiff, type RungChange } from '../../core/diff';
 import { GENERAL_BLOCK, scopeToBlock } from '../../sim/blocks';
 import type { LadderProgram, Rung } from '../../core/ladder';
 import LadderView from '../ladder/LadderView';
+import { usePlc } from '../../core/usePlc';
+import { nativeName } from '../../core/addressCheck';
 import { Spinner, ReasoningPanel } from '../../../components/common';
 import StageBanner from '../../../components/StageBanner';
 import ProgramOutOfStep from '../../../components/ProgramOutOfStep';
@@ -160,6 +162,13 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     if (box && w) setZoom(Math.round(Math.min(2, Math.max(0.4, (box.clientWidth - 24) / w)) * 100) / 100);
   };
   const history = useLadderHistory(ladder, store.editLadder);
+  // The edit bar's undo / redo, and the addresses offered when a contact or coil is clicked (the I/O list first, then named tags).
+  const editTools = useMemo(() => ({ undo: history.undo, redo: history.redo, canUndo: history.canUndo, canRedo: history.canRedo }), [history.undo, history.redo, history.canUndo, history.canRedo]);
+  const { modules } = usePlc();
+  const choices = useMemo(() => {
+    const rack = { profile: ctx.profile, cpu: ctx.cpu, modules };
+    return [...labels].map(([address, label]) => ({ address, label, native: nativeName(rack, address) }));
+  }, [labels, ctx.profile, ctx.cpu, modules]);
   const [xrefAddress, setXrefAddress] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [scrollTo, setScrollTo] = useState<{ id: string; n: number } | null>(() => (searchParams.get('rung') ? { id: searchParams.get('rung')!, n: 0 } : null));
@@ -549,6 +558,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               selectedRungId={selectedRungId}
               onSelectRung={setSelectedRungId}
               progressive
+              editTools={editTools}
+              choices={choices}
             />
             </>
           ) : isGenerating ? (
@@ -562,7 +573,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               <p>Click Build program from my project on the left (it uses the machine description, I/O list and HMI), or start an empty program and draw it by hand.</p>
               <button
                 onClick={() => store.editLadder({ rungs: [{ id: 'r_first', comment: '', branches: [[{ type: 'NO', address: '' }]], outputs: [{ type: 'OUT', address: '' }] }], tags: [] })}
-                className="mt-2 px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
+                className="mt-2 px-3 py-1.5 text-sm rounded bg-brand-600 text-white font-medium hover:bg-brand-700"
               >
                 Start empty program
               </button>

@@ -5,10 +5,10 @@
  * power rails, parallel branches joined by vertical wires, outputs stacked on
  * the right. Read-only unless `onChange` is given.
  */
-import { Fragment, memo, useCallback, useMemo, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useProgressiveCount } from '../../../lib/useProgressive';
 import {
-  ArrowDownIcon, ArrowUpIcon, ChatBubbleBottomCenterTextIcon, DocumentDuplicateIcon,
+  ArrowDownIcon, ArrowUpIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, ChatBubbleBottomCenterTextIcon, DocumentDuplicateIcon,
   ExclamationCircleIcon, ExclamationTriangleIcon, PlusIcon, TrashIcon,
 } from '@heroicons/react/24/outline';
 import type { LadderElement, LadderOutput, LadderProgram, Rung } from '../../core/ladder';
@@ -22,11 +22,11 @@ import ElementEditor from './ElementEditor';
 import { useEditsStore } from '../../../edits/useEditsStore';
 import { recordRungComment, rungKey } from '../../../edits/rungComments';
 import { EditedMark } from '../../../edits/EditedMark';
-import type { Anchor } from './ElementEditor';
+import type { AddressChoice, Anchor } from './ElementEditor';
 import {
   CELL_W, JOIN_GAP, MIN_COLS, OUT_STUB, OUT_W, ROW_H, WIRE_Y,
   addBranch, addContact, addOutput, deleteElement, deleteOutput, deleteRung, duplicateRung,
-  moveRung, newRung, outputAddress, outputRowHeight, setElement, setOutput, updateRung,
+  insertContact, insertRung, moveRung, newRung, outputAddress, outputRowHeight, setElement, setOutput, updateRung,
 } from './ladderEdit';
 import type { OutputType } from './ladderEdit';
 
@@ -47,13 +47,19 @@ export interface LadderViewProps {
   zoom?: number;
   /** Draw the first rungs (and the selected one) at once and the rest while the browser is idle (long programs on screen; not for printing). */
   progressive?: boolean;
+  /** An always-visible bar of labelled editing tools (with undo / redo), acting on the selected rung and item; Delete removes the selected item. */
+  editTools?: { undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean };
+  /** Addresses offered in the instruction editor (the project's I/O in the chosen PLC's addressing). */
+  choices?: AddressChoice[];
 }
 
 const NO_ISSUES: ValidationIssue[] = [];
 
-type EditPath =
-  | { rungId: string; kind: 'element'; branch: number; index: number; anchor: Anchor }
-  | { rungId: string; kind: 'output'; index: number; anchor: Anchor };
+/** The selected contact or output of a rung. */
+type Picked =
+  | { rungId: string; kind: 'element'; branch: number; index: number }
+  | { rungId: string; kind: 'output'; index: number };
+type EditPath = Picked & { anchor: Anchor };
 
 const RAIL_W = 3;
 const GUTTER_W = 44;
@@ -95,7 +101,7 @@ interface DiagramProps {
   cols: number;
   labels?: Map<string, string>;
   struck: boolean;
-  editing: EditPath | null;
+  editing: Picked | null;
   onElementClick?: (branch: number, index: number, e: React.MouseEvent<HTMLElement>) => void;
   onOutputClick?: (index: number, e: React.MouseEvent<HTMLElement>) => void;
 }
@@ -128,7 +134,7 @@ function RungDiagram({ rung, cols, labels, struck, editing, onElementClick, onOu
         return (
           <div key={b}>
             {br.map((el, i) => (
-              <div key={i} className="absolute" style={{ left: xIn + i * CELL_W, top }}>
+              <div key={i} className="absolute" style={{ left: xIn + i * CELL_W, top }} data-ladder-item={`${b}.${i}`}>
                 <ElementCell
                   element={el}
                   label={elementLabel(labels, el)}
@@ -161,7 +167,7 @@ function RungDiagram({ rung, cols, labels, struck, editing, onElementClick, onOu
       {rung.outputs.map((o, k) => (
         <div key={k}>
           <Wire x1={outV} x2={outX} y={outTops[k] + WIRE_Y} />
-          <div className="absolute" style={{ left: outX, top: outTops[k] }}>
+          <div className="absolute" style={{ left: outX, top: outTops[k] }} data-ladder-output={k}>
             <OutputCell
               output={o}
               label={lookup(labels, outputAddress(o))}
@@ -251,6 +257,62 @@ function RungToolbar({ rung, index, count, onEditComment, apply }: ToolbarProps)
   );
 }
 
+const barBtn =
+  'inline-flex h-7 items-center gap-1 rounded-sm border border-gray-300 bg-white px-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40';
+
+interface EditBarProps {
+  program: LadderProgram;
+  rungId: string | null;
+  picked: Picked | null;
+  tools: NonNullable<LadderViewProps['editTools']>;
+  apply: (fn: (p: LadderProgram) => LadderProgram) => void;
+  select: (id: string) => void;
+  deletePicked: () => void;
+}
+
+/** Labelled tools for building the ladder by hand: rungs, contacts, branches, outputs, delete, move, undo / redo. */
+function EditBar({ program, rungId, picked, tools, apply, select, deletePicked }: EditBarProps) {
+  const i = rungId ? program.rungs.findIndex((r) => r.id === rungId) : -1;
+  const rung = i >= 0 ? program.rungs[i] : undefined;
+  const upd = (fn: (r: Rung) => Rung) => rung && apply((p) => updateRung(p, rung.id, fn));
+  const add = (where: 'above' | 'below') => {
+    const { program: next, id } = insertRung(program, rung?.id ?? null, where);
+    apply(() => next);
+    select(id);
+  };
+  // A contact goes right after the selected contact, else at the end of the first branch.
+  const at = picked?.kind === 'element' && picked.rungId === rung?.id ? picked : null;
+  const contact = (type: 'NO' | 'NC') => upd((r) => insertContact(r, at?.branch ?? 0, at ? at.index : null, type));
+  const sep = <span className="mx-1 h-5 border-l border-gray-300" />;
+  return (
+    <div data-testid="ladder-edit-bar" className="sticky left-0 top-0 z-20 border-b border-gray-200 bg-[#f7f8f9] px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+      {/* One line that scrolls sideways in a narrow pane, so the bar never covers the rungs. */}
+      <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap [&>*]:shrink-0">
+        <span className="mr-1 text-xs font-semibold text-gray-700">Edit ladder</span>
+        <button type="button" className={barBtn} onClick={() => add('below')} title={rung ? 'Add an empty rung below the selected one' : 'Add an empty rung at the end'}><PlusIcon className="h-3.5 w-3.5" /> Add rung</button>
+        <button type="button" className={barBtn} disabled={!rung} onClick={() => add('above')}>Insert rung above</button>
+        <button type="button" className={barBtn} disabled={!rung} onClick={() => rung && window.confirm(`Delete rung ${i + 1}?`) && apply((p) => deleteRung(p, rung.id))}><TrashIcon className="h-3.5 w-3.5" /> Delete rung</button>
+        <button type="button" className={barBtn} disabled={!rung || i === 0} onClick={() => rung && apply((p) => moveRung(p, rung.id, -1))}><ArrowUpIcon className="h-3.5 w-3.5" /> Move up</button>
+        <button type="button" className={barBtn} disabled={!rung || i === program.rungs.length - 1} onClick={() => rung && apply((p) => moveRung(p, rung.id, 1))}><ArrowDownIcon className="h-3.5 w-3.5" /> Move down</button>
+        {sep}
+        <button type="button" className={barBtn} disabled={!rung} onClick={() => contact('NO')} title="Normally open contact -| |-">Contact (NO)</button>
+        <button type="button" className={barBtn} disabled={!rung} onClick={() => contact('NC')} title="Normally closed contact -|/|-">Contact (NC)</button>
+        <button type="button" className={barBtn} disabled={!rung} onClick={() => upd(addBranch)} title="A parallel branch (OR)">Branch</button>
+        <button type="button" className={barBtn} disabled={!rung} onClick={() => upd((r) => addOutput(r, 'OUT'))}>Coil</button>
+        <button type="button" className={barBtn} disabled={!rung} onClick={() => upd((r) => addOutput(r, 'TMR'))}>Timer</button>
+        <button type="button" className={barBtn} disabled={!rung} onClick={() => upd((r) => addOutput(r, 'CNT'))}>Counter</button>
+        <button type="button" className={barBtn} disabled={!picked} onClick={deletePicked} title="Delete the selected contact or output (Delete key)"><TrashIcon className="h-3.5 w-3.5" /> Delete selected</button>
+        {sep}
+        <button type="button" className={barBtn} disabled={!tools.canUndo} onClick={tools.undo} title="Ctrl+Z"><ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo</button>
+        <button type="button" className={barBtn} disabled={!tools.canRedo} onClick={tools.redo} title="Ctrl+Shift+Z / Ctrl+Y"><ArrowUturnRightIcon className="h-3.5 w-3.5" /> Redo</button>
+      </div>
+      <p className="mt-1 truncate text-[11px] text-gray-500">
+        {rung ? `Rung ${i + 1} selected.` : 'Click a rung to select it.'} Click a contact or coil to choose its address; the Delete key removes the selected one.
+      </p>
+    </div>
+  );
+}
+
 function IssueList({ issues }: { issues: ValidationIssue[] }) {
   if (!issues.length) return null;
   return (
@@ -279,7 +341,7 @@ interface RungRowProps {
   selected: boolean;
   editable: boolean;
   editingComment: boolean;
-  editing: EditPath | null;
+  editing: Picked | null;
   onSelect?: (id: string) => void;
   setEditingComment: (id: string | null) => void;
   setEditing: (p: EditPath | null) => void;
@@ -403,9 +465,15 @@ const RungRow = memo(function RungRow(props: RungRowProps) {
 });
 
 export default function LadderView({
-  program, onChange, labels, changes, issues = NO_ISSUES, selectedRungId = null, onSelectRung, numberOf, zoom = 1, progressive = false,
+  program, onChange, labels, changes, issues = NO_ISSUES, selectedRungId = null, onSelectRung, numberOf, zoom = 1, progressive = false, editTools, choices,
 }: LadderViewProps) {
-  const [editing, setEditing] = useState<EditPath | null>(null);
+  const [editing, setEditingPath] = useState<EditPath | null>(null);
+  // The selected contact / output stays selected after its editor closes (for Delete and the edit bar).
+  const [picked, setPicked] = useState<Picked | null>(null);
+  const setEditing = useCallback((e: EditPath | null) => {
+    setEditingPath(e);
+    if (e) setPicked(e.kind === 'element' ? { rungId: e.rungId, kind: 'element', branch: e.branch, index: e.index } : { rungId: e.rungId, kind: 'output', index: e.index });
+  }, []);
   const [editingComment, setEditingComment] = useState<string | null>(null);
   const editable = !!onChange;
   const mnemonics = getProfile(useProjectStore((s) => s.plcId)).mnemonics;
@@ -414,7 +482,33 @@ export default function LadderView({
     (fn: (p: LadderProgram) => LadderProgram) => { if (onChange) onChange(fn(program)); },
     [onChange, program],
   );
-  const closeEditor = useCallback(() => setEditing(null), []);
+  const closeEditor = useCallback(() => setEditing(null), [setEditing]);
+
+  // A selection that no longer points at an item (after an edit or undo) is dropped.
+  const pickedRung = picked ? program.rungs.find((r) => r.id === picked.rungId) : undefined;
+  const pickedOk = Boolean(picked && pickedRung && (picked.kind === 'element' ? pickedRung.branches[picked.branch]?.[picked.index] : pickedRung.outputs[picked.index]));
+  const livePicked = pickedOk ? picked : null;
+  const deletePicked = useCallback(() => {
+    if (!livePicked) return;
+    const pk = livePicked;
+    apply((p) => updateRung(p, pk.rungId, (r) => (pk.kind === 'element' ? deleteElement(r, pk.branch, pk.index) : deleteOutput(r, pk.index))));
+    setPicked(null);
+    setEditing(null);
+  }, [livePicked, apply, setEditing]);
+  // Delete removes the selected item (not while typing in a field).
+  useEffect(() => {
+    if (!editTools) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (/^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName) || t.isContentEditable)) return;
+      if (!livePicked) return;
+      e.preventDefault();
+      deletePicked();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [editTools, livePicked, deletePicked]);
 
   const blocks = program.blocks ?? [];
   const blockOf = (r: Rung) => (r.block && blocks.some((b) => b.id === r.block) ? r.block : '');
@@ -440,8 +534,9 @@ export default function LadderView({
           <ElementEditor
             anchor={editing.anchor}
             target={{ kind: 'element', value: el, onChange: (v: LadderElement) => apply((p) => updateRung(p, editRung.id, (r) => setElement(r, branch, index, v))) }}
-            onDelete={() => { apply((p) => updateRung(p, editRung.id, (r) => deleteElement(r, branch, index))); setEditing(null); }}
+            onDelete={() => { apply((p) => updateRung(p, editRung.id, (r) => deleteElement(r, branch, index))); setPicked(null); setEditing(null); }}
             onClose={closeEditor}
+            choices={choices}
           />
         );
       }
@@ -453,8 +548,9 @@ export default function LadderView({
           <ElementEditor
             anchor={editing.anchor}
             target={{ kind: 'output', value: o, onChange: (v: LadderOutput) => apply((p) => updateRung(p, editRung.id, (r) => setOutput(r, index, v))) }}
-            onDelete={() => { apply((p) => updateRung(p, editRung.id, (r) => deleteOutput(r, index))); setEditing(null); }}
+            onDelete={() => { apply((p) => updateRung(p, editRung.id, (r) => deleteOutput(r, index))); setPicked(null); setEditing(null); }}
             onClose={closeEditor}
+            choices={choices}
           />
         );
       }
@@ -464,6 +560,10 @@ export default function LadderView({
   return (
     <MnemonicsContext.Provider value={mnemonics}>
     <div className="h-full overflow-auto bg-white">
+      {editTools && editable && (
+        <EditBar program={program} rungId={selectedRungId} picked={livePicked} tools={editTools} apply={apply}
+          select={(id) => onSelectRung?.(id)} deletePicked={deletePicked} />
+      )}
       {globalIssues.length > 0 && (
         <div className="sticky left-0 m-2 rounded border border-slate-200 bg-slate-50 px-3 py-2">
           <IssueList issues={globalIssues} />
@@ -501,7 +601,7 @@ export default function LadderView({
             selected={selectedRungId === rung.id}
             editable={editable}
             editingComment={editingComment === rung.id}
-            editing={editing?.rungId === rung.id ? editing : null}
+            editing={livePicked?.rungId === rung.id ? livePicked : null}
             onSelect={onSelectRung}
             setEditingComment={setEditingComment}
             setEditing={setEditing}

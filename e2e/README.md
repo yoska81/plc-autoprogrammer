@@ -57,6 +57,7 @@ Screenshots land in `e2e/out-improve/`.
 ```bash
 BASE_URL=http://localhost:5203 node e2e/sweep.e2e.cjs      # every page, 1366x768 + 1920x1080, empty + example project; IEC regions; a copy of the example (leftover warnings)
 BASE_URL=http://localhost:5203 node e2e/start-clean.e2e.cjs # a copy of the example: leftover warnings, "Start clean from my description" keeps the description + I/O
+BASE_URL=http://localhost:5204 node e2e/ladder-edit.e2e.cjs   # Program page, "Edit ladder" bar: 3 rungs drawn by hand with addresses picked from the I/O list, a contact edited, a rung deleted, Delete key, undo / redo, cross reference, CLICK export; on a Siemens S7 the list shows %I0.0 … and the TIA Portal export reads the picked input
 BASE_URL=http://localhost:5203 node e2e/persist.e2e.cjs    # what was typed/selected survives leaving a page, reloading and switching projects
 BASE_URL=http://localhost:5203 node e2e/hmi-brands.e2e.cjs # Allen-Bradley + Siemens panels: equipment, HMI, simulator, tag list
 BASE_URL=http://localhost:5203 node e2e/hmi-looks.e2e.cjs  # every HMI look: picker thumbnails, look follows the panel maker, no text past its element or on another, PNG/PDF exports in the look
