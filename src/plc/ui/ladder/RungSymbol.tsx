@@ -226,7 +226,7 @@ export function OutputCell({ output, label, selected, struck, onClick }: CellPro
         <div className="flex items-center gap-2 border-b border-slate-300 bg-slate-100 px-2" style={{ height: BOX_HEADER - 2 }}>
           <span className="text-[11px] font-bold tracking-wider text-slate-600">{boxTitle(output, mn)}</span>
           {showAddr && (
-            <span className={`truncate font-mono text-[12px] font-bold ${addr ? 'text-slate-900' : 'text-red-500'}`} title={addr}>{withPlcNames(addr, names) || '???'}</span>
+            <span className={`truncate font-mono text-[12px] font-bold ${addr ? 'text-slate-900' : 'text-red-500'}`} title={addr}>{withPlcNames(addr, names).replace(/\.(Q|DN)$/, '') || '???'}</span>
           )}
         </div>
         <div className="px-2 pt-[3px]">

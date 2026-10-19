@@ -8,6 +8,7 @@
 import type { LadderProgram } from './ladder';
 import type { ExportContext, PlcProfile } from './profile';
 import { plcTagNames } from './tagNames';
+import { outsideUserText } from './userText';
 
 /** The PLC's own name for an app operand (and its I/O address); null = show the operand. */
 export type PlcNameOf = (address: string) => { name: string; io?: string } | null;
@@ -24,23 +25,31 @@ export function plcNameLookup(profile: PlcProfile, program: LadderProgram, ctx: 
   let names: ReturnType<typeof plcTagNames>;
   try { names = plcTagNames(profile, program, ctx); } catch { return undefined; }
   const system = SYSTEM[profile.id] ?? {};
+  // A physical address only for the project's real I/O points (as plcTagNameOf): a stale contact on X001 of an
+  // S7-1500 + ET 200SP whose inputs start at X101 must not borrow %I0.0, which is X101's.
+  const points = new Set([...ctx.addresses.values()].map((a) => a.trim().toUpperCase()).filter(Boolean));
   return (address) => {
     const a = address.trim().toUpperCase();
     if (!a) return null;
     if (system[a]) return { name: system[a] };
     const t = names.get(a);
-    if (!t?.name) return t?.io ? { name: t.io } : null;
+    const io = t?.io && points.has(a) ? t.io : undefined;
+    if (!t?.name) return io ? { name: io } : null;
     if (profile.id === 'siemens-s7') {
-      // TIA Portal: an I/O point is its PLC tag "Name" at %I / %Q; anything else a member of the program block, #Name.
-      const member = t.name.replace(/^"Machine_DB"\./, '');
-      return t.io ? { name: `"${member}"`, io: t.io } : { name: `#${member}` };
+      // TIA Portal: an I/O point is its PLC tag "Name" (at %I / %Q); anything else a member of the program block, #Name.
+      const member = t.name.replace(/^"Machine_DB"\./, '').replace(/^"(.*)"$/, '$1');
+      const plcTag = /^[XY]\d+$/.test(a) || t.scope === 'PLC tags';
+      return { name: plcTag ? `"${member}"` : `#${member}`, ...(io ? { io } : {}) };
     }
-    return { name: t.name, ...(t.io ? { io: t.io } : {}) };
+    return { name: t.name, ...(io ? { io } : {}) };
   };
 }
 
-/** A text with operands in it ("Contact NO X001", "DS1001 < 1"): each operand shown by its PLC name (and I/O address). */
-export function withPlcNamesAndIo(text: string, of: PlcNameOf | undefined): string {
+/**
+ * A text with operands in it ("Contact NO X001", "DS1001 < 1"): each operand shown by its PLC name (and I/O address).
+ * The user's own texts it quotes (an I/O description "C1 motor") keep their words.
+ */
+export function withPlcNamesAndIo(text: string, of: PlcNameOf | undefined, users: string[] = []): string {
   if (!of) return text;
-  return text.replace(/\b[A-Z]{1,3}\d+(\.\d+)?\b/gi, (a) => { const n = of(a); return n ? `${n.name}${n.io ? ` ${n.io}` : ''}` : a; });
+  return outsideUserText(text, users, (a) => { const n = of(a); return n ? `${n.name}${n.io ? ` ${n.io}` : ''}` : a; });
 }

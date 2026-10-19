@@ -96,7 +96,7 @@ export function siemensAddress(base: string, c: CpuModel, modules: ModuleSlot[])
   return { address: `%${area}${byte + 2 * (ch.channel - 1)}`, inferred: true };
 }
 
-export interface SiemensTag { name: string; address: string; type: 'Bool' | 'Int'; comment: string; inferred: boolean }
+export interface SiemensTag { name: string; address: string; type: 'Bool' | 'Int'; comment: string; inferred: boolean; /** The app operand behind the tag (X001, DF1). */ base?: string }
 
 /** SCL instruction and type names (also used to write changes into an original SCL source, import/stPatch.ts). */
 export const SCL_BLOCKS: Pick<StDialect, 'types' | 'params' | 'msToTime' | 'timeToMs'> = {
@@ -116,7 +116,7 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
     ioVar: (base, name) => {
       const s = siemensAddress(base, c, modules);
       if (!s || !/^[XY]/.test(base)) return null;
-      tags.push({ name, address: s.address, type: 'Bool', comment: ctx.labels.get(base) ?? `${base.startsWith('X') ? 'Input' : 'Output'} ${s.address}`, inferred: s.inferred });
+      tags.push({ name, address: s.address, type: 'Bool', comment: ctx.labels.get(base) ?? `${base.startsWith('X') ? 'Input' : 'Output'} ${s.address}`, inferred: s.inferred, base });
       return `"${name}"`;
     },
     ioTodo: (_base, name) => `(* TODO ${name}: no address on this CPU *)`,
@@ -140,7 +140,7 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
         const s = siemensAddress(base, c, modules);
         if (!s) continue;
         const raw = `${v.name}_raw`;
-        tags.push({ name: raw, address: s.address, type: 'Int', comment: `${p.description} (${p.analog.range}, raw 0…27648 = ${p.analog.min}…${p.analog.max} ${p.analog.units})`, inferred: s.inferred });
+        tags.push({ name: raw, address: s.address, type: 'Int', comment: `${p.description} (${p.analog.range}, raw 0…27648 = ${p.analog.min}…${p.analog.max} ${p.analog.units})`, inferred: s.inferred, base });
         const lo = p.analog.min.toFixed(1), hi = p.analog.max.toFixed(1);
         if (p.type === 'input') inputs.push(`#${v.name} := SCALE_X(MIN := ${lo}, VALUE := NORM_X(MIN := 0, VALUE := "${raw}", MAX := 27648), MAX := ${hi});`);
         else outputs.push(`"${raw}" := REAL_TO_INT(SCALE_X(MIN := 0.0, VALUE := NORM_X(MIN := ${lo}, VALUE := #${v.name}, MAX := ${hi}), MAX := 27648.0));`);
@@ -233,10 +233,9 @@ END_ORGANIZATION_BLOCK
  * Tags for the wired I/O points the program does not use (yet): TIA users expect every terminal of the I/O list in
  * the tag table, with its description. Named like the program's tags; said in the comment.
  */
-export function unusedIoTags(program: LadderProgram, ctx: ExportContext): SiemensTag[] {
+export function unusedIoTags(program: LadderProgram, ctx: ExportContext, have: SiemensTag[] = buildScl(program, ctx).tags): SiemensTag[] {
   const c = SIEMENS_CPUS.find((x) => x.id === ctx.cpuId) ?? SIEMENS_CPUS[1];
   const modules = ctx.modules ?? [];
-  const have = buildScl(program, ctx).tags;
   const at = new Set(have.map((t) => t.address));
   const used = new Set(have.map((t) => t.name.toLowerCase()));
   const out: SiemensTag[] = [];
@@ -248,7 +247,7 @@ export function unusedIoTags(program: LadderProgram, ctx: ExportContext): Siemen
     // The name as written (with _raw for an analog word) is the one reserved: no two tags share a name.
     const name = logixName(analog ? `${p.description || base}_raw` : p.description || base, used, base);
     at.add(s.address);
-    out.push({ name, address: s.address, type: analog ? 'Int' : 'Bool', comment: `${p.description || base} (not used by the program yet)`, inferred: s.inferred });
+    out.push({ name, address: s.address, type: analog ? 'Int' : 'Bool', comment: `${p.description || base} (not used by the program yet)`, inferred: s.inferred, base });
   }
   return out;
 }

@@ -272,7 +272,7 @@ export function rungTable(p: ProjectSnapshot, info = programInfo(p)): DocTable {
 }
 
 /** Memory map / tag table: every address the project uses. */
-export function tagTable(p: ProjectSnapshot, info = programInfo(p)): DocTable {
+export function tagTable(p: ProjectSnapshot, info = programInfo(p), names = projectPlcNames(p)): DocTable {
   const all = new Map<string, { nick: string; comment: string }>();
   const add = (a: string, nick = '', comment = '') => {
     const k = a.trim().toUpperCase();
@@ -294,7 +294,6 @@ export function tagTable(p: ProjectSnapshot, info = programInfo(p)): DocTable {
   const order: Kind[] = ['input', 'output', 'bit', 'timer', 'counter', 'register', 'timerValue', 'counterValue', 'system', 'unknown', 'constant'];
   // The "HMI screens" column only when there are screens.
   // Siemens / Logix: the PLC's tag name and address first (the app operand last, for cross-checking).
-  const names = projectPlcNames(p);
   const rows = [...all].sort(([a], [b]) => order.indexOf(info.kind(a)) - order.indexOf(info.kind(b)) || naturalCompare(a, b)).map(([a, v]) => [
     ...(names ? [names(a)?.name ?? a, names(a)?.io ?? ''] : [a, v.nick]), v.comment || info.name(a), KIND_TEXT[info.kind(a)], (info.reads.get(a) ?? []).join(', ') || '—', (info.writes.get(a) ?? []).join(', ') || '—',
     ...(p.hmi ? [(hmiUse.get(a) ?? []).join(', ') || '—'] : []),

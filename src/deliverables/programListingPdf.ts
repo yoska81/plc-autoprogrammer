@@ -4,6 +4,7 @@ import { blockTable, checkerTable, programInfo, tagTable } from './docs/program'
 import { docMeta } from './docs/meta';
 import { ACCENT, BRAND, INK, MUTED, PdfWriter, pdfSafe } from './docs/pdfWriter';
 import { projectPlcNames } from './plcTagNames';
+import { userTexts } from './plcNames';
 import { withPlcNamesAndIo } from '../plc/core/plcNames';
 
 /**
@@ -79,7 +80,8 @@ export async function buildProgramListingPdf(p: ProjectSnapshot): Promise<Blob |
     const label = (a: string) => (info.name(a) ? ` (${info.name(a)})` : '');
     // Siemens / Logix: every operand by its PLC tag name (and I/O address), as in the exported program.
     const names = projectPlcNames(p);
-    const named = (t: string) => withPlcNamesAndIo(t, names);
+    const users = names ? userTexts(p) : [];
+    const named = (t: string) => withPlcNamesAndIo(t, names, users);
     w.h2('Program blocks', false);
     w.table(blockTable(p), { fontSize: 8 });
     w.para(names
@@ -114,7 +116,7 @@ export async function buildProgramListingPdf(p: ProjectSnapshot): Promise<Blob |
     w.h2(`End of program (rung ${p.ladder.rungs.length + 1}: unconditional END)`, false);
     w.newPage();
     w.h2('Tag table (memory map)', false);
-    w.table(tagTable(p, info), { fontSize: 7.2 });
+    w.table(tagTable(p, info, names), { fontSize: 7.2 });
     w.h2('Program check', false);
     if (p.issues.length) w.table(checkerTable(p), { fontSize: 7.6 });
     else w.para('The program checker found no errors or warnings.');
