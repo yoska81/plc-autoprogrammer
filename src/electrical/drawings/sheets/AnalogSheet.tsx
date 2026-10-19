@@ -82,6 +82,7 @@ function Loop({ c, y }: { c: AnalogCircuit; y: number }) {
       <Txt x={X.tb} y={yP - 4.5} size={2.0} anchor="middle" mono>TBA</Txt>
       {/* shield to ground at the panel end */}
       <Line x1={X.tb - 3} y1={yS} x2={X.tb - 14} y2={yS} w={LW_THIN} />
+      <WireNo x={X.tb - 8.5} y={yS} n={`${r.address}SH`} />
       <Ground x={X.tb - 14} y={yS} />
       <Txt x={X.tb - 28} y={yS + 7.5} size={1.8}>SHIELD TO PE, PANEL END ONLY</Txt>
       {/* cable */}

@@ -73,6 +73,16 @@ export interface RelayLogic {
   /** Control rails: 24+ / 0V, or X1 / X2 from a control transformer (120 VAC). */
   supply: '24VDC' | '120VAC';
   rungs: RelayRung[];
+  /** Every tag used in the rungs with its North-American part (from the conversion); partNumber null = to select. */
+  devices?: RelayDevice[];
+}
+
+export interface RelayDevice {
+  tag: string;
+  category: string;
+  description: string;
+  partNumber: string | null;
+  manufacturer?: string | null;
 }
 
 /** One rung from the left rail to the right rail. */

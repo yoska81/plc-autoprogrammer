@@ -21,6 +21,7 @@ IO1      C0-08TD1           x1    I/O module, slot 1
 SR1      LG5925-48-61-24    x1    E-stop safety relay — dual channel, monitored manual reset, removes power from the motion outputs (24+S)
 ES1      GCX1131            x1    Emergency stop, cabinet door — dual channel into SR1
 ES1C     ECX1030-2          x1    Second NC contact for dual-channel E-stop ES1
+ES1D     ECX1030-2          x1    Third NC contact (31-32) of E-stop ES1 for its PLC status input
 ES1L     ECX1651            x1    EMERGENCY STOP legend plate for ES1
 GS1      KM-203002          x1    Guard door interlock, Infeed — N.C. 11-12 / 21-22 in series with the E-stop channels of SR1 (S11-S12 / S21-S22), N.O. 33-34 door closed
 GS1A     140107             x1    Actuator (tongue) for GS1, on the guard door

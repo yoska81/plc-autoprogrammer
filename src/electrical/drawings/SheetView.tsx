@@ -8,6 +8,7 @@ import { SymbolSetContext } from './symbolSet';
 import { IoSheet } from './sheets/IoSheet';
 import { DoorLayoutSheet, PanelLayoutSheet } from './sheets/LayoutSheets';
 import { ControlSheet, MotorSheet, PowerSheet } from './sheets/SchematicSheets';
+import { LadderSheet } from './sheets/LadderSheet';
 import { DrillingSheet } from './sheets/DrillingSheet';
 import { ServoSheet } from './sheets/ServoSheet';
 import { DriveSheet } from './sheets/DriveSheet';
@@ -28,6 +29,7 @@ function Content({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedSheet }) {
     case 'power': return <PowerSheet plan={plan} sheet={sheet} />;
     case 'motors': return <MotorSheet plan={plan} sheet={sheet} />;
     case 'control': return <ControlSheet plan={plan} sheet={sheet} />;
+    case 'ladder': return <LadderSheet plan={plan} sheet={sheet} />;
     case 'io': return <IoSheet plan={plan} sheet={sheet} />;
     case 'panel': return <PanelLayoutSheet plan={plan} sheet={sheet} />;
     case 'door': return <DoorLayoutSheet plan={plan} sheet={sheet} />;
