@@ -28,7 +28,7 @@ export default function RecoverWork() {
   const startFrom = (pc: Piece) => {
     const name = `Recovered ${pc.kind === 'program' ? 'program' : 'project'} ${new Date().toLocaleDateString()}`;
     if (!useProjectsStore.getState().createProject(name)) return;
-    if (pc.program) useProgramStore.getState().setGeneratedLadder(pc.program, 'Recovered from the browser (' + pc.title + ').', null);
+    if (pc.program) useProgramStore.getState().setGeneratedLadder(pc.program, 'Recovered from the browser (' + pc.title + ').', null, 'user');
     const spec = useSpecStore.getState();
     const note = pc.kind === 'program' ? `Recovered PLC program, rung by rung:\n${pc.text}` : pc.text;
     spec.setSections({ ...spec.sections, overview: `${spec.sections.overview ? spec.sections.overview + '\n\n' : ''}${note}` });

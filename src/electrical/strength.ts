@@ -130,10 +130,10 @@ export function compareStrength(current: CatalogPart, candidate: CatalogPart, ct
       return { ok: false, reason: `Different ${m.label} (${b[m.key]} instead of ${a[m.key]})`, better: false };
     }
   }
-  // A UL 98 / UL 489 supply disconnect is never swapped for a UL 508 motor disconnect (e.g. Siemens 3LD):
-  // UL 508A accepts only the former as the supply-circuit disconnect.
-  if (current.category === 'disconnect' && /^(98|489)$/.test(String(a.ul ?? '')) && String(b.ul ?? '') === '508') {
-    return { ok: false, reason: `UL 508 motor disconnect only, not a supply disconnect (${b.ulUse ?? 'UL 508'})`, better: false };
+  // The main supply disconnect (a back-panel switching disconnect, the DS1 role) may only be swapped for a UL 98 / UL 489
+  // part: UL 508A accepts nothing else there (a Siemens 3LD is a UL 508 motor disconnect), whatever the current part states.
+  if (current.category === 'disconnect' && current.mount === 'backplate' && a.amps !== undefined && candidate.category === 'disconnect' && !/^(98|489)$/.test(String(b.ul ?? ''))) {
+    return { ok: false, reason: b.ul === '508' ? `UL 508 motor disconnect only, not a supply disconnect (${b.ulUse ?? 'UL 508'})` : 'Not listed UL 98 / UL 489: cannot be the supply disconnect', better: false };
   }
   // Power supplies: the candidate must accept the feed the design gives it, when known.
   if (candidate.category === 'powerSupply' && ctx.feedVolts && acceptsFeed(b, ctx.feedVolts) === false) {

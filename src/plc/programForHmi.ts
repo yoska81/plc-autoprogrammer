@@ -52,6 +52,8 @@ export async function rebuildProgramForHmi(): Promise<void> {
     ctx: { profile, cpu, io, addresses, wiring, hmi: hmi ?? undefined }, spec: specToText(sections), electrical, hmi, noPanel: noTouchPanelNow(),
     ...(prog.ladder.sequence ? { keepSequence: prog.ladder.sequence } : {}),
   });
-  prog.setGeneratedLadder(r.program, `Rebuilt for the HMI screens (standard blocks from the rules, the cycle kept). ${r.explanation}`.trim(), r.reasoning);
+  // The cycle of the program as it was is kept: it stays the user's when it was (a hand-edited or imported cycle must
+  // not be rebuilt away by a later Update all).
+  prog.setGeneratedLadder(r.program, `Rebuilt for the HMI screens (standard blocks from the rules, the cycle kept). ${r.explanation}`.trim(), r.reasoning, prog.ladderOrigin === 'app' ? 'app' : 'user');
   useStageStore.getState().markGenerated('program', { specFp: fingerprint(sections), spec: sections, ioFp: ioFingerprint(io), hmiFp: hmiFingerprint(hmi) });
 }

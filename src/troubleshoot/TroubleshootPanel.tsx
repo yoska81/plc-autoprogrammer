@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { collectProject } from '../deliverables/collect';
+import { plcNameOf } from '../deliverables/plcNames';
+import { moduleSlots } from '../plc/core/modules';
 import { planDrawings, type DrawingPlan } from '../electrical/drawings/plan';
 import SpeakButton from '../voice/SpeakButton';
 import { canSpeak, speak, stopSpeaking } from '../voice/tts';
@@ -34,13 +36,22 @@ export interface Practice { fault: CircuitFault; points: string[] }
  * come from the fault that was set, one tap per step.
  */
 export default function TroubleshootPanel({ practice }: { practice?: Practice } = {}) {
-  const [{ paths, plan, circ }] = useState(() => {
-    const ctx = collectProject().drawingCtx;
+  const [{ paths, plan, circ, nativeOf }] = useState(() => {
+    const snap = collectProject();
+    const ctx = snap.drawingCtx;
+    // The point as the PLC's software names it too ("X101 (%I0.0)" on an S7); CLICK keeps its own address.
+    const name = plcNameOf(snap);
+    // An analog channel by its terminal too (%IW64), not only its tag name.
+    const slots = moduleSlots(snap.modules);
+    const nativeOf = (a: string) => {
+      const n = snap.profile.id !== 'click' && /^DF\d+$/i.test(a) ? snap.profile.ioTag?.(a.toUpperCase(), slots, snap.cpu.id) ?? name(a) : name(a);
+      return n && n !== a ? ` (${n})` : '';
+    };
     let p: WiringPath[] = [];
     let pl: DrawingPlan | null = null;
     let cc: ReturnType<typeof circuitOf> | null = null;
     try { if (ctx) { const prep = prepareWiring(ctx); p = wiringPaths(prep); cc = circuitOf(prep); pl = planDrawings(ctx); } } catch { /* no design */ }
-    return { paths: p, plan: pl, circ: cc };
+    return { paths: p, plan: pl, circ: cc, nativeOf };
   });
   // Practice: the meter reads what the circuit gives with the fault that was set.
   const found = (_path: WiringPath, v: Parameters<typeof verdictNames>[1]) => Boolean(practice && circ && verdictNames(circ.circuit, v, practice.fault));
@@ -149,7 +160,7 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
           <label className="block text-sm text-steel-700">The PLC point
             <select aria-label="Point to troubleshoot" value={address} onChange={(e) => setAddress(e.target.value)} className="mt-1 block w-full min-w-0 max-w-full rounded border border-steel-300 px-2 py-2 text-base">
               <option value="">choose…</option>
-              {paths.map((p) => <option key={p.address} value={p.address}>{p.address} — {p.description}{live(p.address) ? ` (now ${live(p.address)})` : ''}</option>)}
+              {paths.map((p) => <option key={p.address} value={p.address}>{p.address}{nativeOf(p.address)} — {p.description}{live(p.address) ? ` (now ${live(p.address)})` : ''}</option>)}
             </select>
           </label>
           {path && (

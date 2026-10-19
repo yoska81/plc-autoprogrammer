@@ -179,7 +179,9 @@ export const MOTOR_PITCH = 7.5;
 export const CONTROL_PITCH = 15;
 export const IO_PITCH = 12;
 export const MOTOR_LINES = 27;
-export const CONTROL_RUNGS = 14;
+/** Rungs per control / relay ladder sheet. A rung's contact cross-references (and a ladder rung's node name) sit
+ * below its line: a 14th row's would land on the title block. */
+export const CONTROL_RUNGS = 13;
 export const IO_PER_SHEET = 16;
 export const TERM_ROWS = 40;
 export const BOM_ROWS = 31;

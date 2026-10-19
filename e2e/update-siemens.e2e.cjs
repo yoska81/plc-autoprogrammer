@@ -169,6 +169,22 @@ async function scenario(browser, quick) {
   const hmiNow = await page.evaluate(async () => (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().hmiPartNumber);
   check(shownBrands[0] === 'siemens' && (!/^6AV/.test(hmiNow ?? '') || shownBrands[1] === 'siemens'), `Preferred brands show the S7 project's brands (${shownBrands.join(' / ')}, panel ${hmiNow})`);
   check(await page.locator(`input[aria-label="Choose ${CPU}"][type="radio"]`).isChecked(), `the project's ${CPU} is selected in the CPU table`);
+  // An S7-1500 has no on-board I/O: its row fits with ET 200SP modules, and selecting it adds them.
+  const row1500 = page.locator('tr', { has: page.locator('input[aria-label="Choose 6ES7511-1AL03-0AB0"]') });
+  const fitText = await row1500.locator('td').last().innerText().catch(() => '');
+  check(/^Yes with \d+ ET 200SP modules? \(added when selected\)/.test(fitText), `S7-1500 row: fits with ET 200SP modules (${fitText})`);
+  await row1500.click();
+  check(await page.locator('input[aria-label="Choose 6ES7511-1AL03-0AB0"]').isChecked(), 'the S7-1500 can be selected');
+  const sel = await page.getByText(/6ES7131-6/).count();
+  check(sel > 0, 'selecting it adds the ET 200SP input module to the selection');
+  // From the S7-1500 with its ET 200SP modules to a CLICK: the Siemens modules leave, Apply is not offered with them.
+  await page.getByRole('button', { name: /^Show \d+ CPUs of other brands$/ }).click();
+  const clickRow = page.locator('tr', { has: page.locator('input[aria-label^="Choose C0-"]:not([disabled])') }).first();
+  await clickRow.click();
+  check(await page.getByText(/6ES7131-6|6ES7132-6/).count() === 0, 'on a CLICK the ET 200SP modules leave the selection');
+  await page.getByRole('button', { name: /^Show only / }).click().catch(() => {});
+  await page.locator('tr', { has: page.locator(`input[aria-label="Choose ${CPU}"]`) }).click();
+  check(await page.getByText(/6ES7131-6/).count() === 0, 'back on the S7-1200: the ET 200SP modules leave the selection');
   // Online: a plain sentence for an S7 (its own software monitors it), never CLICK's Modbus table.
   await page.goto(BASE + '/online');
   const online = await page.getByTestId('online-not-here').innerText({ timeout: 10000 }).catch(() => '');
@@ -178,6 +194,9 @@ async function scenario(browser, quick) {
   await page.goto(BASE + '/online?tab=troubleshoot');
   const troubleshooter = await page.getByLabel('Point to troubleshoot').waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
   check(troubleshooter, 'Fault finding opens on an S7 (/online?tab=troubleshoot)');
+  const pointNames = await page.getByLabel('Point to troubleshoot').locator('option').allInnerTexts().catch(() => []);
+  const points = pointNames.filter((t) => /^[XY]\d{3}/.test(t));
+  check(points.length > 0 && points.every((t) => /^[XY]\d{3} \(%[IQ]\d+\.\d\) — /.test(t)), `Fault finding names each point's Siemens address (${points.slice(0, 2).join(' | ') || 'no points'})`);
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await page.context().close();
 }

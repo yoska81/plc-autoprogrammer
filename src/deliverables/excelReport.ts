@@ -7,6 +7,8 @@ import { qaTable } from '../components/questions/qaTable';
 import { billOfMaterials, cableSchedule, designWarnings, supplyText, terminalPlan, wireNumbers } from '../electrical/derive';
 import { describeElement, describeOutput } from '../plc/core/clickExport';
 import { getHmi } from '../hmi/hmiCatalog';
+import { nativeIoLabel, screenIoName } from '../hmi/nativeIo';
+import { exportContext } from './exportContext';
 import { calcWarnings, calculations } from './docs/calcs';
 import { designReviewTable, operatorManual } from './docs/manual';
 import { aiReviewNote } from '../review/report';
@@ -253,7 +255,10 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
     for (const a of p.hmi.alarms) al.addRow({ a: a.address, s: a.severity, m: a.message });
     const sc = wb.addWorksheet('HMI Screens');
     header(sc, [{ header: 'Screen', key: 's', width: 20 }, { header: 'Element', key: 'e', width: 30 }, { header: 'Kind', key: 'k', width: 14 }, { header: 'Address', key: 'a', width: 10 }, { header: 'Action', key: 'x', width: 11 }]);
-    for (const s of p.hmi.screens) for (const e of s.elements) sc.addRow({ s: s.name, e: e.label, k: e.kind, a: e.address ?? '', x: e.action ?? '' });
+    // Labels as the screens and their images show them (%I0.0 on an S7); the Address column stays the app's.
+    const ctx = exportContext(p);
+    const ioName = screenIoName(p.profile, p.cpu, ctx.modules ?? [], new Set([...p.addresses.values()].map((x) => x.toUpperCase())));
+    for (const s of p.hmi.screens) for (const e of s.elements) sc.addRow({ s: s.name, e: nativeIoLabel(e.label, ioName), k: e.kind, a: e.address ?? '', x: e.action ?? '' });
   }
 
   // No touch panel: the operator station is the operator interface.

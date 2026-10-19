@@ -147,6 +147,9 @@ export interface MotorSpec {
   voltage: SupplyVoltage;
   starter: StarterType;
   reversing: boolean;
+  /** The engine read this motor from the description / I/O list (not typed or edited by the designer): a later
+   * design for a machine that no longer has it drops it without a note. */
+  fromDesign?: boolean;
 }
 
 /** One placed component in the design (BOM line + drawing symbol). */
