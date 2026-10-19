@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { getPart } from '../../electrical/catalog';
-import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules, driversOf, plcModuleFor } from './platforms';
+import { PLATFORMS, hmiCompatible, moduleLimits, platformById, platformCapacity, platformFit, platformOfCpu, protocolsOf, suggestModules, driversOf, plcModuleFor, plcModulePart } from './platforms';
 import { cpuFit, hmiFit, modulesToFit, platformOf, type Need } from './fit';
 import { PLC_PROFILES } from './profiles';
 import { LOGIX_CPUS } from './profiles/logix';
@@ -148,6 +148,16 @@ assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000
   assert.match(plcModuleFor(getPart('NB7W-TW00B')!, 'omron-nx1p2') ?? '', /NX1W-CIF01/);
   assert.equal(plcModuleFor(getPart('PFXGP4116T2D')!, 'schneider-m221'), null, 'M221: built-in serial');
   assert.equal(plcModuleFor(getPart('2713P-T7WD1')!, 'ab-compactlogix-5370'), null, 'Ethernet panel: nothing');
+  // The bare catalog number for the BOM / rack (the modules are verified catalog parts).
+  assert.equal(plcModulePart(getPart('PFXGP4116T2D')!, 'siemens-s7-1200'), '6GK7243-5DX30-0XE0');
+  assert.equal(plcModulePart(getPart('6AV2123-2GA03-0AX0')!, 'siemens-s7-1500'), '6GK7542-5DX10-0XE0', 'CM 1542-5 successor');
+  assert.equal(plcModulePart(getPart('PFXGP4115T2D')!, 'mitsubishi-fx5u'), 'FX5-232-BD');
+  assert.equal(plcModulePart(getPart('PFXGP4115T2D')!, 'mitsubishi-fx5uc'), 'FX5-232ADP', 'FX5UC takes no board');
+  assert.equal(plcModulePart(getPart('NB7W-TW00B')!, 'omron-nx1p2'), 'NX1W-CIF01');
+  assert.equal(plcModulePart(getPart('GT2104-PMBDS')!, 'omron-cp2e'), 'CP1W-CIF11');
+  for (const p of ALL_HMIS().filter((x) => x.ratings.plcModules !== undefined)) for (const id of driversOf(p)) {
+    if (plcModuleFor(p, id)) assert.ok(plcModulePart(p, id), `${p.partNumber} + ${id}: module ${plcModuleFor(p, id)} is not a catalog part`);
+  }
   for (const p of ALL_HMIS().filter((x) => x.ratings.plcModules !== undefined)) for (const part of String(p.ratings.plcModules).split(';')) {
     const id = part.split('=')[0].trim();
     assert.ok(driversOf(p).includes(id), `${p.partNumber}: plcModules names ${id}, which is not in its driver list`);

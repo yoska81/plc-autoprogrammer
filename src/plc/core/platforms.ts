@@ -290,6 +290,18 @@ export function plcModuleFor(hmi: CatalogPart, platformId: string): string | nul
 }
 
 /**
+ * The catalog part number of the module plcModuleFor() names: the first catalog number in its text that is a
+ * catalog part ("FX5-232-BD or FX5-232ADP" → FX5-232-BD on an FX5U). null when none is needed or the module is not
+ * in the catalog yet (plcModuleFor() still gives the text for a BOM note).
+ */
+export function plcModulePart(hmi: CatalogPart, platformId: string): string | null {
+  const text = plcModuleFor(hmi, platformId);
+  if (!text) return null;
+  for (const token of text.match(/[A-Z0-9][A-Z0-9.\-/]{4,}/g) ?? []) if (getPart(token)) return token;
+  return null;
+}
+
+/**
  * Can this touch panel talk to the platform? Panels with a maker's PLC driver
  * list: only the families on it. Same brand: yes unless its protocols are stated and
  * don't match. Another brand: only when a shared Ethernet protocol is stated

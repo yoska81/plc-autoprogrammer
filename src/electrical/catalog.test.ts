@@ -219,8 +219,10 @@ test('ratings in the part number agree with the ratings (breakers, power supplie
 test('parts of other vendors give a datasheet footprint for back-panel parts', () => {
   // AutomationDirect parts may still use the category footprint estimate (shown as estimated on the layout);
   // new vendors' back-panel parts must state width x height from the datasheet.
-  const bad = CATALOG.filter((p) => !isAdHost(p.url) && p.mount === 'backplate' && !['enclosure', 'dinRail', 'wireDuct', 'terminalAccessory'].includes(p.category) && !(p.widthMm && p.heightMm)).map((p) => p.partNumber);
+  const bad = CATALOG.filter((p) => !isAdHost(p.url) && p.mount === 'backplate' && !['enclosure', 'dinRail', 'wireDuct', 'terminalAccessory'].includes(p.category) && p.ratings.inCpu !== 'yes' && !(p.widthMm && p.heightMm)).map((p) => p.partNumber);
   assert.deepEqual(bad, []);
+  // Option boards that plug into the CPU (FX5-232-BD, NX1W-CIF, CP1W-CIF) take no panel space of their own.
+  for (const p of CATALOG.filter((x) => x.ratings.inCpu === 'yes')) assert.ok(p.category === 'plcModule' && !p.widthMm, `${p.partNumber}: in-CPU board`);
 });
 
 test('prices belong to catalog parts and come from the same site', () => {
