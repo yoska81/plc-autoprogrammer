@@ -98,4 +98,13 @@ const nicks = (xs: Role[]) => xs.map((x) => x.nickname);
   assert.ok(r.alarms.every((a) => a.text !== 'Alarms section: overloads'), r.alarms.map((a) => a.text).join(' | '));
 }
 
+// One fault bit with its fault lamp, or the same bit as OUT and SET: still one fault bit, the rung's comment is its text.
+{
+  const prog = { tags: [{ address: 'C1', nickname: 'Overload_Alarm', comment: '' }, { address: 'C2', nickname: 'Fault_Lamp', comment: '' }], rungs: [
+    { id: 'r1', comment: 'Infeed motor overload', branches: [[{ type: 'NO' as const, address: 'X001' }]], outputs: [{ type: 'SET' as const, address: 'C1' }, { type: 'OUT' as const, address: 'C2' }, { type: 'OUT' as const, address: 'C1' }] },
+  ] };
+  const r = programRoles(prog as never);
+  assert.equal(r.alarms.find((x) => x.address === 'C1')?.text, 'Infeed motor overload', r.alarms.map((x) => `${x.address}=${x.text}`).join(' | '));
+}
+
 console.log('hmiRoles.test: all passed');

@@ -105,7 +105,10 @@ export function programRoles(program: LadderProgram, labels: Map<string, string>
           // No comment of its own (an array bit, Alm[0].3): the comment of the rung that sets it ("Alarm 3: infeed overload").
           const plain = (t: string) => t.replace(/^Original:[^—]*—\s*/, '').replace(/^Bit \d+ of .*$/, '').replace(/^\s*(alarm|fault|alm)\s*\d*\s*[:-]\s*/i, '').split('\n')[0].trim();
           // Only a rung that writes this one fault bit speaks for it ("Alarms: overloads" over two bits names neither).
-          const faultBits = r.outputs.filter((x) => (x.type === 'OUT' || x.type === 'SET') && !isX(x.address) && !isY(x.address) && FAULT.test(name(x.address.toUpperCase()))).length;
+          // Counted as the alarm list counts them (not a "No_Fault" / healthy bit, not a fault lamp), each address once
+          // (the same bit as OUT and SET is one bit).
+          const isFaultBit = (x: string) => !isX(x) && !isY(x) && FAULT.test(name(x)) && !HEALTHY.test(name(x)) && !ANNUNCIATOR.test(name(x));
+          const faultBits = new Set(r.outputs.flatMap((x) => ((x.type === 'OUT' || x.type === 'SET') && isFaultBit(x.address.toUpperCase()) ? [x.address.toUpperCase()] : []))).size;
           const said = plain(comment(a)) || (faultBits === 1 ? plain(r.comment ?? '') : '');
           out.alarms.push({ ...role(a, 'a fault / alarm bit of the program'), text: said ? said[0].toUpperCase() + said.slice(1) : nick(a) });
         }
