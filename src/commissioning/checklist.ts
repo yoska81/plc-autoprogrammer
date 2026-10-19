@@ -2,7 +2,7 @@ import type { ProjectSnapshot } from '../deliverables/collect';
 import { alarmRows, programInfo, type ProgramInfo } from '../deliverables/docs/program';
 import { safetyFunctions, type SafetyFunction } from '../deliverables/docs/safety';
 import { naturalCompare } from '../electrical/derive';
-import { inPlcNames } from '../deliverables/plcNames';
+import { firstPhrase as short, inPlcNames } from '../deliverables/plcNames';
 
 /**
  * On-site commissioning checklist made from the project: every input and output with the result
@@ -28,12 +28,6 @@ export interface CommItem {
   procedure: string;
   /** What must happen (pass criterion). */
   expected: string;
-}
-
-/** First phrase of a rung comment, cut at a word. */
-function short(comment: string): string {
-  const t = comment.trim().split('\n')[0].split(/[:.](\s|$)/)[0].trim();
-  return t.length <= 70 ? t : `${t.slice(0, 70).replace(/\s+\S*$/, '')}…`;
 }
 
 /** Field devices whose PLC input is ON at rest and OFF when operated. */

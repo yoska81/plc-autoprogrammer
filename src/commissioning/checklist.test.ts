@@ -75,10 +75,19 @@ assert.ok(texts.some((t) => t.includes('Signature|J. Tech')));
   const ins = s7.filter((i) => i.section === 'inputs');
   assert.ok(ins.length && ins.every((i) => /^%I\d+\.\d /.test(i.title)), ins.map((i) => i.title).join(' | '));
   assert.ok(ins.every((i) => /PLC input %I\d+\.\d/.test(i.expected) || /reads the matching value/.test(i.expected)), ins[0].expected);
-  const text = s7.map((i) => `${i.title} ${i.procedure} ${i.expected}`).join('\n');
+  // An alarm message is quoted as the HMI shows it (the user's text): its words are not the app's to rename.
+  const snap0 = collectProject();
+  const messages = [...(snap0.hmi?.alarms ?? []).map((m) => m.message), ...snap0.ladder.tags.map((t) => t.comment ?? '')].filter(Boolean);
+  const text = s7.map((i) => `${i.title} ${i.procedure} ${i.expected}`).map((t) => messages.reduce((x, m) => x.split(m).join(''), t)).join('\n');
   const left = text.match(/\b(?:X|Y)\d{3}\b|\b(?:DS|DD|DF)\d+\b|\bC\d{1,4}\b/g) ?? [];
-  assert.deepEqual([...new Set(left)], [], 'no app operand left on an S7');
+  assert.deepEqual([...new Set(left)], [], 'no app operand left on an S7 outside the user\'s own texts');
   assert.ok(s7.every((i) => /^(io|sf|alarm):/.test(i.id)), 'ids unchanged (ticks stay with their item)');
+  // The user's own words are never renamed: only the operands the app wrote (the item's address) change.
+  const snap = collectProject();
+  const first = snap.io.find((x) => x.type === 'input' && snap.addresses.get(x.id))!;
+  const own = commissioningItems({ ...snap, io: snap.io.map((x) => (x.id === first.id ? { ...x, description: 'Pusher extended (cylinder C1, tank T1)' } : x)) });
+  const item = own.find((i) => i.id === `io:${first.id}`)!;
+  assert.match(item.title, /^%I\d+\.\d Pusher extended \(cylinder C1, tank T1\)$/, item.title);
 }
 
 console.log(`commissioning tests passed (${items.length} items)`);

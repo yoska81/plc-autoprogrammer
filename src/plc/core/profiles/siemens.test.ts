@@ -110,5 +110,15 @@ assert.match(validateProgram(bad, siemensProfile, new Set()).map((i) => i.messag
   assert.match(decl, /#Cycles\.CV/);
   assert.ok(!/\b(X001|C1|TD1|DF101|CTD1)\b/.test(decl.split('//')[1] ?? ''), `no app operand left: ${decl}`);
 }
+// The user's own descriptions keep their words: "(cylinder C1, tank T1)" is not the program's C1 / T1.
+{
+  const own = { ...ctx, io: ctx.io.map((x, i) => (i === 0 ? { ...x, description: 'Pusher extended (cylinder C1, tank T1)' } : x)) };
+  const desc = own.io[0];
+  const out = buildScl(program, { ...own, extraTags: [{ address: 'C1001', nickname: 'HMI_Push', comment: `HMI: shows ${addr.get(desc.id)} (Pusher extended (cylinder C1, tank T1)) and Run (C1)` }] }).scl;
+  assert.ok(out.includes('Pusher extended (cylinder C1, tank T1)'), 'the description as written');
+  const decl = out.split('\n').find((l) => /^\s+HMI_Push : Bool;/.test(l)) ?? '';
+  assert.match(decl, /\(Pusher extended \(cylinder C1, tank T1\)\) and Run \(#Run\)/, decl);
+  assert.ok(!decl.includes(`shows ${addr.get(desc.id)} `), `the app's operand is renamed: ${decl}`);
+}
 
 console.log('siemens tests passed');

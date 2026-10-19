@@ -26,6 +26,7 @@ import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseA
 import { toIecSt, type StDialect, type StProgram, type StVariable } from './iecSt';
 import { logixName } from './logixExport';
 import { getPart } from '../../../electrical/catalog';
+import { outsideUserText } from '../userText';
 
 type Family = 'S7-1200' | 'S7-1500';
 
@@ -148,10 +149,11 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
  * DS1001 seconds", "Reset (C1003)") become the SCL names a TIA user sees — PLC tags "Safety_OK", statics
  * #SP_Head_Timeout, timer / counter values #Tmr.ET / #Cnt.CV. Operands the program does not have are left as they are.
  */
-export function sclComment(text: string, variables: StVariable[]): string {
+export function sclComment(text: string, variables: StVariable[], users: string[] = []): string {
   const ref = new Map<string, string>();
   for (const v of variables) ref.set(v.base.toUpperCase(), v.io ?? `#${v.name}`);
-  return text.replace(/\b(CTD|TD|CT|DS|DD|DH|DF|SC|C|T|X|Y)(\d+)\b/g, (m, p: string, n: string) => {
+  return outsideUserText(text, users, (m) => {
+    const [, p, n] = /^([A-Z]+)(\d+)$/.exec(m) ?? [];
     if (p === 'TD') { const t = ref.get(`T${n}`); return t ? `${t}.ET` : m; }
     if (p === 'CTD') { const c = ref.get(`CT${n}`); return c ? `${c}.CV` : m; }
     return ref.get(m) ?? m;
@@ -176,7 +178,10 @@ export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport 
   // Setpoints, counters and run hours survive a power cycle (CLICK keeps DS / DD / DH / DF registers and
   // counters retentive): those statics are RETAIN in the optimized instance DB, the rest are not.
   const RETAIN_RE = /^(DS|DD|DH|DF|CT|CTD)\d+$/i;
-  const line = (v: StVariable) => `      ${v.name} : ${v.type};   // ${(v.comment === v.base ? v.comment : sclComment(v.comment, st.variables)).replace(/[\r\n]+/g, ' ')}`;
+  // The user's own texts a comment quotes (I/O descriptions, tag comments, rung comments) keep their words.
+  const users = [...ctx.io.map((x) => x.description), ...program.tags.flatMap((t) => [t.comment ?? '', t.nickname]), ...program.rungs.map((r) => r.comment ?? '')]
+    .map((t) => t.trim()).filter((t) => t && !/^[A-Z]+\d+$/i.test(t)).sort((a, b) => b.length - a.length);
+  const line = (v: StVariable) => `      ${v.name} : ${v.type};   // ${(v.comment === v.base ? v.comment : sclComment(v.comment, st.variables, users)).replace(/[\r\n]+/g, ' ')}`;
   const decl = [
     '      Initialized : Bool;   // set after the first scan',
     '      FirstScan : Bool;   // TRUE on the first scan after a start',
