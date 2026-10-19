@@ -111,7 +111,7 @@ assert.equal(count(list('4 cylinders lift the tray. E-stop.'), /^Cylinder [1-4] 
 {
   const r = list('Conveyor with a start button. No E-stop. No stack light, no horn. No light curtain and no guard door. The heater is not used.');
   assert.ok(!r.points.some((p) => /Safety relay|Stack light|horn|Light curtain|Guard door|Heater/i.test(p.description)), d(r).join(' | '));
-  assert.ok(r.questions.some((q) => /No E-stop is named/.test(q)));
+  assert.ok(r.questions.some((q) => /No E-stop on this machine: is the cell's safety status/.test(q)), 'a said "No E-stop" asks for the cell safety');
   assert.ok(!list('Bench press with no touch screen.', false).questions.every((q) => !/start \/ stop buttons/.test(q)), '"no touch screen" is no panel');
 }
 // Equipment the first version missed.
@@ -123,14 +123,15 @@ assert.equal(count(list('4 cylinders lift the tray. E-stop.'), /^Cylinder [1-4] 
   assert.ok(has(list('A two-speed fan. E-stop.'), 'Fan high speed contactor', 'output'));
   assert.equal(count(list('A star-delta pump. E-stop.'), /^Pump (main|star|delta) contactor$/), 3);
   const punch = list('A hydraulic punch with up and down limit switches. A dump valve. E-stop.');
-  assert.ok(has(punch, 'Punch down solenoid', 'output') && has(punch, 'Punch up', 'input') && has(punch, 'Dump valve solenoid', 'output'), d(punch).join(' | '));
+  assert.ok(has(punch, 'Punch down solenoid', 'output') && has(punch, 'Punch up limit switch', 'input') && has(punch, 'Dump valve solenoid', 'output'), d(punch).join(' | '));
   assert.ok(has(list('Parts are picked by vacuum. E-stop.'), 'Vacuum on', 'output'));
   const robot = list('A robot loads the press. E-stop.');
   assert.ok(has(robot, 'Robot cycle done', 'input') && has(robot, 'Robot fault', 'input'));
   const line = list('Parts come from the upstream filler and go to the downstream capper. E-stop.');
-  assert.ok(has(line, 'Ready to receive to upstream filler', 'output') && has(line, 'Part available to downstream capper', 'output'), d(line).join(' | '));
+  assert.ok(has(line, 'Ready to receive from upstream filler', 'output') && has(line, 'Part ready for downstream capper', 'output'), d(line).join(' | '));
   const hoist = list('An electric hoist lifts the basket. E-stop.');
-  assert.ok(has(hoist, 'Hoist up contactor', 'output') && has(hoist, 'Hoist down contactor', 'output') && has(hoist, 'Hoist upper limit', 'input'), d(hoist).join(' | '));
+  assert.ok(has(hoist, 'Hoist up contactor', 'output') && has(hoist, 'Hoist down contactor', 'output'), d(hoist).join(' | '));
+  assert.ok(!hoist.points.some((p) => /limit|lift/i.test(p.description)), `no limit switch invented, "lifts" is a verb: ${d(hoist).join(' | ')}`);
 }
 // Should-fixes.
 {
@@ -157,11 +158,12 @@ assert.equal(count(list('4 cylinders lift the tray. E-stop.'), /^Cylinder [1-4] 
 // The roll former (cn-rollformer-01): main drive on a VFD, servo flying shear, encoder, hydraulic punch, pump, safety relay.
 {
   const r = list('Roll forming machine for roof panels. The 5.5 kW main roll motor runs on a VFD with speed set from the touch screen. A 1.5 kW servo drives the flying shear, following a 1000 ppr measuring-wheel encoder. The hydraulic punch has up and down limit switches. The 2.2 kW hydraulic pump motor is started across the line. A run-out end photo-eye and a material present proximity sensor. Two E-stops and the shear guard go to a safety relay. Start, stop and reset buttons on the panel.');
-  for (const [x, t] of [['Main roll VFD run', 'output'], ['Main roll VFD fault', 'input'], ['Main roll speed reference', 'output'], ['Flying shear servo enable', 'output'], ['Flying shear servo in position', 'input'], ['Encoder channel A', 'input'], ['Encoder channel B', 'input'], ['Punch down solenoid', 'output'], ['Punch up', 'input'], ['Punch down', 'input'], ['Hydraulic pump motor contactor', 'output'], ['Hydraulic pump overload tripped', 'input'], ['Run-out end photo-eye', 'input'], ['Material present proximity sensor', 'input'], ['Safety relay OK (E-stop, guard door)', 'input'], ['Start button', 'input'], ['Stop button', 'input'], ['Fault reset button', 'input']] as const) {
+  for (const [x, t] of [['Main roll VFD run', 'output'], ['Main roll VFD fault', 'input'], ['Main roll speed reference', 'output'], ['Flying shear servo enable', 'output'], ['Flying shear servo in position', 'input'], ['Punch down solenoid', 'output'], ['Punch up limit switch', 'input'], ['Punch down limit switch', 'input'], ['Hydraulic pump motor contactor', 'output'], ['Hydraulic pump overload tripped', 'input'], ['Run-out end photo-eye', 'input'], ['Material present proximity sensor', 'input'], ['Safety relay OK (E-stop, guard door)', 'input'], ['Start button', 'input'], ['Stop button', 'input'], ['Fault reset button', 'input']] as const) {
     assert.ok(has(r, x, t), `${x} (${t}) — got: ${d(r).join(' | ')}`);
   }
   assert.equal(count(r, /enable$/), 1, 'one servo axis');
   assert.equal(count(r, /VFD run$/), 1, 'one VFD');
+  assert.ok(!r.points.some((p) => /encoder/i.test(p.description)) && r.questions.some((q) => /encoder/i.test(q)), 'the servo follows the encoder: it is the drive\'s master, asked, not read by the PLC');
 }
 
 console.log('rules I/O tests passed');
