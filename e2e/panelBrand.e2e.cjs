@@ -14,7 +14,9 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? d.defaultValue() : undefined));
+  const dialogs = [];
+  let answer = true;
+  page.on('dialog', (d) => { dialogs.push(d.message()); return answer ? d.accept(d.type() === 'prompt' ? d.defaultValue() : undefined) : d.dismiss(); });
   const vendorsOf = (cats) => page.evaluate(async (cats) => {
     const { useElectricalStore: E } = await import('/src/store/useElectricalStore.ts');
     const { getPart } = await import('/src/electrical/catalog.ts');
@@ -39,6 +41,13 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
   const before = await vendorsOf(['pushbutton', 'contactor']);
   check(before.every((v) => v.endsWith(':automationdirect')), `AutomationDirect panel parts before (${before.join(', ')})`);
 
+  // With a design in place it asks first; Cancel changes nothing.
+  answer = false;
+  await offer.getByRole('button', { name: 'Use Siemens for panel parts too' }).click();
+  check(/redesign the panel/.test(dialogs.at(-1) ?? '') && /by hand/.test(dialogs.at(-1) ?? ''), 'asks before replacing the design');
+  check(await page.evaluate(async () => (await import('/src/store/useProjectStore.ts')).useProjectStore.getState().info.vendors?.panel) === undefined, 'Cancel: brand not changed');
+  check((await vendorsOf(['contactor'])).every((v) => v.endsWith(':automationdirect')), 'Cancel: design not changed');
+  answer = true;
   await offer.getByRole('button', { name: 'Use Siemens for panel parts too' }).click();
   await page.waitForFunction(async () => {
     const { useElectricalStore: E } = await import('/src/store/useElectricalStore.ts');

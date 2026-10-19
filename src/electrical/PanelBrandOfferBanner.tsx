@@ -2,19 +2,17 @@ import { useProjectStore } from '../store/useProjectStore';
 import { panelBrandOffer, panelCategoryLabel, withPanelBrand } from './panelBrandOffer';
 
 /**
- * Offer, never automatic: "Use Siemens for panel parts too". One click sets the panel-parts brand to the PLC's maker
- * and re-picks the parts (onApplied re-runs the design); "No thanks" is remembered for this project.
+ * Offer, never automatic: "Use Siemens for panel parts too". onAccept gets the change to make: the page asks first
+ * when a design exists (re-picking the parts replaces hand edits), then applies it and re-runs the design. "No thanks"
+ * is remembered for this project.
  */
-export default function PanelBrandOfferBanner({ specText, onApplied }: { specText: string; onApplied: () => void }) {
+export default function PanelBrandOfferBanner({ specText, onAccept }: { specText: string; onAccept: (makerName: string, apply: () => void) => void }) {
   const plcId = useProjectStore((s) => s.plcId);
   const info = useProjectStore((s) => s.info);
   const setInfo = useProjectStore((s) => s.setInfo);
   const offer = panelBrandOffer(plcId, specText, info.vendors, info.brandOfferDismissed ?? []);
   if (!offer) return null;
-  const accept = () => {
-    setInfo({ vendors: withPanelBrand(info.vendors, offer.vendor) });
-    onApplied();
-  };
+  const accept = () => onAccept(offer.name, () => setInfo({ vendors: withPanelBrand(info.vendors, offer.vendor) }));
   const dismiss = () => setInfo({ brandOfferDismissed: [...new Set([...(info.brandOfferDismissed ?? []), offer.vendor])] });
   return (
     <section data-testid="panel-brand-offer" aria-label="Panel parts brand" className="mx-6 mt-3 rounded border border-brand-200 bg-brand-50 px-4 py-2.5 text-sm text-steel-800">

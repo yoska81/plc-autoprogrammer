@@ -230,8 +230,13 @@ export default function ElectricalPage() {
           <button onClick={() => generate()} disabled={el.isGenerating} className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded disabled:opacity-50">
             {el.isGenerating ? 'Updating…' : 'Update design'}
           </button>} />
-        {/* one click: the panel brand is set and the design re-picked (generate reads the preference when it runs) */}
-        <PanelBrandOfferBanner specText={specText} onApplied={() => { if (el.design) generate(false, false); }} />
+        {/* the panel brand is set and the design re-picked (generate reads the preference when it runs); with a design
+            in place it asks first, since the new design replaces hand edits — Cancel changes nothing */}
+        <PanelBrandOfferBanner specText={specText} onAccept={(name, apply) => {
+          if (el.design && !confirm(`Use ${name} for the panel parts and redesign the panel? The electrical design is made again from the rules, so changes you made by hand to it are replaced.`)) return;
+          apply();
+          if (el.design) generate(false, false);
+        }} />
         {ctx && el.design && <EnclosureControl ctx={ctx} />}
         {ctx && el.design && <EnclosureFitBanner ctx={ctx} />}
       </>}

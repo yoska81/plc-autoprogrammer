@@ -19,8 +19,10 @@ const ad = generateDefaultDesign(exampleInput('480VAC-3PH')).design;
 const adAcc = accessoriesOf(ad);
 assert.ok(adAcc.length > 0);
 for (const { es, parts } of adAcc) {
-  assert.ok(parts.some((p) => p.partNumber === 'ECX1030-2'), `${es.tag}: ECX1030-2 NC block`);
-  assert.ok(parts.some((p) => p.partNumber === 'ECX1651'), `${es.tag}: ECX1651 legend`);
+  // exactly as before the change: ES#C (and ES#D) ECX1030-2, ES#L ECX1651
+  assert.equal(parts.find((p) => p.tag === `${es.tag}C`)?.partNumber, 'ECX1030-2', `${es.tag}C`);
+  assert.equal(parts.find((p) => p.tag === `${es.tag}L`)?.partNumber, 'ECX1651', `${es.tag}L`);
+  for (const p of parts.filter((x) => x.tag === `${es.tag}D`)) assert.equal(p.partNumber, 'ECX1030-2', `${es.tag}D`);
 }
 
 // Siemens panel parts: every accessory is Siemens, or there is a note instead.
