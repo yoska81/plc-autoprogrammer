@@ -348,14 +348,17 @@ async function setupRules(v: string) {
   }
   // Unitronics all-in-ones (the screen is the PLC's own): the sealing head on a Vision V700 + snap-in (VisiLogic) or a
   // UniStream US10 + Uni-I/O (UniLogic); the rules build the HMI and the program too, so the exporters run.
-  const uni = v === 'rules-unitronics' ? { plcId: 'unitronics-vision', cpu: 'V700-T20BJ', modules: ['V200-18-E3XB'] }
-    : v === 'rules-unistream' ? { plcId: 'unitronics-unistream', cpu: 'US10-B10-TR22', modules: ['UID-1600', 'UIA-0402N'] } : null;
+  // "rules-siemens": the same machine on an S7-1200 (CPU 1214C + SM 1221 + SM 1231, KTP700 panel): the drawings, wire
+  // list and wire markers use the PLC's own I/O names (%I0.0 on the PLC rows, I0.0 / Q0.0 as wire numbers).
+  const uni = v === 'rules-unitronics' ? { plcId: 'unitronics-vision', cpu: 'V700-T20BJ', modules: ['V200-18-E3XB'], hmi: 'V700-T20BJ' }
+    : v === 'rules-unistream' ? { plcId: 'unitronics-unistream', cpu: 'US10-B10-TR22', modules: ['UID-1600', 'UIA-0402N'], hmi: 'US10-B10-TR22' }
+    : v === 'rules-siemens' ? { plcId: 'siemens-s7', cpu: '6ES7214-1AG40-0XB0', modules: ['6ES7221-1BH32-0XB0', '6ES7231-4HD32-0XB0', '6ES7232-4HB32-0XB0'], hmi: '6AV2123-2GB03-0AX0' } : null;
   if (uni) {
     const sections = useSpecStore.getState().sections;
-    useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC.replace('CLICK PLC with a C-more 7" touch panel', `Unitronics ${uni.cpu} PLC with its built-in touch screen`) });
+    useSpecStore.getState().setSections({ ...(Object.fromEntries(Object.keys(sections).map((k) => [k, ''])) as typeof sections), overview: SEALING_SPEC.replace('CLICK PLC with a C-more 7" touch panel', uni.plcId === 'siemens-s7' ? `Siemens S7-1200 ${uni.cpu} PLC with a KTP700 touch panel` : `Unitronics ${uni.cpu} PLC with its built-in touch screen`) });
     useIOStore.setState({ projectIO: SEALING_IO.map(([description, type, category, deviceType, analog], i) => ({ id: `seal${i + 1}`, description, type, category, deviceType, ...(analog ? { signal: 'analog' as const, analog } : {}) })) });
     useProjectStore.setState({ plcId: uni.plcId, cpuId: uni.cpu, modules: uni.modules });
-    useHmiStore.getState().setHmiPartNumber(uni.cpu);
+    useHmiStore.getState().setHmiPartNumber(uni.hmi);
     useHmiStore.getState().setDesign(null, null);
     useProgramStore.setState({ ladder: { rungs: [], tags: [] } });
     useElectricalStore.getState().setInputs({ ...useElectricalStore.getState().inputs, motors: [], requiredParts: [uni.cpu, ...uni.modules].map((partNumber) => ({ partNumber, quantity: 1 })) });
@@ -458,7 +461,8 @@ export async function build(v: Variant | `ai-${string}` | `rules${string}`): Pro
     region: p.info.region,
     supply: ctx.design.inputs.supply,
     revision: revisionState(ctx.doc),
-    io: p.io.map((x) => ({ id: x.id, address: p.addresses.get(x.id) ?? '', type: x.type, description: x.description })),
+    // native: the PLC's own name of the address (%I0.0 on an S7), as the drawings show it; absent for CLICK
+    io: p.io.map((x) => { const a = p.addresses.get(x.id) ?? ''; const n = m.ioNames.native.get(a); return { id: x.id, address: a, type: x.type, description: x.description, ...(n ? { native: n, wire: m.ioNames.wire.get(a) } : {}) }; }),
     bom: billOfMaterials(ctx),
     wires: wireNumbers(ctx),
     terminals: terminalPlan(ctx),

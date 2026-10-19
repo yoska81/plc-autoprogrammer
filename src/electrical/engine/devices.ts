@@ -87,8 +87,9 @@ export function zoneOf(desc: string, zones: string[]): string {
 /** Interposing / pilot / operator parts picked by words in the description. */
 function pickPushbutton(pk: Picker, desc: string, nc: boolean): CatalogPart | null {
   const color = nc || /\bstop\b/i.test(desc) ? 'red' : /\b(start|run|on)\b/i.test(desc) ? 'green' : /\bjog|manual\b/i.test(desc) ? 'black' : /\b(ack|silence)\b/i.test(desc) ? 'yellow' : 'black';
-  return pk.pick('pushbutton', (p) => String(p.ratings.color ?? '') === color && (nc ? /N\.C\./.test(String(p.ratings.contacts)) : /N\.O\./.test(String(p.ratings.contacts))))
-    ?? pk.pick('pushbutton', (p) => (nc ? /N\.C\./ : /N\.O\./).test(String(p.ratings.contacts ?? '')));
+  // contacts as any maker writes them: "(1) N.C.", "1 NC", "1NC"
+  const has = (p: CatalogPart) => (nc ? /\bN\.?\s?C\b/i : /\bN\.?\s?O\b/i).test(String(p.ratings.contacts ?? '').replace(/(\d)(N[OC])/gi, '$1 $2'));
+  return pk.pick('pushbutton', (p) => String(p.ratings.color ?? '') === color && has(p)) ?? pk.pick('pushbutton', has);
 }
 function pickPilot(pk: Picker, desc: string): CatalogPart | null {
   const color = /\b(fault|alarm|trip|error|stop)/i.test(desc) ? 'red' : /\b(run|on|ok|ready|power)/i.test(desc) ? 'green' : /\b(warn|caution|manual|service)/i.test(desc) ? 'yellow' : 'blue';

@@ -69,7 +69,8 @@ export function collectProject() {
     issues: program.ladder.rungs.length ? validateProgram(program.ladder, profile, ioAddressSet, hmi.design ?? undefined, { noPanel: noHmi }) : [],
     electrical: electrical.design,
     drawingCtx,
-    hmi: hmi.design,
+    // the panel part number the project uses, also when the HMI design was made without one
+    hmi: hmi.design && !hmi.design.hmiPartNumber && hmiPart ? { ...hmi.design, hmiPartNumber: hmiPart } : hmi.design,
     /** Built without a touch panel: the operator uses pushbuttons, a selector and lamps (the operator station). */
     noHmi,
     info,

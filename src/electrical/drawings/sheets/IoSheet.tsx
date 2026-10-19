@@ -1,5 +1,6 @@
 /** PLC input / output wiring sheets: PLC terminal column, wire numbers, terminal strip, field device. */
 import { vendorTerminal, type IoGroup, type IoPoint } from '../../derive';
+import { ioLabel } from '../../ioNames';
 import { AREA, AREA_B, AREA_R, LW_THIN, textWidth, wrapText } from '../geometry';
 import { IO_PITCH, type DrawingPlan, type IoRow, type PlannedSheet, type SheetSpec } from '../plan';
 import {
@@ -105,7 +106,9 @@ function Header({ cols }: { cols: [number, string, ('start' | 'middle')?][] }) {
 /** PLC column label: the address, plus the maker's terminal name where it differs (Unitronics "X001 I0"). */
 function termLabel(plan: DrawingPlan, g: IoGroup, address: string): string {
   const t = vendorTerminal(g.partNumber ? plan.ctx.getPart(g.partNumber) : undefined, address);
-  return t ? `${address} ${t}` : address;
+  // the PLC's own name (%I0.0 on an S7) where it has one, else the address
+  const name = ioLabel(plan.model.ioNames, address);
+  return t && t !== name ? `${name} ${t}` : name;
 }
 
 function PlcColumn({ x, w, rows, labels, title, terminalSide, common }: { x: number; w: number; rows: number; labels: string[]; title: string; terminalSide: 'left' | 'right'; common?: boolean }) {

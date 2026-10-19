@@ -8,7 +8,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useProgramStore } from '../store/useProgramStore';
 import { usePlc } from '../plc/core/usePlc';
 import { getPart, partsIn } from '../electrical/catalog';
-import { catalogFor } from '../electrical/catalogs';
+import { catalogFor, vendorById } from '../electrical/catalogs';
 import PartPicker from '../electrical/PartPicker';
 import type { ElectricalDesign } from '../electrical/types';
 import { buildDrawingsPdf, saveBlob } from '../deliverables/files';
@@ -208,7 +208,7 @@ export default function ElectricalPage() {
         <div className={`flex ${folded ? 'flex-nowrap items-center' : 'flex-wrap items-start'} justify-between gap-x-4 gap-y-2`}>
           <div className="min-w-0 flex-[1_1_16rem]">
             <h2 className={`text-base font-semibold text-steel-800${folded ? ' truncate' : ''}`}>4 · Electrical Design{tab !== 'design' && <span className="font-normal text-steel-500"> — {TAB_TITLE[tab]}</span>}</h2>
-            {!folded && <p className="text-xs text-steel-400 mt-0.5">Control panel design and drawings · {vendorById(pref.panel[0])?.name ?? 'AutomationDirect'} panel parts · {profile.name} {cpu.id}</p>}
+            {!folded && <p className="text-xs text-steel-400 mt-0.5">Control panel design and drawings · Panel parts: {pref.panel.map((id) => vendorById(id)?.name ?? id).join(', ')} · PLC: {profile.vendor} {profile.name} {cpu.id}</p>}
           </div>
           {folded && <HeaderMore onClick={() => setFolded(false)} />}
           {el.design && !folded && (

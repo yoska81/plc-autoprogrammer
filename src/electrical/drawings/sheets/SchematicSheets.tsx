@@ -1,4 +1,5 @@
 /** Power distribution, motor circuits and 24VDC control/safety ladder sheets. */
+import { ioLabel } from '../../ioNames';
 import { powerText, isIec } from '../../../standards/regions';
 import { isFusedDisconnect, ratingText, upstreamOcpd, supplyText, type AuxBranch, type MotorModel, type ResolvedComponent, type XfmrBranch } from '../../derive';
 import { AREA, AREA_B, AREA_R, LW_THIN, lineNo } from '../geometry';
@@ -394,7 +395,7 @@ function MotorBranch({ plan, m, idx, y, BX }: { plan: DrawingPlan; m: MotorModel
           {ys.map((yy, k) => <Txt key={`o${k}`} x={203} y={yy + 0.9} size={2.2} mono anchor="end">{`T${k + 1}`}</Txt>)}
           <Txt x={165} y={ys[0] + 1} size={2.8} mono bold anchor="middle">{m.vfd.tag}</Txt>
           <Txt x={165} y={ys[1] + 0.9} size={2.3} anchor="middle">{`AC DRIVE ${ratingText(m.vfd)}`}</Txt>
-          {ph > 2 && <Txt x={165} y={ys[2] + 0.9} size={2.2} anchor="middle" maxW={60}>{ioRun ? `RUN: ${ioRun.address} /${plan.xref.get(`io:${ioRun.address}`) ?? ''}` : 'RUN CMD: SEE I/O'}</Txt>}
+          {ph > 2 && <Txt x={165} y={ys[2] + 0.9} size={2.2} anchor="middle" maxW={60}>{ioRun ? `RUN: ${ioLabel(plan.model.ioNames, ioRun.address)} /${plan.xref.get(`io:${ioRun.address}`) ?? ''}` : 'RUN CMD: SEE I/O'}</Txt>}
           <Txt x={165} y={ys[ph - 1] + 9} size={2.2} anchor="middle">STO/ENABLE PER DRIVE MANUAL</Txt>
         </g>
       ) : (

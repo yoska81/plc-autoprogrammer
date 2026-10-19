@@ -180,12 +180,17 @@ def check(vdir: Path):
     # CLICK analog channels (DF registers) are not BIT rows: they go in the analog setup CSV instead.
     ana = next(z.glob('plc/*_analog_setup.csv'), None)
     ana_txt = ana.read_text(encoding='utf-8-sig') if ana else ''
+    # a PLC that names its I/O differently (S7 %I0.0): the drawings show that name (data.json io[].native)
+    native = {x['address']: x['native'] for x in data['io'] if x.get('native')}
     for a, desc in io_a:
         if not a:
             report('FAIL', v, f'I/O "{desc}" has no PLC address')
             continue
-        if not re.search(r'(?<!\w)' + a + r'(?!\w)', drw_all):
-            report('FAIL', v, f'I/O address {a} not on the drawings')
+        shown = native.get(a, a)
+        if not re.search(r'(?<![\w%])' + re.escape(shown) + r'(?![\w.])', drw_all):
+            report('FAIL', v, f'I/O address {shown} not on the drawings')
+        elif a in native and re.search(r'(?<!\w)' + a + r'(?!\w)', drw_all):
+            report('FAIL', v, f'I/O address {a} on the drawings of a PLC that names it {native[a]}')
         if a not in eng_all:
             report('FAIL', v, f'I/O address {a} not in the engineering package')
         if re.fullmatch(r'DF\d+', a):

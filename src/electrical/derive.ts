@@ -38,6 +38,7 @@ import { iecColor, iecMotorCurrent, isIec, mm2For, mm2FromAwg, mm2Text, regionSi
 import { ALL_PARTS } from './catalogs';
 import { coolingCover, dcFanAmps } from './cooling';
 import { coilMatchesRail, relayLadder, type Ladder } from './relayLogic';
+import { ioNames, renamePin, renameWire, type IoNames } from './ioNames';
 import { ALLOWED_RISE_C, cabinetHeat } from './thermal';
 import { withIecStrips } from '../standards/designations';
 import { issuedForConstruction } from '../standards/issue';
@@ -488,6 +489,8 @@ export interface ElectricalModel {
   hmi?: HmiLink;
   /** Enclosure filter fan switched by its thermostat (24 VDC from TB1, or AC — not drawn). */
   fan?: FanCircuit;
+  /** The PLC's own I/O names (empty for CLICK): PLC terminal rows and I/O wire numbers follow them (ioNames.ts). */
+  ioNames: IoNames;
   /** The relay ladder kept from a converted machine (DesignInputs.relayLogic), numbered around the panel's own wiring. */
   ladder?: Ladder;
 }
@@ -1403,9 +1406,12 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   if (analog.strip) strips.push(analog.strip);
   machine.cables.push(...analog.cables);
   if (iec) toIec(wires, machine.cables);
+  // a PLC that names its I/O differently (S7 %I0.0, Micro800, Unitronics): its I/O wires are numbered after it
+  const names = ioNames(ctx.plc.cpuPartNumber, byCat(rc, 'plcModule').map((c) => c.partNumber), [...io.map((p) => p.address), ...analog.circuits.map((c) => c.row.address)]);
+  if (names.wire.size) renameIo(names, wires, strips, machine);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
-    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives, servos: servo.axes, hmi, fan, ladder,
+    motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives, servos: servo.axes, hmi, fan, ladder, ioNames: names,
   };
 }
 
@@ -1413,6 +1419,15 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
  * IEC regions: the fixed AWG sizes above become the IEC size with at least the same copper (IEC
  * 60228; e.g. 14 AWG → 2,5 mm², 18 AWG → 1 mm²) and NFPA 79 colours become IEC 60204-1 §13.2 ones.
  */
+/** I/O wire numbers and PLC pins in the PLC's own naming, everywhere a list carries them (ioNames.ts). */
+function renameIo(names: IoNames, wires: WireRecord[], strips: TerminalStrip[], machine: MachineModel) {
+  const w = (s: string) => renameWire(names, s), pin = (s: string) => renamePin(names, s);
+  for (const x of wires) { x.wire = w(x.wire); x.from = pin(x.from); x.to = pin(x.to); }
+  for (const s of strips) for (const t of s.terminals) { t.wire = w(t.wire); t.group = w(t.group); t.internal = pin(t.internal); t.external = pin(t.external); }
+  for (const c of machine.cables) for (const k of c.cores) { k.wire = w(k.wire); k.from = pin(k.from); k.to = pin(k.to); }
+  for (const j of machine.jbs) for (const t of j.terminals) t.wire = w(t.wire);
+}
+
 function toIec(wires: WireRecord[], cables: { size: string }[]) {
   for (const w of wires) { w.color = iecColor(w.color, w.function); w.size = regionSize(w.size, 'IEC'); }
   for (const c of cables) c.size = regionSize(c.size, 'IEC');
@@ -3075,6 +3090,18 @@ export function designWarnings(ctx: DrawingContext): string[] {
     for (const q of m.ladder?.questions ?? []) w.push(`Relay logic: ${q}`);
   }
 
+  // a 1-phase supply fed phase to phase above its input rating (a 120-240 V SITOP on a 480 V bus), and a branch
+  // breaker rated below the system voltage (a 240 V 5SJ4 on 480 V): both fail at power-up
+  const sys = SUPPLY_INFO[ctx.design.inputs.supply];
+  for (const b of m.psBranches.filter((x) => !x.fromXfmr && m.phases === 3 && x.feedWires.length === 2)) {
+    const r = /(\d+)\s*[-/]\s*(\d+)\s*VAC/.exec(String(b.ps.part?.ratings.inputVolts ?? ''));
+    if (r && Number(r[2]) < sys.volts) w.push(`${b.ps.tag} ${b.ps.partNumber} takes ${r[1]}-${r[2]} VAC but is fed L1-L2 at ${sys.volts} V: it would be destroyed at power-up — choose a supply for ${sys.volts} V (3-phase input) or feed it from a control transformer.`);
+  }
+  for (const b of [...m.psBranches, ...m.auxBranches]) {
+    const p = b.protection?.part;
+    const rv = p ? /(\d{3})/.exec(String(p.ratings.volts ?? '')) : null;
+    if (b.protection && rv && Number(rv[1]) < sys.volts && !('fromXfmr' in b && b.fromXfmr)) w.push(`${b.protection.tag} ${b.protection.partNumber} is rated ${p!.ratings.volts} but sits on the ${sys.volts} V bus: choose a breaker rated for ${sys.volts} V.`);
+  }
   w.push(...panelLayout(ctx).warnings);
   // cooling: heat the walls cannot shed needs a filter fan, a heat exchanger or an air conditioner in the design
   {
