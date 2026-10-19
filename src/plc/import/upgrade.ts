@@ -189,8 +189,9 @@ export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = ne
   // I/O keeps its name from the original program (Start_PB, not the description).
   const have = new Set(m.program.tags.map((t) => t.address.toUpperCase()));
   const ioTags: TagDefinition[] = [];
+  const addressOf = materializedAddresses(m.names);
   m.io.forEach((p, k) => {
-    const address = materializedAddress(m.names, imp.io[k].name);
+    const address = addressOf.get(imp.io[k].name);
     if (address && !have.has(address.toUpperCase())) ioTags.push({ address, nickname: imp.io[k].name, comment: p.description });
   });
   let program: LadderProgram = { ...m.program, tags: [...ioTags, ...m.program.tags] };
@@ -241,7 +242,12 @@ function withFindings(questions: string[], findings: string[]): string[] {
   return [...questions.slice(0, last), ...findings, ...questions.slice(last)];
 }
 
-const materializedAddress = (names: Record<string, string>, name: string) => Object.entries(names).find(([a, n]) => n === name && !a.startsWith('@'))?.[0];
+/** Name → its address in the converted program (the first one, as the names are listed). */
+function materializedAddresses(names: Record<string, string>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [a, n] of Object.entries(names)) if (!a.startsWith('@') && !out.has(n)) out.set(n, a);
+  return out;
+}
 
 // ── Description written from the program ──
 
@@ -254,6 +260,13 @@ const KIND: { section: SpecSectionId; re: RegExp }[] = [
 ];
 
 const ioLine = (p: ImportedProgram['io'][number]) => `- ${p.name}${p.description ? `: ${p.description}` : ''} (${p.type}${p.analog ? ', analog' : ''}, ${p.original || 'no address'})`;
+
+/** The rungs of each program part, in order (one pass: a big program has thousands of parts). */
+function rungsByBlock(imp: ImportedProgram): Map<string, ImportedProgram['program']['rungs']> {
+  const out = new Map<string, ImportedProgram['program']['rungs']>();
+  for (const r of imp.program.rungs) if (r.block) { const l = out.get(r.block); if (l) l.push(r); else out.set(r.block, [r]); }
+  return out;
+}
 
 /** A first machine description, in plain words, from what the program shows. */
 export function describeProgram(imp: ImportedProgram): Partial<Record<SpecSectionId, string>> {
@@ -270,8 +283,9 @@ export function describeProgram(imp: ImportedProgram): Partial<Record<SpecSectio
 
   // Rung comments, part by part, are the sequence the original programmer described.
   const seq: string[] = [];
+  const byBlock = rungsByBlock(imp);
   for (const b of blocks) {
-    const comments = imp.program.rungs.filter((r) => r.block === b.id && r.comment.trim()).map((r) => `  - ${r.comment.trim()}`);
+    const comments = (byBlock.get(b.id) ?? []).filter((r) => r.comment.trim()).map((r) => `  - ${r.comment.trim()}`);
     if (comments.length) seq.push(`${b.name}:`, ...comments);
   }
   const timers = imp.program.rungs.flatMap((r) => r.outputs).flatMap((o) => (o.type === 'TMR' ? [o] : []));
@@ -288,8 +302,9 @@ export function describeProgram(imp: ImportedProgram): Partial<Record<SpecSectio
   const rest = imp.io.filter((p) => !KIND.some((k) => k.re.test(`${p.name} ${p.description}`)));
   if (rest.length) out.other = `Other I/O:\n${rest.map(ioLine).join('\n')}`;
 
-  const alarms = imp.program.rungs.filter((r) => /alarm|fault|jam|timeout|overload/i.test(`${r.comment} ${(imp.program.blocks ?? []).find((b) => b.id === r.block)?.name ?? ''}`));
-  if (alarms.length) out.alarms = alarms.map((r) => `- ${r.comment.trim() || 'Alarm rung'}`).filter((l, i, a) => a.indexOf(l) === i).join('\n');
+  const blockName = new Map(blocks.map((b) => [b.id, b.name]));
+  const alarms = imp.program.rungs.filter((r) => /alarm|fault|jam|timeout|overload/i.test(`${r.comment} ${(r.block && blockName.get(r.block)) ?? ''}`));
+  if (alarms.length) out.alarms = [...new Set(alarms.map((r) => `- ${r.comment.trim() || 'Alarm rung'}`))].join('\n');
   return out;
 }
 
@@ -315,10 +330,11 @@ export function questionsFor(imp: ImportedProgram): string[] {
 export function programSummary(imp: ImportedProgram): string {
   const s = imp.source;
   const r = imp.report;
+  const byBlock = rungsByBlock(imp);
   const lines = [
     `Program: ${s.projectName} (${s.fileName}; ${[s.vendor, s.controller].filter(Boolean).join(' ')})`,
     `Rungs: ${r.converted} of ${r.rungs} converted${r.notConverted.length ? `; not converted: ${r.notConverted.map((n) => `${n.text} (${n.where})`).join('; ')}` : ''}`,
-    `Parts: ${(imp.program.blocks ?? []).map((b) => `${b.name} (${imp.program.rungs.filter((x) => x.block === b.id).length} rungs)`).join(', ')}`,
+    `Parts: ${(imp.program.blocks ?? []).map((b) => `${b.name} (${byBlock.get(b.id)?.length ?? 0} rungs)`).join(', ')}`,
     'I/O:',
     ...imp.io.map(ioLine),
     ...(r.notes.length ? ['Notes:', ...r.notes.map((n) => `- ${n}`)] : []),
