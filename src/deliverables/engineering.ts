@@ -1,4 +1,5 @@
 import { isIec, regionSpec } from '../standards/regions';
+import { addressTextFor } from './docs/addressText';
 import type { ProjectSnapshot } from './collect';
 import { getHmi, isCmore } from '../hmi/hmiCatalog';
 import { supplyText } from '../electrical/derive';
@@ -213,6 +214,7 @@ export async function buildEngineeringPdf(p: ProjectSnapshot, equipment: { cpu: 
   const m = docMeta(p);
   doc.setProperties({ title: `${m.docNo} — Controls Engineering Package — ${p.projectName}`, subject: 'Controls engineering package', author: m.preparedBy || m.company || 'ISA Auto Programmer', creator: 'ISA Auto Programmer', keywords: `${m.docNo} Rev ${m.rev.rev}` });
   const w = new PdfWriter(doc);
+  w.mapText = addressTextFor(p);
   const pics = await pictures(p);
   const info = programInfo(p);
   const sf = safetyFunctions(p);

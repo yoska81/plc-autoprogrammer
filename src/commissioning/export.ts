@@ -1,4 +1,5 @@
 import type { ProjectSnapshot } from '../deliverables/collect';
+import { addressTextFor } from '../deliverables/docs/addressText';
 import { simpleDoc } from '../deliverables/programListingPdf';
 import { makeTable, type DocRow } from '../deliverables/docs/table';
 import { MUTED } from '../deliverables/docs/pdfWriter';
@@ -12,6 +13,7 @@ const summary = (items: CommItem[], rec: CommRecord) => {
 /** Commissioning checklist PDF: the items with their recorded results, then the sign-off (with the drawn signature). */
 export async function commissioningPdf(p: ProjectSnapshot, items: CommItem[], rec: CommRecord): Promise<Blob> {
   return simpleDoc(p, 'Commissioning checklist', `${summary(items, rec)} · ${p.profile.name} ${p.cpu.id}`, (w) => {
+    w.mapText = addressTextFor(p);
     w.text('On site, for each item: do the procedure, check the expected result, then mark Pass, Fail or N/A with your initials and the date. Failed items go on the punch list with a note.', { size: 8, color: MUTED });
     const body: DocRow[] = [];
     let last = '';

@@ -29,7 +29,9 @@ export function ioNames(cpuPartNumber: string, modules: string[], addresses: str
   if (!profile?.ioTag) return EMPTY;
   const slots = moduleSlots(modules);
   const native = new Map<string, string>(), wire = new Map<string, string>();
-  for (const a of addresses) {
+  // every terminal of the rack too (spares are drawn), CPU and each module: X001…X032, Y001…, X101…
+  const rack = [0, ...slots.map((_, i) => i + 1)].flatMap((s) => Array.from({ length: 32 }, (_, k) => [`X${s}${String(k + 1).padStart(2, '0')}`, `Y${s}${String(k + 1).padStart(2, '0')}`]).flat());
+  for (const a of new Set([...addresses, ...rack])) {
     const t = profile.ioTag(a, slots, cpuPartNumber);
     if (!t || t.toUpperCase() === a.toUpperCase()) continue;
     // only a name that also works as a wire number: drawings, wire list and markers then always agree (a UniStream
@@ -56,6 +58,12 @@ export function renamePin(names: IoNames, end: string): string {
   const m = /^([^:\s]+):([XY]\d{3})$/.exec(end);
   const to = m ? names.wire.get(m[2]) : undefined;
   return to ? `${m![1]}:${to}` : end;
+}
+
+/** I/O addresses in a document's text in the PLC's own naming: "Start button (X002)" → "Start button (%I0.1)". */
+export function renameAddressText(names: IoNames, text: string): string {
+  if (!names.native.size) return text;
+  return text.replace(/(?<![\w%.])([XY]\d{3})(?![\w])/g, (a) => names.native.get(a) ?? a);
 }
 
 /** An I/O address as the PLC names it, for drawing text: X001 → %I0.0 on an S7, X001 on a CLICK. */
