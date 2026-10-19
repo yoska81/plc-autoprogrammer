@@ -244,6 +244,14 @@ test('safety relays and expansions state their safety outputs as a count', () =>
   assert.deepEqual(bad, []);
 });
 
+test('operator devices write their contacts in one form: "(1) N.O." / "(1) N.C."', () => {
+  // The pushbutton / E-stop / selector picks match this form for every maker (AutomationDirect's spelling).
+  const ONE = /^\(\d+\) N\.[OC]\.(\/\(\d+\) N\.[OC]\.)?$/;
+  const bad = CATALOG.filter((p) => ['pushbutton', 'estop', 'selector'].includes(p.category) && p.ratings.contacts !== undefined
+    && !/\dx \(/.test(String(p.ratings.contacts)) && !ONE.test(String(p.ratings.contacts))).map((p) => `${p.partNumber}: ${p.ratings.contacts}`);
+  assert.deepEqual(bad, []);
+});
+
 test('every CLICK CPU the PLC profile offers is in the catalog with a footprint', () => {
   // The CPU chooser lists CLICK_CPUS; the BOM, back-panel layout and prices need the catalog part.
   const bad = CLICK_CPUS.filter((c) => { const p = CATALOG.find((x) => x.partNumber === c.id); return !p || !(p.widthMm && p.heightMm); }).map((c) => c.id);

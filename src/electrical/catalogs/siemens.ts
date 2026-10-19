@@ -967,7 +967,7 @@ export const SIEMENS: CatalogPart[] = [
     family: 'SIRIUS ACT 3SU1',
     url: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=3SU1100-0AB40-1BA0&language=en&caller=SIOS',
     mount: 'door',
-    ratings: { family: '3SU1', color: 'green', contacts: '1 NO', action: 'momentary', size: '22mm', operator: 'flat button' },
+    ratings: { family: '3SU1', color: 'green', contacts: '(1) N.O.', action: 'momentary', size: '22mm', operator: 'flat button' },
     verified: true,
   },
   {
@@ -978,7 +978,7 @@ export const SIEMENS: CatalogPart[] = [
     family: 'SIRIUS ACT 3SU1',
     url: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=3SU1100-0AB20-1CA0&language=en&caller=SIOS',
     mount: 'door',
-    ratings: { family: '3SU1', color: 'red', contacts: '1 NC', action: 'momentary', size: '22mm', operator: 'flat button' },
+    ratings: { family: '3SU1', color: 'red', contacts: '(1) N.C.', action: 'momentary', size: '22mm', operator: 'flat button' },
     verified: true,
   },
   {
@@ -989,7 +989,7 @@ export const SIEMENS: CatalogPart[] = [
     family: 'SIRIUS ACT 3SU1',
     url: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=3SU1100-1HB20-1CG0&language=en&caller=SIOS',
     mount: 'door',
-    ratings: { family: '3SU1', color: 'red', contacts: '1 NC', action: 'latching, twist to release', size: '22mm', operator: '40 mm mushroom' },
+    ratings: { family: '3SU1', color: 'red', contacts: '(1) N.C.', action: 'latching, twist to release', size: '22mm', operator: '40 mm mushroom' },
     verified: true,
   },
   {
@@ -1000,7 +1000,7 @@ export const SIEMENS: CatalogPart[] = [
     family: 'SIRIUS ACT 3SU1',
     url: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=3SU1150-1HB20-1CG0&language=en&caller=SIOS',
     mount: 'door',
-    ratings: { family: '3SU1 (metal)', color: 'red', contacts: '1 NC', action: 'maintained, twist release', size: '22mm', operator: '40 mm mushroom' },
+    ratings: { family: '3SU1 (metal)', color: 'red', contacts: '(1) N.C.', action: 'maintained, twist release', size: '22mm', operator: '40 mm mushroom' },
     verified: true,
   },
   {
@@ -1011,7 +1011,7 @@ export const SIEMENS: CatalogPart[] = [
     family: 'SIRIUS ACT 3SU1',
     url: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=3SU1100-2BF60-1BA0&language=en&caller=SIOS',
     mount: 'door',
-    ratings: { family: '3SU1', color: 'white', contacts: '1 NO', action: 'maintained', size: '22mm', operator: 'short handle', positions: 2 },
+    ratings: { family: '3SU1', color: 'white', contacts: '(1) N.O.', action: 'maintained', size: '22mm', operator: 'short handle', positions: 2 },
     verified: true,
   },
   {
@@ -1022,7 +1022,7 @@ export const SIEMENS: CatalogPart[] = [
     family: 'SIRIUS ACT 3SU1',
     url: 'https://support.industry.siemens.com/teddatasheet/?format=pdf&mlfbs=3SU1100-2BL60-1NA0&language=en&caller=SIOS',
     mount: 'door',
-    ratings: { family: '3SU1', contacts: '2 NO', action: 'maintained', size: '22mm', operator: 'short handle', positions: 3 },
+    ratings: { family: '3SU1', contacts: '(2) N.O.', action: 'maintained', size: '22mm', operator: 'short handle', positions: 3 },
     verified: true,
   },
   {

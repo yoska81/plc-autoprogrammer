@@ -1029,7 +1029,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '800F',
     url: 'https://www.rockwellautomation.com/en-us/products/details.800FP-F3PX10.html',
     mount: 'door',
-    ratings: { family: '800F', size: '22mm', color: 'green', contacts: '1 N.O.', action: 'momentary', operator: 'flush, plastic' },
+    ratings: { family: '800F', size: '22mm', color: 'green', contacts: '(1) N.O.', action: 'momentary', operator: 'flush, plastic' },
     verified: true,
   },
   {
@@ -1040,7 +1040,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '800F',
     url: 'https://www.rockwellautomation.com/en-us/products/details.800FP-F4PX01.html',
     mount: 'door',
-    ratings: { family: '800F', size: '22mm', color: 'red', contacts: '1 N.C.', action: 'momentary', operator: 'flush, plastic' },
+    ratings: { family: '800F', size: '22mm', color: 'red', contacts: '(1) N.C.', action: 'momentary', operator: 'flush, plastic' },
     verified: true,
   },
   {
@@ -1051,7 +1051,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '800F',
     url: 'https://www.rockwellautomation.com/en-us/products/details.800FP-F2PX10.html',
     mount: 'door',
-    ratings: { family: '800F', size: '22mm', color: 'black', contacts: '1 N.O.', action: 'momentary', operator: 'flush, plastic' },
+    ratings: { family: '800F', size: '22mm', color: 'black', contacts: '(1) N.O.', action: 'momentary', operator: 'flush, plastic' },
     verified: true,
   },
   {
@@ -1062,7 +1062,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '800F',
     url: 'https://www.rockwellautomation.com/en-us/products/details.800FM-F3MX10.html',
     mount: 'door',
-    ratings: { family: '800F', size: '22mm', color: 'green', contacts: '1 N.O.', action: 'momentary', operator: 'flush, metal' },
+    ratings: { family: '800F', size: '22mm', color: 'green', contacts: '(1) N.O.', action: 'momentary', operator: 'flush, metal' },
     verified: true,
   },
   {
@@ -1073,7 +1073,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '800F',
     url: 'https://www.rockwellautomation.com/en-us/products/details.800FM-F4MX01.html',
     mount: 'door',
-    ratings: { family: '800F', size: '22mm', color: 'red', contacts: '1 N.C.', action: 'momentary', operator: 'flush, metal' },
+    ratings: { family: '800F', size: '22mm', color: 'red', contacts: '(1) N.C.', action: 'momentary', operator: 'flush, metal' },
     verified: true,
   },
   {
@@ -1084,7 +1084,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '800F',
     url: 'https://www.rockwellautomation.com/en-us/products/details.800FP-MT44PX02.html',
     mount: 'door',
-    ratings: { family: '800F', size: '22mm', color: 'red', contacts: '2 N.C.', action: 'maintained, twist-to-release', operator: '40 mm mushroom, plastic' },
+    ratings: { family: '800F', size: '22mm', color: 'red', contacts: '(2) N.C.', action: 'maintained, twist-to-release', operator: '40 mm mushroom, plastic' },
     verified: true,
   },
   {
@@ -1095,7 +1095,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '800F',
     url: 'https://www.rockwellautomation.com/en-us/products/details.800FM-MT44MX02.html',
     mount: 'door',
-    ratings: { family: '800F', size: '22mm', color: 'red', contacts: '2 N.C.', action: 'maintained, twist-to-release', operator: '40 mm mushroom, metal' },
+    ratings: { family: '800F', size: '22mm', color: 'red', contacts: '(2) N.C.', action: 'maintained, twist-to-release', operator: '40 mm mushroom, metal' },
     verified: true,
   },
   {
@@ -1106,7 +1106,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '800F',
     url: 'https://www.rockwellautomation.com/en-us/products/details.800FP-SM22PX10.html',
     mount: 'door',
-    ratings: { family: '800F', size: '22mm', color: 'black', contacts: '1 N.O.', action: 'maintained', operator: 'standard knob, plastic', positions: 2 },
+    ratings: { family: '800F', size: '22mm', color: 'black', contacts: '(1) N.O.', action: 'maintained', operator: 'standard knob, plastic', positions: 2 },
     verified: true,
   },
   {
@@ -1117,7 +1117,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '800F',
     url: 'https://www.rockwellautomation.com/en-us/products/details.800FP-SM32PX10.html',
     mount: 'door',
-    ratings: { family: '800F', size: '22mm', color: 'black', contacts: '1 N.O.', action: 'maintained', operator: 'standard knob, plastic', positions: 3 },
+    ratings: { family: '800F', size: '22mm', color: 'black', contacts: '(1) N.O.', action: 'maintained', operator: 'standard knob, plastic', positions: 3 },
     verified: true,
   },
   {
@@ -1128,7 +1128,7 @@ export const ALLEN_BRADLEY: CatalogPart[] = [
     family: '800F',
     url: 'https://www.rockwellautomation.com/en-us/products/details.800FM-SM32MX20.html',
     mount: 'door',
-    ratings: { family: '800F', size: '22mm', color: 'black', contacts: '2 N.O.', action: 'maintained', operator: 'standard knob, metal', positions: 3 },
+    ratings: { family: '800F', size: '22mm', color: 'black', contacts: '(2) N.O.', action: 'maintained', operator: 'standard knob, metal', positions: 3 },
     verified: true,
   },
   {
