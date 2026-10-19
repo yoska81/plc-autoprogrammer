@@ -67,4 +67,18 @@ const texts: string[] = [];
 ws.eachRow((r) => texts.push((r.values as unknown[]).map(String).join('|')));
 assert.ok(texts.some((t) => t.includes('Contactor coil open circuit') && t.includes('FAIL')));
 assert.ok(texts.some((t) => t.includes('Signature|J. Tech')));
+// On an S7 the checklist speaks the PLC's own names: %I / %Q terminals and the exported tag names, never X001 / C21 / DS1003.
+{
+  const { applyEquipment } = await import('../spec/equipment');
+  applyEquipment({ cpuId: '6ES7214-1AG40-0XB0', modules: [], hmiPartNumber: null }, null);
+  const s7 = commissioningItems(collectProject());
+  const ins = s7.filter((i) => i.section === 'inputs');
+  assert.ok(ins.length && ins.every((i) => /^%I\d+\.\d /.test(i.title)), ins.map((i) => i.title).join(' | '));
+  assert.ok(ins.every((i) => /PLC input %I\d+\.\d/.test(i.expected) || /reads the matching value/.test(i.expected)), ins[0].expected);
+  const text = s7.map((i) => `${i.title} ${i.procedure} ${i.expected}`).join('\n');
+  const left = text.match(/\b(?:X|Y)\d{3}\b|\b(?:DS|DD|DF)\d+\b|\bC\d{1,4}\b/g) ?? [];
+  assert.deepEqual([...new Set(left)], [], 'no app operand left on an S7');
+  assert.ok(s7.every((i) => /^(io|sf|alarm):/.test(i.id)), 'ids unchanged (ticks stay with their item)');
+}
+
 console.log(`commissioning tests passed (${items.length} items)`);
