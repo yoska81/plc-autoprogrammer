@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { HmiDesign, HmiElement } from '../hmi/types';
 import { keepAlarmTexts } from '../edits/hmiTexts';
+import { appPersistStorage } from '../lib/appStorage';
 
 interface HmiStore {
   /** Chosen HMI part number (before or after a design exists). */
@@ -38,6 +39,7 @@ export const useHmiStore = create<HmiStore>()(
     }),
     {
       name: 'plc-hmi-store',
+      storage: appPersistStorage(),
       partialize: (s) => ({ hmiPartNumber: s.hmiPartNumber, design: s.design, explanation: s.explanation }),
     }
   )

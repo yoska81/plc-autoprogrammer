@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { mergeLibrary, type LibraryItem } from './library';
+import { appPersistStorage } from '../../lib/appStorage';
 
 /** The standard-panel library: app-wide (every project sees it), kept in this browser / app storage. */
 interface LibraryStore {
@@ -25,6 +26,6 @@ export const useLibraryStore = create<LibraryStore>()(
         return added;
       },
     }),
-    { name: 'plc-panel-library' },
+    { name: 'plc-panel-library', storage: appPersistStorage() },
   ),
 );

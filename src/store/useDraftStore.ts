@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useCallback, useRef } from 'react';
+import { appPersistStorage } from '../lib/appStorage';
 
 /**
  * Work in progress that belongs to the project: text typed but not yet sent (spec additions,
@@ -25,7 +26,7 @@ export const useDraftStore = create<DraftStore>()(
         return { drafts };
       }),
     }),
-    { name: 'plc-draft-store', partialize: (s) => ({ drafts: s.drafts }) },
+    { name: 'plc-draft-store', storage: appPersistStorage(), partialize: (s) => ({ drafts: s.drafts }) },
   ),
 );
 

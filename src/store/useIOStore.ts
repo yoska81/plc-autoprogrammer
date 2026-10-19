@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { withAnalogRange, type AnalogSpec, type IOPoint, type IOCategory, type TemplatePoint } from '../types/io';
 import { useEditsStore } from '../edits/useEditsStore';
+import { appPersistStorage } from '../lib/appStorage';
 
 interface IOStore {
   projectIO: IOPoint[];
@@ -153,6 +154,6 @@ export const useIOStore = create<IOStore>()(
         set((s) => ({ projectIO: s.projectIO.filter((p) => p.id !== id) }));
       },
     }),
-    { name: 'plc-io-store' }
+    { name: 'plc-io-store', storage: appPersistStorage() }
   )
 );

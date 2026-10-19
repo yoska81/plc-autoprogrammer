@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Finding, FindingMark, FindingStatus } from './types';
+import { appPersistStorage } from '../lib/appStorage';
 
 /** A finding handed to another stage's AI fix flow (consumed once by that page). */
 export interface FixRequest { stage: 'program'; text: string; findingId: string }
@@ -36,7 +37,7 @@ export const useReviewStore = create<ReviewStore>()(
       }),
       requestFix: (fixRequest) => set({ fixRequest }),
     }),
-    { name: 'plc-review-store', partialize: (s) => ({ checks: s.checks, checkedAt: s.checkedAt, ai: s.ai, marks: s.marks }) },
+    { name: 'plc-review-store', storage: appPersistStorage(), partialize: (s) => ({ checks: s.checks, checkedAt: s.checkedAt, ai: s.ai, marks: s.marks }) },
   ),
 );
 

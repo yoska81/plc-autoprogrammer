@@ -5,6 +5,7 @@
  * Content identical to the built-in example is skipped.
  */
 import type { LadderProgram } from '../plc/core/ladder';
+import { appStorage } from '../lib/appStorage';
 
 export interface Piece {
   id: string;
@@ -60,10 +61,10 @@ export function deepScan(example: { ladder: LadderProgram; spec: Record<string, 
   const exampleJson = JSON.stringify(example.ladder);
   const exampleSpec = Object.entries(example.spec).filter(([, t]) => t?.trim()).map(([k, t]) => `${k}:\n${t.trim()}`).join('\n\n');
   let keys: string[];
-  try { keys = Object.keys(localStorage); } catch { return out; }
+  try { keys = appStorage.keys(); } catch { return out; }
   for (const k of keys) {
     let raw: unknown;
-    try { raw = JSON.parse(localStorage.getItem(k) ?? 'null'); } catch { continue; }
+    try { raw = JSON.parse(appStorage.getItem(k) ?? 'null'); } catch { continue; }
     if (!raw || typeof raw !== 'object') continue;
     if (k === 'plc-program-store') scanProgram('Open project', (raw as { state?: ProgramState }).state, out, exampleJson);
     else if (k === 'plc-spec-store') scanSpec('Open project', (raw as { state?: never }).state, out, exampleSpec);

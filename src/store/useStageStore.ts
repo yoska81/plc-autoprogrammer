@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SpecSections } from '../spec/types';
+import { appPersistStorage } from '../lib/appStorage';
 
 export type StageId = 'spec' | 'equipment' | 'io' | 'electrical' | 'hmi' | 'program';
 
@@ -39,6 +40,6 @@ export const useStageStore = create<StageStore>()(
       markGenerated: (stage, source) =>
         set((s) => ({ sources: { ...s.sources, [stage]: { ...(addressFp ? { addrFp: addressFp() } : {}), ...(regionNow ? { region: regionNow() } : {}), ...source, at: new Date().toISOString() } } })),
     }),
-    { name: 'plc-stage-store' }
+    { name: 'plc-stage-store', storage: appPersistStorage() }
   )
 );
