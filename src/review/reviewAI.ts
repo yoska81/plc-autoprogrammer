@@ -150,18 +150,26 @@ export async function runAiReview(ai: AIConfig, p: ProjectSnapshot, deterministi
   const base = approxTokens(projectSummary(p, deterministic, { rungs: [], note: PART_NOTE(1, 1, '') }));
   const perChar = clickRungListing(p.ladder, p.labels, '').length / Math.max(1, JSON.stringify(p.ladder.rungs).length);
   const cost = (r: Rung) => 1.4 * approxTokens(JSON.stringify(r)) * perChar;
-  const parts = programParts(p.ladder, cost, Math.max(10_000, INPUT_TOKENS - base));
-  const read = parts.slice(0, MAX_REVIEW_PARTS);
+  const queue = programParts(p.ladder, cost, Math.max(10_000, INPUT_TOKENS - base));
+  // The estimate does not see how long the I/O lines a part brings are: a part measured over the budget is halved.
+  const fits = (rungs: Rung[]) => approxTokens(projectSummary(p, deterministic, { rungs, note: PART_NOTE(1, 1, '') })) <= INPUT_TOKENS;
+  const read: Rung[][] = [];
+  while (queue.length && read.length < MAX_REVIEW_PARTS) {
+    const rungs = queue.shift()!;
+    if (rungs.length > 1 && !fits(rungs)) { const h = rungs.length >> 1; queue.unshift(rungs.slice(0, h), rungs.slice(h)); continue; }
+    read.push(rungs);
+  }
+  const total = read.length + queue.length;
   const number = new Map(p.ladder.rungs.map((r, i) => [r.id, i + 1]));
   const span = (rs: Rung[]) => `rungs ${number.get(rs[0].id)}–${number.get(rs[rs.length - 1].id)}`;
   const results: AiReview[] = [];
   for (const [k, rungs] of read.entries()) {
-    results.push(await reviewOnce(ai, projectSummary(p, deterministic, { rungs, note: PART_NOTE(k + 1, parts.length, span(rungs)) })));
+    results.push(await reviewOnce(ai, projectSummary(p, deterministic, { rungs, note: PART_NOTE(k + 1, total, span(rungs)) })));
   }
-  const left = parts.slice(read.length).flat();
+  const left = queue.flat();
   return {
     summary: [
-      `The program (${p.ladder.rungs.length} rungs) is too big to review in one request: the AI read it in ${parts.length} part${parts.length === 1 ? '' : 's'}${left.length ? `, the first ${read.length} of them (${span(read.flat())}); rungs ${number.get(left[0].id)}–${p.ladder.rungs.length} were checked by the rule checks only` : ''}.`,
+      `The program (${p.ladder.rungs.length} rungs) is too big to review in one request: the AI read it in ${total} part${total === 1 ? '' : 's'}${left.length ? `, the first ${read.length} of them (${span(read.flat())}); rungs ${number.get(left[0].id)}–${p.ladder.rungs.length} were checked by the rule checks only` : ''}.`,
       ...results.map((r, k) => `Part ${k + 1} (${span(read[k])}): ${r.summary}`),
     ].join('\n'),
     findings: uniqueIds(results.flatMap((r) => r.findings)),

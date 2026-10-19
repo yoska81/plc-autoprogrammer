@@ -6,7 +6,9 @@
  */
 import assert from 'node:assert/strict';
 import { importProgramFiles } from './index';
-import { planUpgrade } from './upgrade';
+import { describeProgram, planUpgrade } from './upgrade';
+import { readFileSync } from 'node:fs';
+import { fileText } from './index';
 import { l5x, plcopen } from './__fixtures__/bigPrograms';
 
 let passed = 0;
@@ -25,5 +27,18 @@ for (const [name, text] of [['big.xml', plcopen(800, 1600)], ['big.L5X', l5x(300
     assert.ok(read + plan < 15, `read ${read.toFixed(1)} s + plan ${plan.toFixed(1)} s`);
   });
 }
+
+test('the description written from the program: a big one is cut to its first lines, a small one is whole', () => {
+  const big = describeProgram(importProgramFiles([{ name: 'big.L5X', text: l5x(300, 1024) }]).program);
+  const text = Object.values(big).join('\n');
+  assert.ok(text.length < 100_000, `${text.length} characters`);
+  assert.match(big.sequence ?? '', /… and \d+ more parts/);
+  const f = (n: string) => ({ name: n, text: fileText(n, new Uint8Array(readFileSync(new URL(`./__fixtures__/${n}`, import.meta.url)))) });
+  const capper = importProgramFiles([f('CAPPER_MAIN.csv'), f('CAPPER_DeviceComment.csv')]).program;
+  const seq = describeProgram(capper).sequence ?? '';
+  assert.doesNotMatch(seq, /… and/);
+  const comments = capper.program.rungs.map((r) => r.comment.trim()).filter(Boolean);
+  assert.ok(comments.length > 15 && comments.every((c) => seq.includes(c)), `all ${comments.length} rung comments`);
+});
 
 console.log(`bigProgram.test: all passed (${passed})`);

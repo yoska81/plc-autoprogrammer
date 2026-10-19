@@ -15,6 +15,7 @@ import { MAX_REVIEW_PARTS, runAiReview } from './reviewAI';
 import { runEngineerAI } from '../engineer/engineerAI';
 import { l5x } from '../plc/import/__fixtures__/bigPrograms';
 import { seedSampleProject } from '../preview/sampleProject';
+import { useIOStore } from '../store/useIOStore';
 import type { LadderProgram } from '../plc/core/ladder';
 
 let passed = 0;
@@ -55,13 +56,23 @@ await test('a big program: parts that each fit, at most MAX_REVIEW_PARTS, findin
   prompts.length = 0;
   const r = await runAiReview(ai, p as never, []);
   assert.equal(prompts.length, MAX_REVIEW_PARTS);
-  for (const t of prompts) assert.ok(approxTokens(t) <= INPUT_TOKENS * 1.1, `part of ${approxTokens(t)} tokens`);
+  for (const t of prompts) assert.ok(approxTokens(t) <= INPUT_TOKENS, `part of ${approxTokens(t)} tokens`);
   assert.match(prompts[0], /^This is part 1 of \d+ of a big program \(rungs 1–\d+\)/);
   assert.match(prompts[0], /only the \d+ points this part of the program uses \(2048 in all\)/);
   assert.match(r.summary, /too big to review in one request: the AI read it in \d+ parts, the first 6 of them/);
   assert.match(r.summary, /checked by the rule checks only/);
   assert.equal(r.findings.length, MAX_REVIEW_PARTS);
   assert.equal(new Set(r.findings.map((f) => f.id)).size, MAX_REVIEW_PARTS, 'ids stay unique across parts');
+});
+
+await test('long I/O descriptions: each part is measured and split again, every one fits', async () => {
+  const io = useIOStore.getState();
+  useIOStore.setState({ projectIO: io.projectIO.map((pt) => ({ ...pt, description: `${pt.description} — ${'wired through the remote junction box, see the field drawings and the loop sheet; '.repeat(5)}` })) });
+  prompts.length = 0;
+  await runAiReview(ai, collectProject() as never, []);
+  assert.equal(prompts.length, MAX_REVIEW_PARTS);
+  for (const t of prompts) assert.ok(approxTokens(t) <= INPUT_TOKENS, `part of ${approxTokens(t)} tokens`);
+  useIOStore.setState({ projectIO: io.projectIO });
 });
 
 await test('the engineer review gets the program as an outline when the listing does not fit', async () => {
