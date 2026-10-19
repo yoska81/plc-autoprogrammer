@@ -13,10 +13,12 @@ const MIME: Record<string, string> = { html: 'text/html', csv: 'text/csv', json:
  */
 export default function LoadIntoPlc({ className = '' }: { className?: string }) {
   const [open, setOpen] = useState(false);
-  const [state, setState] = useState<{ steps: LoadStep[]; files: Map<string, string>; title: string; empty: boolean } | null>(null);
+  const [state, setState] = useState<{ steps: LoadStep[]; files: Map<string, string>; title: string; empty: boolean; readOnly?: boolean } | null>(null);
   const [done, setDone] = useState<Set<number>>(new Set());
   const show = () => {
     const p = collectProject();
+    // Read only (a program kept on the machine's own PLC): there is nothing to load until a PLC is chosen.
+    if (p.profile.readOnly) { setState({ steps: [], files: new Map(), title: `${p.profile.vendor} ${p.cpu.id}`, empty: false, readOnly: true }); setDone(new Set()); setOpen(true); return; }
     const files = programFiles(p);
     const steps = loadGuide({
       profileId: p.profile.id, profileName: p.profile.name, vendor: p.profile.vendor, cpuId: p.cpu.id, modules: p.modules, fileBase: p.fileBase,
@@ -47,6 +49,7 @@ export default function LoadIntoPlc({ className = '' }: { className?: string }) 
               </div>
               <button onClick={() => setOpen(false)} aria-label="Close" className="rounded p-1 text-steel-400 hover:bg-steel-100 hover:text-steel-700"><XMarkIcon className="h-5 w-5" /></button>
             </div>
+            {state.readOnly && <p className="mx-5 mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">This program is on the machine's own controller, read only: the app cannot write its files yet. <Link to="/upgrade" className="underline" onClick={() => setOpen(false)}>Choose the PLC to move it to</Link> first.</p>}
             {state.empty && <p className="mx-5 mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">There is no program yet: build it on the PLC program page first.</p>}
             <ol className="space-y-3 px-5 py-4">
               {state.steps.map((s, k) => (

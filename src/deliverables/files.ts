@@ -158,6 +158,8 @@ function analogFiles(p: ProjectSnapshot): { name: string; content: string }[] {
 }
 
 export function programFiles(p: ProjectSnapshot): { name: string; content: string }[] {
+  // A program kept read only on the machine's own PLC: nothing is written until the PLC to move it to is chosen.
+  if (p.profile.readOnly) return [];
   if (p.profile.language === 'st') return p.stCode ? [{ name: `${p.fileBase}.st`, content: p.stCode }] : [];
   // the analog channel setup is PLC configuration: it ships before any program exists
   if (!p.ladder.rungs.length) return analogFiles(p);

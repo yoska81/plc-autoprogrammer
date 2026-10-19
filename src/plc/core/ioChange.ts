@@ -138,7 +138,15 @@ export function withIoRemap(change: () => void, undoLabel?: string): string[] {
   const prevIo = useIOStore.getState().projectIO, prevSetup = plcSetup();
   const put = undoLabel ? snapshotAll() : null;
   wrapping++;
-  try { change(); } finally { wrapping--; }
+  try {
+    change();
+    // Leaving a read-only PLC (a program kept on the machine's own controller): its I/O registers (IB00000) are not
+    // the new PLC's terminals, so those points take the new PLC's automatic addresses and the program follows.
+    const was = getProfile(prevSetup.plcId), now = getProfile(plcSetup().plcId);
+    if (was.readOnly && now.id !== was.id) {
+      useIOStore.setState({ projectIO: useIOStore.getState().projectIO.map((p) => { const k = p.plcAddress?.trim() ? was.parseAddress(p.plcAddress)?.kind : undefined; if (k !== 'input' && k !== 'output') return p; const q = { ...p }; delete q.plcAddress; delete q.addressNote; return q; }) });
+    }
+  } finally { wrapping--; }
   const messages = applyIoChange(prevIo, useIOStore.getState().projectIO, prevSetup, plcSetup()).messages;
   if (put) offerUndo(undoLabel!, put);
   return messages;

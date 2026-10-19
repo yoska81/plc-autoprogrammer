@@ -65,6 +65,12 @@ export interface ForeignRoutine {
   rungNumbers?: Record<string, string>;
 }
 
+/**
+ * One network axis as the project file has it: MECHATROLINK line (circuit) and axis number, the drive and motor
+ * model when the file names them. 'virtual': no drive (an SVR virtual axis).
+ */
+export interface NetworkAxisImport { line: number; axis: number; drive?: string; motor?: string; kind: 'servo' | 'virtual' }
+
 export interface ForeignProgram {
   format: SourceFormat;
   vendor: string;
@@ -72,6 +78,8 @@ export interface ForeignProgram {
   controller: string;
   /** The I/O modules in the controller's own rack, by slot, as the file names them ("1769-IQ16/A"). */
   modules?: { slot: number; catalog: string }[];
+  /** Network (MECHATROLINK) axes the project configures: not I/O points, each one its drive and motor. */
+  axes?: NetworkAxisImport[];
   projectName: string;
   tags: ForeignTag[];
   routines: ForeignRoutine[];
@@ -106,7 +114,7 @@ export interface ImportReport {
 }
 
 export interface ImportedProgram {
-  source: { format: SourceFormat; vendor: string; controller: string; projectName: string; fileName: string; modules?: { slot: number; catalog: string }[] };
+  source: { format: SourceFormat; vendor: string; controller: string; projectName: string; fileName: string; modules?: { slot: number; catalog: string }[]; axes?: NetworkAxisImport[] };
   /** Program with neutral addresses; I/O points are written as "@IN:<n>" / "@OUT:<n>" until a PLC is chosen (materialize). */
   program: LadderProgram;
   io: ImportedIoPoint[];

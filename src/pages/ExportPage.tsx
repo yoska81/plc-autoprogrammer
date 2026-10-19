@@ -353,7 +353,9 @@ export default function ExportPage() {
                   </ol>
                 )}
               </>
-            ) : <p className="text-sm text-steel-500">No program yet.</p>}
+            ) : p.profile.readOnly && p.ladder.rungs.length
+              ? <p className="text-sm text-steel-600" data-testid="export-read-only">The program is on the machine's {p.profile.vendor} controller, read only: the app cannot write its files yet. <Link to="/upgrade" className="underline">Choose the PLC to move it to</Link>, then its files are here.</p>
+              : <p className="text-sm text-steel-500">No program yet.</p>}
           </Card>
 
           <Card title="Commissioning checklist" info={stages.program} to="/commissioning">

@@ -17,6 +17,10 @@ import { readEmtp } from './emtp';
 import { importProgramFiles } from './index';
 import { runParse } from '../../workers/parseOps';
 import type { LadderElement, LadderOutput, Rung } from '../core/ladder';
+import { planUpgrade } from './upgrade';
+import { getProfile } from '../core/profiles';
+import { yaskawaCpuOf } from '../core/profiles/yaskawa';
+import { validateProgram } from '../core/validate';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ymw = new Uint8Array(readFileSync(join(here, '__fixtures__', 'demo_mp.YMW7')));
@@ -111,6 +115,9 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   // the parse worker takes the bytes as they are
   const viaWorker = runParse({ op: 'program', files: [{ name: 'demo_mp.YMW7', text: '', bytes: ymw }] });
   assert.equal(viaWorker.program.io.length, 8);
+  // The MECHATROLINK axes as a list (network axes, not I/O points), through the worker too.
+  assert.deepEqual(program.source.axes, [{ line: 1, axis: 1, drive: 'SGDEMO-AMP01', motor: 'SGMDEMO-MOT01', kind: 'servo' }]);
+  assert.deepEqual(viaWorker.program.source.axes, program.source.axes);
   console.log('import: ok');
 }
 
@@ -168,6 +175,33 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   // a .ymw file without a packed project inside keeps its own message
   assert.throws(() => readYmw7(new Uint8Array(100), 'empty.YMW7'), /no packed project inside/);
   console.log('damaged files: ok');
+}
+
+
+// "Use this program": the project stays on the machine's own Yaskawa controller, read only (never CLICK in its
+// place): its I/O registers, its rack and servo axes as information, no files to download until a PLC is chosen.
+{
+  const { program } = importProgramFiles([{ name: 'demo_mp.YMW7', text: '', bytes: ymw }]);
+  const plan = planUpgrade(program, 'click');
+  assert.equal(plan.plcId, 'yaskawa');
+  assert.equal(plan.cpuId, 'MP-CPU', 'a CPU the list does not have is the generic MP CPU');
+  assert.deepEqual(plan.modules, []);
+  assert.deepEqual(plan.io.map((p) => p.plcAddress).sort(), ['IB00000', 'IB00001', 'IB00002', 'IB00003', 'OB00000', 'OB00001', 'OB00002', 'OB00003']);
+  assert.match(plan.original.cpuNote ?? '', /Yaskawa CPU-DEMO\(4axes\)\. The app cannot program it yet/);
+  assert.match(plan.original.cpuNote ?? '', /These are the Yaskawa modules: DEMOCPU, DEMOIO\. They stay with the original\. Choose the new PLC and the app picks its modules\./);
+  assert.match(plan.original.cpuNote ?? '', /Servo axes \(1\): axis 1 \(line 1\): SGDEMO-AMP01 with motor SGMDEMO-MOT01/);
+  assert.doesNotMatch(JSON.stringify(plan), /CLICK|AutomationDirect|C0-\d/, 'nothing of a CLICK in the plan');
+  const profile = getProfile(plan.plcId);
+  assert.equal(profile.readOnly, true);
+  const issues = validateProgram(plan.program, profile, new Set(plan.io.map((p) => p.plcAddress!)));
+  assert.deepEqual(issues.filter((i) => i.severity === 'error' && /address/i.test(i.message)).map((i) => i.message), [], 'the program checks on its own registers');
+  assert.equal(yaskawaCpuOf('CPU-301(16axes)').id, 'CPU-301');
+  assert.equal(yaskawaCpuOf('MP3300').id, 'MP3300');
+  assert.equal(profile.parseAddress('IB0001F')?.kind, 'input');
+  assert.equal(profile.parseAddress('OW0010')?.kind, 'output');
+  assert.equal(profile.parseAddress('X001'), null, 'no CLICK terminals');
+  assert.equal(profile.parseAddress('DS3')?.kind, 'register', 'the neutral memory of the program');
+  console.log('read only on its own PLC: ok');
 }
 
 console.log('mpe720: all ok');
