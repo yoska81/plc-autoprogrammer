@@ -142,6 +142,19 @@ async function scenario(browser, quick) {
   check(st.rungs > 0 || st.code, 'program built');
   check(st.exporters.some((f) => /TIA|SCL|\.scl|\.xml/i.test(f)), `TIA Portal export offered (${st.exporters.join(' | ')})`);
   check(!results.some((r) => / failed:/.test(r)), 'no stage failed');
+  // The .scl speaks TIA Portal's names: no CLICK operand outside the user's own I/O descriptions, no static named
+  // after a CLICK register, no "_Y003"-style name.
+  const scl = await page.evaluate(async () => {
+    const p = (await import('/src/deliverables/collect.ts')).collectProject();
+    const { exportContext } = await import('/src/deliverables/exportContext.ts');
+    const { buildScl } = await import('/src/plc/core/profiles/siemens.ts');
+    let text = buildScl(p.ladder, exportContext(p)).scl;
+    for (const x of [...p.io].sort((a, b) => b.description.length - a.description.length)) text = text.split(x.description).join('');
+    const ops = [...new Set(text.match(/\b(?:CTD|TD|CT|DS|DD|DH|DF|SC|SD|TXT|C|T|X|Y)\d+\b/g) ?? [])];
+    const names = [...text.matchAll(/^\s+([A-Za-z_][A-Za-z0-9_]*) : /gm)].map((m) => m[1]).filter((n) => /^(?:CTD|TD|CT|DS|DD|DH|DF|C|T|X|Y)\d+$|_[XY]\d{3}$/.test(n));
+    return { ops, names };
+  });
+  check(scl.ops.length === 0 && scl.names.length === 0, `SCL in TIA names only (operands: ${scl.ops.slice(0, 8).join(' ') || 'none'}; names: ${scl.names.slice(0, 8).join(' ') || 'none'})`);
   check(seen.unknown.length === 0, `every AI prompt known to the mock ${seen.unknown.join(' | ')}`);
   // Equipment: the Siemens CPUs and panels first, the other brands one click away.
   await page.goto(BASE + '/equipment');

@@ -44,6 +44,11 @@ export interface StDialect {
    * <T>_ACC keeps the time of earlier runs, <T>_ET = ACC + the running TON, <T> = done bit.
    */
   rtoEmulation?: boolean;
+  /**
+   * Name of a variable the project gives no name (SCL: "Int_1119", never the CLICK register "DS1119"), and its
+   * comment. Absent: the app's address is the name.
+   */
+  unnamed?(base: string): { name: string; comment: string } | undefined;
   /** Counter preset when it is not a constant (UniLogic CTU.PV is INT). */
   counterPv?(expr: string): string;
   /** Extra I/O statements once every variable is known (e.g. analog scaling); inputs go first, outputs last. */
@@ -79,9 +84,10 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
     const have = vars.get(base);
     if (have) return d.ref(have.name);
     const n = nick.get(base), label = ctx.labels.get(base);
-    const name = logixName(n?.nickname || label || (base === 'SC7' ? 'Clock_1s' : base), used, base);
+    const anon = !n?.nickname && !label && base !== 'SC7' ? d.unnamed?.(base) : undefined;
+    const name = logixName(n?.nickname || label || anon?.name || (base === 'SC7' ? 'Clock_1s' : base), used, base);
     const io = d.ioVar(base, name);
-    vars.set(base, { name, type: d.types[type], comment: [label, n?.comment].filter((x, i, all): x is string => !!x && all.indexOf(x) === i).join(' — ') || base, base, ...(io ? { io } : {}) });
+    vars.set(base, { name, type: d.types[type], comment: [label, n?.comment].filter((x, i, all): x is string => !!x && all.indexOf(x) === i).join(' — ') || anon?.comment || (base === 'SC7' ? '1-second clock (generated)' : base), base, ...(io ? { io } : {}) });
     return d.ref(name);
   }
   const refOf = (base: string) => d.ref(vars.get(base)!.name);
