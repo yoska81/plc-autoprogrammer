@@ -77,8 +77,9 @@ export function IOTable({ filter }: { filter: IOFilter }) {
           <thead>
             <tr>
               <th className={`${ioTh} w-20`}>Tag</th>
-              <th className={`${ioTh} w-28`} title="Address on the selected PLC. Type to override.">Address</th>
+              {/* A PLC with its own address format (Siemens %I0.0…): that address first; the program's internal address after it, still editable. */}
               {profile.ioTag && <th className={`${ioTh} w-36`} title={`The address as ${profile.vendor} software shows it`}>{profile.vendor} address</th>}
+              <th className={`${ioTh} w-28`} title={profile.ioTag ? `The program's own address of the point (its ${profile.vendor} address follows from it). Type to override.` : 'Address on the selected PLC. Type to override.'}>{profile.ioTag ? 'Program address' : 'Address'}</th>
               <th className={ioTh}>Description</th>
               <th className={`${ioTh} w-40`}>Category</th>
               <th className={`${ioTh} w-32`} title="Field device type; Discrete / Analog with range and engineering units">Device / signal</th>

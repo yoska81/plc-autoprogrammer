@@ -59,7 +59,9 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.goto(BASE + '/io');
   // The brand's own address is shown next to the app's (A3).
   await field.waitFor();
-  check((await page.locator('th').allInnerTexts()).includes('Siemens address'), 'Siemens address column shown');
+  const heads = await page.locator('th').allInnerTexts();
+  check(heads.includes('Siemens address'), 'Siemens address column shown');
+  check(heads.indexOf('Siemens address') >= 0 && heads.indexOf('Siemens address') < heads.indexOf('Program address') && !heads.includes('Address'), `the Siemens address comes first; the editable one is the program address (${heads.slice(0, 4).join(' | ')})`);
   check(/%I0\.0/.test(await page.locator('tr', { has: field }).innerText()), 'first input shows %I0.0');
   await type('%I0.1');
   check(await saved() === 'X002', `%I0.1 on an S7: saved as X002 (${await saved()})`);
