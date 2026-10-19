@@ -7,6 +7,7 @@ import { convertMachine, NA_TARGET } from '../convert/convert';
 import { functionKept, functionKeptFindings } from '../convert/functionKept';
 import { useReviewStore } from './useReviewStore';
 import { AREA_LABEL, SEVERITY_LABEL, type Finding } from './types';
+import { withNativeIo } from '../deliverables/plcNames';
 
 /** Deterministic checks for a project snapshot with the current stage status, modules and equipment cautions. */
 export function checksFor(p: ProjectSnapshot): Finding[] {
@@ -15,6 +16,12 @@ export function checksFor(p: ProjectSnapshot): Finding[] {
   // a project converted from existing drawings: every original function must still be there
   const m = storedMachine();
   return m ? [...found, ...functionKeptFindings(functionKept(m, convertMachine(m, storedTarget() ?? NA_TARGET), p))] : found;
+}
+
+/** The AI review's findings as shown: the brand's address next to each I/O terminal they name ("X005 (%I0.4)"), as the checks do. */
+export function aiFindingsShown<F extends Pick<Finding, 'title' | 'detail' | 'fix'>>(p: ProjectSnapshot, findings: F[] | undefined): F[] {
+  const native = withNativeIo(p);
+  return (findings ?? []).map((f) => ({ ...f, title: native(f.title), detail: native(f.detail), fix: native(f.fix) }));
 }
 
 /** Run the deterministic checks on the current project and store them. */

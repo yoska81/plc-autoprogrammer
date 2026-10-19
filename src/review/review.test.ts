@@ -272,5 +272,21 @@ test('S7 project: findings name the I/O terminal with its Siemens address', () =
   assert.ok(click.every((x) => !/%[IQ]\d/.test(x.title)), 'CLICK findings unchanged');
 });
 
+test('S7 project: the AI review\'s findings name the I/O terminal too; an old-id mark shows in the deliverables', () => {
+  seedSampleProject();
+  useProjectStore.setState({ plcId: 'siemens-s7', cpuId: '6ES7214-1AG40-0XB0', modules: [] });
+  useReviewStore.setState(useReviewStore.getInitialState());
+  useReviewStore.getState().setAi({ summary: 's', findings: [{ id: 'ai:x', source: 'ai', severity: 'major', area: 'program', title: 'Input X001 is not debounced', detail: 'X001 chatters.', fix: 'Filter X001.', page: 'program', item: '' }] });
+  const row = reviewRows(collectProject()).find((r) => r.source === 'AI review')!;
+  assert.match(row.title, /^Input X001 \(%I0\.0\) is not debounced$/, row.title);
+  // A mark under the old address id still shows before the next check run moves it.
+  const broken: LadderProgram = structuredClone(LADDER);
+  broken.rungs.find((r) => r.id === 'r_y1')!.branches = [[{ type: 'NO', address: 'X002' }]];
+  useProgramStore.setState({ ladder: broken });
+  useReviewStore.setState({ marks: { 'out-unsafe:Y001': { status: 'ignored', reason: 'Hard-wired interlock', at: '2026-10-01T00:00:00.000Z' } } });
+  const unsafe = reviewRows(collectProject()).find((r) => /not gated by Safety OK/.test(r.title))!;
+  assert.deepEqual([unsafe.status, unsafe.reason], ['ignored', 'Hard-wired interlock']);
+});
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);
