@@ -7,7 +7,12 @@
  */
 import { useMemo } from 'react';
 import type { CpuModel, ModuleSlot, PlcProfile } from '../plc/core/profile';
-import { usePlc } from '../plc/core/usePlc';
+import { useProjectStore } from '../store/useProjectStore';
+import { useIOStore } from '../store/useIOStore';
+import { getCpu, getProfile } from '../plc/core/profiles';
+import { resolveAddresses } from '../plc/core/profile';
+import { moduleSlots } from '../plc/core/modules';
+import type { IOPoint } from '../types/io';
 import type { HmiScreen } from './types';
 
 const MAX = 12;
@@ -34,8 +39,26 @@ export function nativeScreen(screen: HmiScreen, ioName: ((address: string) => st
   return { ...screen, elements: screen.elements.map((e) => (e.label ? { ...e, label: nativeIoLabel(e.label, ioName) } : e)) };
 }
 
-/** The project's I/O names for drawing screens (undefined on CLICK). */
-export function useScreenIoName() {
-  const { profile, cpu, modules, ioAddressSet } = usePlc();
-  return useMemo(() => screenIoName(profile, cpu, modules, new Set([...ioAddressSet].map((a) => a.toUpperCase()))), [profile, cpu, modules, ioAddressSet]);
+type IoName = ((address: string) => string | null) | undefined;
+// One result for all screens drawn at once (thumbnails, editor, images): recomputed only when the PLC, CPU, modules
+// or I/O list change.
+let last: { key: readonly unknown[]; fn: IoName } | null = null;
+
+/** The project's I/O names, for these store values (undefined on CLICK). */
+export function ioNameFor(plcId: string, cpuId: string, modules: string[], io: IOPoint[]): IoName {
+  const key = [plcId, cpuId, modules, io] as const;
+  if (last && last.key.every((k, i) => k === key[i])) return last.fn;
+  const profile = getProfile(plcId);
+  const cpu = getCpu(profile, cpuId);
+  const slots = moduleSlots(modules);
+  const points = new Set([...resolveAddresses(profile, cpu, io, slots).values()].map((a) => a.toUpperCase()).filter(Boolean));
+  last = { key, fn: screenIoName(profile, cpu, slots, points) };
+  return last.fn;
+}
+
+/** The project's I/O names for drawing screens (undefined on CLICK); narrow store reads, one shared result. */
+export function useScreenIoName(): IoName {
+  const plcId = useProjectStore((st) => st.plcId), cpuId = useProjectStore((st) => st.cpuId), modules = useProjectStore((st) => st.modules);
+  const io = useIOStore((st) => st.projectIO);
+  return useMemo(() => ioNameFor(plcId, cpuId, modules, io), [plcId, cpuId, modules, io]);
 }

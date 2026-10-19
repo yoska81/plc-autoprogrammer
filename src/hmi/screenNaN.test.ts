@@ -48,10 +48,17 @@ const broken: HmiDesign = { ...noSize, hmiPartNumber: ' NOT-A-PANEL ', screens: 
 assert.ok(draw(broken, undefined, NaN).every((svg) => !svg.includes('NaN')), 'missing geometry and an unknown panel: still no NaN');
 
 // QA repro (rules-siemens): the rules-built design came without a panel part number and was drawn without a size.
+// A 1024 × 600 project panel, so the 800 × 480 last resort cannot pass the test by accident.
 const { useHmiStore } = await import('../store/useHmiStore');
-useHmiStore.getState().setHmiPartNumber('6AV2123-2GB03-0AX0');
+const { safeScreenSize } = await import('./screenSize');
+useHmiStore.getState().setHmiPartNumber('CM5-T10W');
 const noPanel = { ...noSize, hmiPartNumber: undefined as unknown as string };
-for (const look of HMI_LOOKS) assert.ok(draw({ ...noPanel, look }, undefined, undefined).every((svg) => !svg.includes('NaN') && svg.includes('viewBox="0 0 800 480"')), `${look}: no part number in the design, drawn at the project panel's 800 × 480`);
+for (const look of HMI_LOOKS) assert.ok(draw({ ...noPanel, look }, undefined, undefined).every((svg) => !svg.includes('NaN') && svg.includes('viewBox="0 0 1024 600"')), `${look}: no part number in the design, drawn at the project panel's 1024 × 600`);
 useHmiStore.getState().setDesign(noPanel, null);
-assert.equal(useHmiStore.getState().design?.hmiPartNumber, '6AV2123-2GB03-0AX0', 'a design saved without a panel gets the project\'s');
+assert.equal(useHmiStore.getState().design?.hmiPartNumber, 'CM5-T10W', 'a design saved without a panel gets the project\'s');
+// The fallback order, directly.
+assert.deepEqual(safeScreenSize(640, 480, null), { w: 640, h: 480 }, 'given');
+assert.deepEqual(safeScreenSize(undefined, NaN, { hmiPartNumber: 'CM5-T10W' } as HmiDesign), { w: 1024, h: 600 }, 'the design\'s panel');
+assert.deepEqual(safeScreenSize(0, 0, { hmiPartNumber: 'NOPE', layoutBase: { w: 480, h: 272 } } as unknown as HmiDesign), { w: 480, h: 272 }, 'the layout base');
+assert.deepEqual(safeScreenSize(undefined, undefined, { hmiPartNumber: '' } as HmiDesign, { id: 's', name: 's', purpose: '', elements: [{ id: 'e', kind: 'text', label: '', x: 900, y: 10, w: 200, h: 700 }] } as unknown as HmiDesign['screens'][number]), { w: 1100, h: 710 }, 'what the elements cover');
 console.log(`no NaN in ${models.length} panels × ${HMI_LOOKS.length} looks`);

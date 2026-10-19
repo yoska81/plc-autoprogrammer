@@ -157,7 +157,7 @@ function AlarmList({ el, ctx }: { el: HmiElement; ctx: Ctx }) {
 
 function Trend({ el, ctx, value }: { el: HmiElement; ctx: Ctx; value: number | undefined }) {
   const { t } = ctx;
-  const samples = el.address ? ctx.runtime?.trends.get(el.address) ?? [] : [];
+  const samples = (el.address ? ctx.runtime?.trends.get(el.address) ?? [] : []).filter(Number.isFinite);
   const pad = 14, top = 30, bottom = 12;
   const px = el.x + pad, py = el.y + top, pw = el.w - 2 * pad, ph = el.h - top - bottom;
   const lo = el.min ?? Math.min(0, ...samples);
@@ -328,7 +328,7 @@ function ElementShape({ el, value, ctx }: { el: HmiElement; value: boolean | num
       );
     }
     case 'bar': {
-      const v = typeof value === 'number' ? value : 0;
+      const v = typeof value === 'number' && Number.isFinite(value) ? value : 0; // a NaN reading draws an empty bar, not width=NaN
       const min = el.min ?? 0;
       const max = el.max ?? 100;
       const frac = Math.max(0, Math.min(1, (v - min) / (max - min || 1)));
@@ -415,8 +415,9 @@ export default function HmiScreenView({ screen: saved, widthPx: givenW, heightPx
   const ioName = useScreenIoName();
   // Never NaN in the SVG: a missing panel size or element geometry is drawn from the next best (src/hmi/screenSize.ts).
   const screen = useMemo(() => nativeScreen(safeGeometry(saved), ioName), [saved, ioName]);
-  const projectPanel = useHmiStore((st) => st.hmiPartNumber);
-  const { w: widthPx, h: heightPx } = safeScreenSize(givenW, givenH, design?.hmiPartNumber?.trim() ? design : { ...(design ?? {}), hmiPartNumber: projectPanel } as HmiDesign, screen);
+  // A design without its panel part number is the project's panel (read when needed: also right in a static render).
+  const sized = design?.hmiPartNumber?.trim() ? design : { ...(design ?? {}), hmiPartNumber: useHmiStore.getState().hmiPartNumber } as HmiDesign;
+  const { w: widthPx, h: heightPx } = safeScreenSize(givenW, givenH, sized, screen);
   const live = Boolean(read);
   const rows = alarmRows(design, read, runtime, activeAlarms);
   const t = hmiTheme(look ?? lookOf(design));
