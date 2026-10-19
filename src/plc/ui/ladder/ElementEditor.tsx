@@ -1,7 +1,7 @@
 /**
  * Floating popover for editing one contact/compare element or one output.
  * Positioned with `position: fixed` from the clicked cell's bounding rect;
- * closes on Escape, an outside click, or the user scrolling the page.
+ * closes on Escape, outside click, or page scroll.
  */
 import { useEffect, useRef } from 'react';
 import { TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
@@ -234,21 +234,17 @@ export default function ElementEditor({
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    // The user scrolling the page (wheel / touch) closes it; a scroll the edit itself causes (the pane getting
-    // shorter and the browser moving it back) does not.
     const onScroll = (e: Event) => {
       if (ref.current && e.target instanceof Node && ref.current.contains(e.target)) return;
       onClose();
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
-    window.addEventListener('wheel', onScroll, { capture: true, passive: true });
-    window.addEventListener('touchmove', onScroll, { capture: true, passive: true });
+    window.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
-      window.removeEventListener('wheel', onScroll, { capture: true });
-      window.removeEventListener('touchmove', onScroll, { capture: true });
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [onClose]);
 
