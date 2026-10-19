@@ -59,9 +59,9 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(await page.getByTestId('comm-signed').count() === 1 && await page.getByTestId('comm-voided').count() === 1, 'signed again; the voided one stays on the record');
   // the record survives the project file (.isap): saved, opened as a new project, the same record; a malformed one is cleaned
   const isap = await page.evaluate(async () => {
-    const pf = await import('/src/project/projectFile.ts');
-    const { useCommissioningStore } = await import('/src/commissioning/useCommissioningStore.ts');
-    const { useProjectsStore } = await import('/src/store/useProjectsStore.ts');
+    const pf = await appImport('/src/project/projectFile.ts');
+    const { useCommissioningStore } = await appImport('/src/commissioning/useCommissioningStore.ts');
+    const { useProjectsStore } = await appImport('/src/store/useProjectsStore.ts');
     const id = useProjectsStore.getState().activeId ?? 'default';
     const before = useCommissioningStore.getState().byProject[id];
     const opened = await pf.openProjectFile((await pf.buildProjectFile()).blob);
@@ -74,8 +74,8 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(sameRecord && isap.after?.voided?.length === 1, 'the voided sign-off survives save and open (the whole record, deep-equal)');
   // a failed result whose item was removed (its I/O point deleted) gets its own row: dismiss it, then sign again
   await page.evaluate(async () => {
-    const { useCommissioningStore } = await import('/src/commissioning/useCommissioningStore.ts');
-    const { useProjectsStore } = await import('/src/store/useProjectsStore.ts');
+    const { useCommissioningStore } = await appImport('/src/commissioning/useCommissioningStore.ts');
+    const { useProjectsStore } = await appImport('/src/store/useProjectsStore.ts');
     useCommissioningStore.getState().setResult(useProjectsStore.getState().activeId, 'io:gone', { status: 'fail', note: 'I/O point deleted' });
   });
   await page.getByTestId('comm-orphan').waitFor({ timeout: 5000 }).catch(() => {});

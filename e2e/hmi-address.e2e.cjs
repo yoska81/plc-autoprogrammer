@@ -3,6 +3,7 @@
 // interlock is checked too, and no element of the example's first screen is flagged.
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/hmi-address.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const log = (...a) => console.log('•', ...a);
 const fails = [];
@@ -11,18 +12,19 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1366, height: 900 } })).newPage();
+  await useAppModules(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   await page.goto(BASE + '/hmi');
   await page.getByRole('button', { name: 'Edit screen' }).click();
   // Every addressed element of the first screen, as generated: nothing flagged.
   const ids = await page.evaluate(async () => {
-    const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
+    const d = (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
     return d.screens[0].elements.filter((e) => e.address).map((e) => ({ id: e.id, kind: e.kind, interlock: e.interlock ?? null }));
   });
   let flagged = 0;
@@ -36,7 +38,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   log(`${ids.length} addressed elements on the first screen, ${flagged} flagged`);
   check(ids.length > 0 && flagged === 0, 'the generated addresses are all accepted');
   const lamp = await page.evaluate(async () => {
-    const d = (await import('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
+    const d = (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
     return d.screens[0].elements.find((e) => e.kind === 'indicator' && e.address)?.id;
   });
   const box = await page.locator(`[data-testid="hmi-editor"] [data-el="${lamp}"]`).first().boundingBox();

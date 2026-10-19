@@ -5,6 +5,7 @@
 //     0 checker errors, no HMI element left on a CLICK address.
 //   npx vite --port 5202 &  ;  BASE_URL=http://localhost:5202 node e2e/plc-switch.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5202';
 const fails = [];
 const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok) fails.push(what); };
@@ -12,6 +13,7 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 1000 } })).newPage();
+  await useAppModules(page);
   // A cold dev server compiles the app on the first load: allow it time (the waits below are for elements, not delays).
   page.setDefaultNavigationTimeout(90000);
   page.setDefaultTimeout(60000);
@@ -20,15 +22,15 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   const seed = async () => {
     await page.goto(BASE + '/spec');
-    await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+    await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
     await page.goto(BASE + '/spec');
     await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   };
   // The checker's errors and what the HMI binds, read from the app's own stores.
   const state = () => page.evaluate(async () => {
     const [{ useProgramStore }, { useHmiStore }, { useIOStore }, { useProjectStore }, { ioAddresses }, { validateProgram }, { getProfile }] = await Promise.all([
-      import('/src/store/useProgramStore.ts'), import('/src/store/useHmiStore.ts'), import('/src/store/useIOStore.ts'), import('/src/store/useProjectStore.ts'),
-      import('/src/plc/core/ioChange.ts'), import('/src/plc/core/validate.ts'), import('/src/plc/core/profiles/index.ts'),
+      appImport('/src/store/useProgramStore.ts'), appImport('/src/store/useHmiStore.ts'), appImport('/src/store/useIOStore.ts'), appImport('/src/store/useProjectStore.ts'),
+      appImport('/src/plc/core/ioChange.ts'), appImport('/src/plc/core/validate.ts'), appImport('/src/plc/core/profiles/index.ts'),
     ]);
     const addr = ioAddresses(useIOStore.getState().projectIO);
     const design = useHmiStore.getState().design;
@@ -73,7 +75,7 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   await seed();
   const program = () => page.evaluate(async () => {
     const [{ useProgramStore }, { useIOStore }, { useProjectStore }, { ioAddresses }] = await Promise.all([
-      import('/src/store/useProgramStore.ts'), import('/src/store/useIOStore.ts'), import('/src/store/useProjectStore.ts'), import('/src/plc/core/ioChange.ts'),
+      appImport('/src/store/useProgramStore.ts'), appImport('/src/store/useIOStore.ts'), appImport('/src/store/useProjectStore.ts'), appImport('/src/plc/core/ioChange.ts'),
     ]);
     const io = useIOStore.getState().projectIO;
     const addr = ioAddresses(io);
@@ -87,14 +89,14 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   });
   await page.evaluate(async () => {
     const [{ useProgramStore }, { useIOStore }, { useProjectStore }] = await Promise.all([
-      import('/src/store/useProgramStore.ts'), import('/src/store/useIOStore.ts'), import('/src/store/useProjectStore.ts'),
+      appImport('/src/store/useProgramStore.ts'), appImport('/src/store/useIOStore.ts'), appImport('/src/store/useProjectStore.ts'),
     ]);
     useProjectStore.setState({ plcId: 'click', cpuId: 'C0-12DD1E-D', modules: ['C0-16ND3', 'C0-08TD1'] });
     useIOStore.getState().importPoints([
       ...Array.from({ length: 13 }, (_, i) => ({ description: `Sensor ${i + 1}`, type: 'input', category: 'Product Detection' })),
       ...Array.from({ length: 10 }, (_, i) => ({ description: `Valve ${i + 1}`, type: 'output', category: 'Pneumatic' })),
     ], true);
-    const { ioAddresses } = await import('/src/plc/core/ioChange.ts');
+    const { ioAddresses } = await appImport('/src/plc/core/ioChange.ts');
     const io = useIOStore.getState().projectIO, addr = ioAddresses(io);
     const rungs = io.map((p, i) => (p.type === 'input'
       ? { id: `r${i}`, comment: `P:${p.id}`, branches: [[{ type: 'NO', address: addr.get(p.id) }]], outputs: [{ type: 'OUT', address: `C${300 + i}` }] }

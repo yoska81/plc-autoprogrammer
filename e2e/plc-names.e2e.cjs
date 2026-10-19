@@ -5,6 +5,7 @@
 //     lists the PLC names; the Simulator's I/O panel shows %I0.0 / %Q0.0, not X001 / Y001.
 //   npx vite --port 5202 &  ;  BASE_URL=http://localhost:5202 node e2e/plc-names.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5202';
 const fails = [];
 const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok) fails.push(what); };
@@ -12,6 +13,7 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1600, height: 1000 } })).newPage();
+  await useAppModules(page);
   // A cold dev server compiles the app on the first load: allow it time (the waits below are for elements, not delays).
   page.setDefaultNavigationTimeout(90000);
   page.setDefaultTimeout(60000);
@@ -19,7 +21,7 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('https://fonts.googleapis.com/**', (r) => r.abort());
   await page.goto(BASE + '/spec');
-  await page.evaluate(async () => { const m = await import('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
+  await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
 
