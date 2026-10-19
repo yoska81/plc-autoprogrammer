@@ -8,7 +8,7 @@
 import { ioLabel } from '../ioNames';
 import {
   limitRelayPins,
-  billOfMaterials, buildModel, designWarnings, drawingPrefix, naturalCompare, panelLayout, plcRack, revisionState,
+  billOfMaterials, nativeModel, designWarnings, drawingPrefix, naturalCompare, panelLayout, plcRack, revisionState,
   backPanelDrilling, doorDrilling, dualDim, dualSize, type DrillingPlan, type PlcRackSlot, type RevisionState,
   type AuxBranch, type Cable, type CableCore, type JbTerminal, type JunctionBoxPlan, type MachineDevice, type BomLine, type DrawingContext, type ElectricalModel, type IoGroup, type IoPoint,
   type MotorModel, type PanelLayout, type XfmrBranch, type PsBranch, type Terminal, type TerminalStrip,
@@ -340,7 +340,7 @@ function ioBlocks(ctx: DrawingContext, model: ElectricalModel): { group: IoGroup
 }
 
 export function planDrawings(ctx: DrawingContext): DrawingPlan {
-  const model = buildModel(ctx);
+  const model = nativeModel(ctx);
   const layout = panelLayout(ctx);
   const specs: { title: string; spec: SheetSpec }[] = [];
 

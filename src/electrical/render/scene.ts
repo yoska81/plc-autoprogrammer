@@ -6,7 +6,7 @@
  * placed parts look (terminal screws, wires into the nearest duct, tag plates, door view).
  */
 import type { CatalogCategory, CatalogPart } from '../types';
-import { buildModel, panelLayout, ratingText, supplyText } from '../derive';
+import { nativeModel, panelLayout, ratingText, supplyText } from '../derive';
 import type { DoorItem, DrawingContext, ElectricalModel, IoGroup, PanelLayout, Rect, ResolvedComponent, TerminalStrip } from '../derive';
 import { getHmi } from '../../hmi/hmiCatalog';
 
@@ -483,7 +483,7 @@ export interface Scene {
 
 export function buildScene(ctx: DrawingContext, hmiPartNumber: string | null): Scene {
   const L = panelLayout(ctx);
-  const m = buildModel(ctx);
+  const m = nativeModel(ctx);
   const byTag = new Map<string, ResolvedComponent>(m.rc.map((c) => [c.tag, c] as const));
   const encRc = m.rc.find((c) => c.category === 'enclosure' && c.partNumber === L.enclosure.partNumber);
   const encDesc = `${encRc?.part?.description ?? ''} ${encRc?.part?.ratings.material ?? ''}`;

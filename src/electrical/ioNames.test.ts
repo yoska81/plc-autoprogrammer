@@ -6,7 +6,10 @@
  */
 import assert from 'node:assert/strict';
 import { ioNames, renamePin, renameWire, wireOfNative } from './ioNames';
-import { buildModel, type DrawingContext } from './derive';
+import { buildModel, nativeModel, wireListCsv, type DrawingContext } from './derive';
+import { wiringPaths } from '../troubleshoot/wiringPath';
+import { buildCircuit } from '../troubleshoot/circuit';
+import { runCodeRules } from '../review/codeRules/rules';
 import { planDrawings } from './drawings/plan';
 import { getPart } from './catalog';
 import { DESIGN } from '../preview/sampleProject';
@@ -30,7 +33,7 @@ const ctx = (cpu: string, vendor: string): DrawingContext => ({
   plc: { vendor, name: vendor, cpuPartNumber: cpu, cpuLabel: '' },
 });
 const sie = ctx('6ES7214-1AG40-0XB0', 'Siemens');
-const m = buildModel(sie);
+const m = nativeModel(sie);
 assert.ok(m.wires.some((w) => /^I0\.\d$/.test(w.wire)) && m.wires.some((w) => /^Q0\.\d/.test(w.wire)), 'I/O wires numbered I0.x / Q0.x');
 assert.ok(!m.wires.some((w) => /^[XY]\d{3}/.test(w.wire)), `no X001 / Y001 wire numbers: ${m.wires.filter((w) => /^[XY]\d{3}/.test(w.wire)).map((w) => w.wire).join(', ')}`);
 assert.ok(!m.wires.some((w) => /PLC:[XY]\d{3}$/.test(`${w.from} ${w.to}`.split(' ').find((e) => e.startsWith('PLC:')) ?? '')), 'PLC pins in the PLC\'s naming');
@@ -38,8 +41,27 @@ assert.ok(m.strips.every((s) => s.terminals.every((t) => !/^[XY]\d{3}/.test(t.wi
 const titles = planDrawings(sie).sheets.filter((s) => s.spec.kind === 'io').map((s) => s.title);
 assert.ok(titles.some((t) => /PLC INPUTS .*\(%I0\.0/.test(t)) && titles.some((t) => /PLC OUTPUTS .*\(%Q0\.0/.test(t)), `I/O sheet titles in %I / %Q: ${titles.join(' | ')}`);
 
+assert.ok(wireListCsv(sie).includes('\nI0.0,') && !/\n[XY]\d{3}/.test(wireListCsv(sie)), 'the wire list in the PLC\'s naming');
+
+// the model itself keeps the app addresses: the I/O list, troubleshooting and the design rules match against them
+const app = buildModel(sie);
+assert.ok(app.wires.some((w) => w.wire === 'X001') && app.wires.some((w) => `${w.from} ${w.to}`.includes('PLC:X001')), 'buildModel: X001 / PLC:X001');
+// fault finding on an S7 panel: every point has its wire on the PLC terminal, as on a CLICK panel
+const paths = wiringPaths(sie);
+assert.equal(paths.length, app.io.length);
+assert.deepEqual(paths.filter((p) => p.noWire).map((p) => p.address), [], 'S7: no point without a wire on its PLC terminal');
+const circ = buildCircuit(app);
+const pinned = app.io.filter((p) => circ.links.some((l) => l.a === `${app.plcTag}:${p.address}` || l.b === `${app.plcTag}:${p.address}`));
+assert.equal(pinned.length, app.io.length, `S7: every PLC terminal in the circuit (${pinned.length}/${app.io.length})`);
+
+// the design rules too: an S7 output is not "cannot switch" because its wire is numbered Q0.0
+const switching = (c: DrawingContext) => runCodeRules({ ctx: c }).filter((h) => /cannot switch/.test(h.title)).map((h) => h.subject);
+assert.deepEqual(switching(sie), switching(ctx('C0-10DD1E-D', 'AutomationDirect')), 'S7: the same switching findings as on CLICK');
+
 // a CLICK panel: unchanged
-const clk = buildModel(ctx('C0-10DD1E-D', 'AutomationDirect'));
+const clkCtx = ctx('C0-10DD1E-D', 'AutomationDirect');
+const clk = buildModel(clkCtx);
+assert.equal(nativeModel(clkCtx), clk, 'CLICK: the native model is the model');
 assert.ok(clk.wires.some((w) => w.wire === 'X001') && clk.ioNames.native.size === 0, 'CLICK: X001');
 
 console.log('ioNames.test: ok');

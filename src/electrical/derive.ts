@@ -543,6 +543,22 @@ export function buildModel(ctx: DrawingContext): ElectricalModel {
   return m;
 }
 
+const nativeCache = new WeakMap<DrawingContext, ElectricalModel>();
+/**
+ * The model as the drawings and lists show it: for a PLC that names its I/O differently (S7 %I0.0, Micro800,
+ * Unitronics) the I/O wire numbers and PLC pins in its own naming (X001 → I0.0, PLC:X001 → PLC:I0.0); the same
+ * model for CLICK. Matching against I/O addresses (troubleshooting, design rules) uses buildModel.
+ */
+export function nativeModel(ctx: DrawingContext): ElectricalModel {
+  const m = buildModel(ctx);
+  if (!m.ioNames.wire.size) return m;
+  const hit = nativeCache.get(ctx);
+  if (hit) return hit;
+  const n = renameIo(m);
+  nativeCache.set(ctx, n);
+  return n;
+}
+
 export function resolveComponents(ctx: DrawingContext): ResolvedComponent[] {
   const list = ctx.design.components.map((comp) => {
     const part = comp.partNumber ? ctx.getPart(comp.partNumber) : undefined;
@@ -1406,9 +1422,10 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
   if (analog.strip) strips.push(analog.strip);
   machine.cables.push(...analog.cables);
   if (iec) toIec(wires, machine.cables);
-  // a PLC that names its I/O differently (S7 %I0.0, Micro800, Unitronics): its I/O wires are numbered after it
+  // a PLC that names its I/O differently (S7 %I0.0, Micro800, Unitronics): its I/O wires are numbered after it on the
+  // drawings and lists (nativeModel); this model keeps the app addresses that the I/O list, troubleshooting and the
+  // design rules match against
   const names = ioNames(ctx.plc.cpuPartNumber, byCat(rc, 'plcModule').map((c) => c.partNumber), [...io.map((p) => p.address), ...analog.circuits.map((c) => c.row.address)]);
-  if (names.wire.size) renameIo(names, wires, strips, machine);
   return {
     rc, supply, phases, incoming, bus, disconnect, mainBreaker, psBranches, auxBranches, transformer, xfmrBranch, groundBar,
     motors, safety, io, groups, strips, wires, plcPart, plcTag, mainAwg, machine, auxNc, analog, drives, servos: servo.axes, hmi, fan, ladder, ioNames: names,
@@ -1419,13 +1436,21 @@ function computeModel(ctx: DrawingContext): ElectricalModel {
  * IEC regions: the fixed AWG sizes above become the IEC size with at least the same copper (IEC
  * 60228; e.g. 14 AWG → 2,5 mm², 18 AWG → 1 mm²) and NFPA 79 colours become IEC 60204-1 §13.2 ones.
  */
-/** I/O wire numbers and PLC pins in the PLC's own naming, everywhere a list carries them (ioNames.ts). */
-function renameIo(names: IoNames, wires: WireRecord[], strips: TerminalStrip[], machine: MachineModel) {
+/** A copy of the model with its I/O wire numbers and PLC pins in the PLC's own naming (ioNames.ts). */
+function renameIo(m: ElectricalModel): ElectricalModel {
+  const names = m.ioNames;
   const w = (s: string) => renameWire(names, s), pin = (s: string) => renamePin(names, s);
-  for (const x of wires) { x.wire = w(x.wire); x.from = pin(x.from); x.to = pin(x.to); }
-  for (const s of strips) for (const t of s.terminals) { t.wire = w(t.wire); t.group = w(t.group); t.internal = pin(t.internal); t.external = pin(t.external); }
-  for (const c of machine.cables) for (const k of c.cores) { k.wire = w(k.wire); k.from = pin(k.from); k.to = pin(k.to); }
-  for (const j of machine.jbs) for (const t of j.terminals) t.wire = w(t.wire);
+  return {
+    ...m,
+    io: m.io.map((p) => ({ ...p, wire: w(p.wire) })),
+    wires: m.wires.map((x) => ({ ...x, wire: w(x.wire), from: pin(x.from), to: pin(x.to) })),
+    strips: m.strips.map((s) => ({ ...s, terminals: s.terminals.map((t) => ({ ...t, wire: w(t.wire), group: w(t.group), internal: pin(t.internal), external: pin(t.external) })) })),
+    machine: {
+      ...m.machine,
+      cables: m.machine.cables.map((c) => ({ ...c, cores: c.cores.map((k) => ({ ...k, wire: w(k.wire), from: pin(k.from), to: pin(k.to) })) })),
+      jbs: m.machine.jbs.map((j) => ({ ...j, terminals: j.terminals.map((t) => ({ ...t, wire: w(t.wire) })) })),
+    },
+  };
 }
 
 function toIec(wires: WireRecord[], cables: { size: string }[]) {
@@ -1831,12 +1856,12 @@ function buildMachine(ctx: DrawingContext, mw: EffectiveMachine, io: IoPoint[], 
 
 /** All wire segments (from/to) with wire number, NFPA 79 color and suggested size. */
 export function wireNumbers(ctx: DrawingContext): WireRecord[] {
-  return buildModel(ctx).wires;
+  return nativeModel(ctx).wires;
 }
 
 /** Terminal strips TB1 (power/24V distribution), TB2 (field inputs), TB3 (field outputs). */
 export function terminalPlan(ctx: DrawingContext): TerminalStrip[] {
-  return buildModel(ctx).strips;
+  return nativeModel(ctx).strips;
 }
 
 export interface BomLine {
@@ -3154,17 +3179,17 @@ export function bomCsv(ctx: DrawingContext): string {
 
 /** Effective machine wiring (design.machine completed with defaults). */
 export function machineWiring(ctx: DrawingContext): MachineWiring {
-  return buildModel(ctx).machine.wiring;
+  return nativeModel(ctx).machine.wiring;
 }
 
 /** Field cables W001…: trunks cabinet→JB, device cables, motor cables. */
 export function cableSchedule(ctx: DrawingContext): Cable[] {
-  return buildModel(ctx).machine.cables;
+  return nativeModel(ctx).machine.cables;
 }
 
 /** Junction box terminal plans (incoming trunk cores, outgoing device cables). */
 export function junctionBoxPlans(ctx: DrawingContext): JunctionBoxPlan[] {
-  return buildModel(ctx).machine.jbs;
+  return nativeModel(ctx).machine.jbs;
 }
 
 export function cableScheduleCsv(ctx: DrawingContext): string {
