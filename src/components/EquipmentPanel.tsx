@@ -22,6 +22,9 @@ import VendorPreferenceCard from './VendorPreferenceCard';
 import BrandHardwareCard from './BrandHardwareCard';
 import { Spinner, ReasoningPanel } from './common';
 import { useDraft } from '../store/useDraftStore';
+import { useUi } from '../store/useUiStore';
+import { plcPreferenceOf, requestedProfiles, vendorOf } from '../spec/brand';
+import { specToText } from '../spec/types';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 
 const MAX_MODULES = 8;
@@ -128,13 +131,23 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   });
 
   const cpus = PLC_PROFILES.filter((p) => p.available && p.language === 'ladder').flatMap((p) => p.cpuModels);
+  // The brand asked for (named in the description or set in Brand preference), else the chosen PLC's: its CPUs and its
+  // panels first; the other brands are one click away, never hidden for good.
+  const asked = requestedProfiles(specToText(spec), plcPreferenceOf(project.info.vendors?.plc, project.info.plcChosen));
+  const mainProfiles = asked.length ? asked : PLC_PROFILES.filter((p) => p.cpuModels.some((c) => c.id === (choice?.cpuId ?? project.cpuId)));
+  const isMain = (id: string) => !mainProfiles.length || mainProfiles.some((p) => p.cpuModels.some((c) => c.id === id));
+  const [otherCpus, setOtherCpus] = useUi('equipment.otherBrandCpus', false);
+  const otherCount = cpus.filter((c) => !isMain(c.id)).length;
+  const shownCpus = otherCpus ? cpus : cpus.filter((c) => isMain(c.id) || c.id === choice?.cpuId);
   // Expansion modules of the chosen CPU's platform (multi-vendor profiles); CLICK modules otherwise.
   const platform = choice ? platformOf(choice.cpuId) : undefined;
   const modules = platform ? platform.modules.map((m) => getPart(m)).filter((p): p is NonNullable<typeof p> => Boolean(p)) : partsIn('plcModule');
   // Touch panels: C-more and every catalog maker's panels; the project's preferred HMI makers
   // first (Brand preference), all makers on request. A panel whose resolution is not confirmed
   // is listed but cannot be chosen (screens are never laid out on a guessed resolution).
-  const hmiMakers = normalizePreference(project.info.vendors).hmi;
+  // Panels of the HMI brands the user chose; none chosen: the PLC brand's own panels first (C-more for CLICK).
+  const plcVendor = mainProfiles[0] ? vendorOf(mainProfiles[0]) : '';
+  const hmiMakers = project.info.vendors?.hmi?.length || !plcVendor ? normalizePreference(project.info.vendors).hmi : [plcVendor];
   const cpu = choice ? findCpu(choice.cpuId) : null;
   const fit = cpu && choice ? cpuFit(cpu, choice.modules, need) : null;
   const cap = cpu && choice ? ioCapacity(cpu, moduleSlots(choice.modules)) : null;
@@ -221,7 +234,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
               <table className="w-full">
                 <thead><tr>{['', 'Part number', 'Inputs', 'Outputs', 'Features', 'Fits this machine?'].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
                 <tbody>
-                  {cpus.map((c) => {
+                  {shownCpus.map((c) => {
                     const f = cpuFit(c, choice?.modules ?? [], need);
                     const selected = choice?.cpuId === c.id;
                     return (
@@ -236,6 +249,13 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
                       </tr>
                     );
                   })}
+                  {otherCount > 0 && (
+                    <tr><td colSpan={6} className={`${td} text-xs`}>
+                      <button onClick={() => setOtherCpus(!otherCpus)} className="text-brand-800 font-medium hover:underline" aria-expanded={otherCpus}>
+                        {otherCpus ? `Show only ${[...new Set(mainProfiles.map((p) => `${p.vendor} ${p.name}`))].join(' / ')} CPUs` : `Show ${otherCount} CPUs of other brands`}
+                      </button>
+                    </td></tr>
+                  )}
                 </tbody>
               </table>
             </div>

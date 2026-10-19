@@ -143,6 +143,13 @@ async function scenario(browser, quick) {
   check(st.exporters.some((f) => /TIA|SCL|\.scl|\.xml/i.test(f)), `TIA Portal export offered (${st.exporters.join(' | ')})`);
   check(!results.some((r) => / failed:/.test(r)), 'no stage failed');
   check(seen.unknown.length === 0, `every AI prompt known to the mock ${seen.unknown.join(' | ')}`);
+  // Equipment: the Siemens CPUs and panels first, the other brands one click away.
+  await page.goto(BASE + '/equipment');
+  await page.locator('input[aria-label^="Choose 6ES7"]').first().waitFor({ timeout: 15000 });
+  const cpuIds = await page.locator('input[aria-label^="Choose "][type="radio"]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label').replace('Choose ', '')));
+  check(cpuIds.some((id) => /^6ES7/.test(id)) && !cpuIds.some((id) => /^C[02]-/.test(id)), `Equipment: only Siemens CPUs shown first (${cpuIds.filter((id) => !/^6ES7|^6AV/.test(id)).slice(0, 3).join(', ') || 'no other'})`);
+  check(await page.getByRole('button', { name: /^Show \d+ CPUs of other brands$/ }).count() === 1, 'the other brands are one click away');
+  check(await page.locator('input[aria-label^="Choose CM5-"]').count() === 0, 'no C-more panel listed by default for an S7');
   // Online: a plain sentence for an S7 (its own software monitors it), never CLICK's Modbus table.
   await page.goto(BASE + '/online');
   const online = await page.getByTestId('online-not-here').innerText({ timeout: 10000 }).catch(() => '');

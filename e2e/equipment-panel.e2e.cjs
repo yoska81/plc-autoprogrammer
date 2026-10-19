@@ -21,7 +21,12 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   await page.goto(BASE + '/equipment');
   await page.getByRole('radio', { name: 'Choose C0-10DD1E-D', exact: true }).waitFor({ timeout: 15000 });
-  const pick = (id) => page.getByRole('radio', { name: `Choose ${id}`, exact: true }).locator('xpath=ancestor::tr').click();
+  // Other brands' CPUs are collapsed under "Show N CPUs of other brands".
+  const pick = async (id) => {
+    const radio = page.getByRole('radio', { name: `Choose ${id}`, exact: true });
+    if (!(await radio.count())) await page.getByRole('button', { name: /^Show \d+ CPUs of other brands$/ }).click();
+    await radio.locator('xpath=ancestor::tr').click();
+  };
   const selection = () => page.locator('aside').getByText(/^HMI$/).locator('xpath=following-sibling::dd').first().innerText();
   const note = page.getByTestId('panel-note');
 
