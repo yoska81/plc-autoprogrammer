@@ -36,7 +36,7 @@ function CapacityBar({ label, need, have }: { label: string; need: number; have:
         <span className={ok ? 'text-steel-700' : 'text-red-700 font-medium'}>{need} needed · {have} available{ok ? ` · ${spare} spare` : ` · ${-spare} short`}</span>
       </div>
       <div className="h-2 rounded bg-steel-100 overflow-hidden">
-        <div className={`h-full ${ok ? 'bg-brand-500' : 'bg-red-500'}`} style={{ width: `${have ? Math.min(100, (need / have) * 100) : 100}%` }} />
+        <div className={`h-full ${ok ? 'bg-green-600' : 'bg-red-500'}`} style={{ width: `${have ? Math.min(100, (need / have) * 100) : 100}%` }} />
       </div>
     </div>
   );
