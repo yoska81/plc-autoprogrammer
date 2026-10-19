@@ -79,6 +79,32 @@ for (const mode of ['ai', 'quick-then-ai'] as const) {
   });
 }
 
+await test('no API key, existing program: "No API key — built from rules" (no AI asked); a waiting proposal is named as replaced', async () => {
+  await clearAiCache();
+  machine('ai');
+  abortMidRequest();
+  await runUpdateAll([...steps], () => {});
+  const before = useProgramStore.getState().ladder;
+  let asked = 0;
+  setClaudeInterceptor(async () => { asked++; throw aborted(); });
+  useSettingsStore.setState({ anthropicApiKey: '' });
+  const change = (text: string) => useSpecStore.setState({ sections: { ...useSpecStore.getState().sections, overview: `${useSpecStore.getState().sections.overview} ${text}` } });
+  change('The rewinder has a dancer arm.');
+  const rs: StepResult[] = [];
+  await runUpdateAll([...steps], (r) => rs.push(r));
+  const p = final(rs, 'program');
+  assert.equal(p?.status, 'proposal', JSON.stringify(rs));
+  assert.match(p?.message ?? '', /^No API key — built from rules: a rules program \(\d+ rungs, default cycle\) is waiting/);
+  assert.doesNotMatch(p?.message ?? '', /replaces/, 'no proposal was waiting');
+  assert.equal(asked, 0, 'no AI request without a key');
+  assert.equal(useProgramStore.getState().ladder, before);
+  // the spec changes again while that proposal still waits: the new one says it replaces it
+  change('The unwinder has a brake.');
+  const rs2: StepResult[] = [];
+  await runUpdateAll([...steps], (r) => rs2.push(r));
+  assert.match(final(rs2, 'program')?.message ?? '', /It replaces the proposal that was waiting\.$/, JSON.stringify(rs2));
+});
+
 await test('Cancel during the AI stops the run (no fallback, no proposal)', async () => {
   await clearAiCache();
   machine('ai');
