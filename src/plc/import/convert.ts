@@ -247,7 +247,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
   const total = outRungs.length + notConverted.filter((n) => !n.kept).length;
   const converted = outRungs.filter((r) => ![...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW')).length;
   return {
-    source: { format: fp.format, vendor: fp.vendor, controller: fp.controller, projectName: fp.projectName, fileName, ...(fp.modules?.length ? { modules: fp.modules } : {}) },
+    source: { format: fp.format, vendor: fp.vendor, controller: fp.controller, projectName: fp.projectName, fileName, ...(fp.modules?.length ? { modules: fp.modules } : {}), ...(fp.axes?.length ? { axes: fp.axes } : {}) },
     program, io, names, blockOrigin, rungOrigin,
     report: { rungs: total, converted, notConverted, notes: [...new Set(notes)], outside: fp.outside ?? [] },
   };
@@ -373,6 +373,8 @@ export function materialize(imp: ImportedProgram, profile: PlcProfile, cpu: CpuM
     ...(profile.id === 'siemens-s7' ? (() => { const a = s7Terminal(p.original, cpu, modules); return a ? { plcAddress: a } : {}; })() : {}),
     // A Logix program keeps its module points (Local:2:O.Data.5 stays that bit, not the next free one).
     ...(profile.id === 'logix' ? (() => { const a = logixTerminal(p.original, cpu, modules); return a ? { plcAddress: a } : {}; })() : {}),
+    // A program kept read only on its own PLC keeps its own I/O registers (IB00000 stays IB00000).
+    ...(profile.readOnly && profile.parseAddress(p.original)?.kind === p.type ? { plcAddress: p.original.trim().toUpperCase() } : {}),
   }));
   const addr = resolveAddresses(profile, cpu, points, modules);
   const ph = new Map<string, string>();

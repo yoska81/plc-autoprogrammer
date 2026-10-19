@@ -22,7 +22,7 @@
 import { DamagedData, findSevenZip, readSevenZip, type SevenZipEntry } from './sevenZip';
 import { and, el, not, or, toBranches, toRungs, TRUE, type Cond, type Driven } from './cond';
 import type { CompareOp, LadderOutput } from '../core/ladder';
-import type { ForeignProgram, ForeignRoutine, ForeignTag, ForeignType } from './types';
+import type { ForeignProgram, ForeignRoutine, ForeignTag, ForeignType, NetworkAxisImport } from './types';
 import { hmiNotes, type HmiProject } from './emtp';
 
 export const YASKAWA_VENDOR = 'yaskawa';
@@ -357,6 +357,9 @@ function asciiRuns(b: Uint8Array, min = 3): string[] {
   return out;
 }
 
+/** An axis in plain words: "axis 1 (line 1): SGD7S-… with motor SGM7J-…", "axis 3 (line 1): virtual". */
+export const axisText = (a: NetworkAxisImport) => `axis ${a.axis} (line ${a.line}): ${a.kind === 'virtual' ? 'virtual' : a.drive ?? 'amplifier ?'}${a.motor ? ` with motor ${a.motor}` : ''}`;
+
 /** "$GH01_02" → "H01.02", "$GL" → "L". */
 const drawingId = (file: string) => file.replace(/^\$G/, '').replace(/_/g, '.');
 
@@ -389,15 +392,18 @@ export function readYmw7(bytes: Uint8Array, fileName = 'project.YMW7', hmi?: Hmi
     const mod = /^([\w()-]+)\$MP\dX$/.exec(slots[i + 1]);
     if (m && mod && !/UNDEFINED/.test(mod[1])) modules.push({ slot: Number(m[3]), catalog: mod[1] });
   }
-  const axes: string[] = [];
+  const axisList: NetworkAxisImport[] = [];
   for (const [path, f] of [...files].sort(([a], [b]) => a.localeCompare(b))) {
     const m = /^PRG\/IOMAP\/\$SVP(\d\d)(\d\d)$/.exec(path);
     if (!m) continue;
     const runs = asciiRuns(f.data, 6);
-    const amp = runs.find((r) => /^SGD/.test(r));
+    const drive = runs.find((r) => /^SGD/.test(r));
     const motor = runs.find((r) => /^SGM/.test(r));
-    axes.push(`axis ${Number(m[2])} (line ${Number(m[1])}): ${amp ?? 'amplifier ?'}${motor ? ` with motor ${motor}` : ''}`);
+    // No drive named: a virtual axis (SVR), unless the file says it is a servo some other way.
+    const virtual = !drive && (runs.some((r) => /SVR|VIRTUAL/i.test(r)) || !motor);
+    axisList.push({ line: Number(m[1]), axis: Number(m[2]), ...(drive ? { drive } : {}), ...(motor ? { motor } : {}), kind: virtual ? 'virtual' : 'servo' });
   }
+  const axes = axisList.map(axisText);
 
   // Drawings in scan order: A (start-up), I (interrupt), H (high-speed), L (low-speed), parents before their sub-drawings.
   const dwgFiles = [...files.keys()].filter((p) => /^PRG\/DWG[AHIL]\/\$G[AHIL][\d_]*$/.test(p))
@@ -471,7 +477,7 @@ export function readYmw7(bytes: Uint8Array, fileName = 'project.YMW7', hmi?: Hmi
     ...(hmi ? hmiNotes(hmi, (a) => comments.get(a), (a) => used.has(a)) : []),
   );
   return {
-    format: 'yaskawa-mpe720', vendor: 'Yaskawa', controller: cpu, modules, projectName: fileName.replace(/\.[^.]+$/, ''),
+    format: 'yaskawa-mpe720', vendor: 'Yaskawa', controller: cpu, modules, ...(axisList.length ? { axes: axisList } : {}), projectName: fileName.replace(/\.[^.]+$/, ''),
     tags, routines, notes, outside, summary,
   };
 }
