@@ -105,6 +105,8 @@ assert.equal(useProgramStore.getState().ladder, ladderBefore);
 // 3. Delete I002 Start Button: the HMI's Start element is unbound and marked (a layout error), the program's
 // Start contacts marked; Undo restores the HMI too.
 const start = io.find((p) => /^Start Button/i.test(p.description))!;
+// An alarm on the Start input (none of the example's are on I/O): dropped with a message when the point goes.
+useHmiStore.setState({ design: { ...useHmiStore.getState().design!, alarms: [...useHmiStore.getState().design!.alarms, { address: 'X002', message: 'Start button stuck', severity: 'warning' } as never] } });
 const hmiBefore = useHmiStore.getState().design!;
 const usesStart = ioUsesOf(start.id);
 assert.ok(usesStart.some((u) => /^Program rung/.test(u)) && usesStart.some((u) => /^Screen /.test(u)), usesStart.join(' | '));
@@ -114,10 +116,13 @@ const lost = hmiAfter.screens.flatMap((s) => s.elements.filter((e) => e.lostIo))
 assert.ok(lost.length > 0 && lost.every((e) => !e.address), 'the HMI elements on Start PB are unbound and marked');
 assert.ok(!hmiAfter.screens.some((s) => s.elements.some((e) => e.address === 'X002' && /start/i.test(e.label ?? ''))), 'no Start element left on X002 (now Stop)');
 assert.ok(startMsgs.some((m) => /^HMI: /.test(m)), startMsgs.join(' | '));
+assert.ok(!hmiAfter.alarms.some((a) => /Start button stuck/.test(a.message)), 'the alarm on the deleted point is dropped');
+assert.ok(startMsgs.some((m) => /Removed the alarm "Start button stuck"/.test(m)), 'with a message');
 const afterStart = ioAddresses(useIOStore.getState().projectIO);
 assert.ok(validateProgram(useProgramStore.getState().ladder, getProfile('click'), new Set([...afterStart.values()])).some((i) => i.severity === 'error' && /used X002, whose I\/O point was deleted/.test(i.message)), 'the checker blocks the Start rungs');
 undoIoDelete();
 assert.equal(useHmiStore.getState().design, hmiBefore, 'Undo restores the HMI');
+useHmiStore.setState({ design: { ...hmiBefore, alarms: hmiBefore.alarms.filter((a) => a.address !== 'X002') } });
 
 // 4. CLICK → CompactLogix: the I/O renumbers (X001 → X101 …), the program, its saved versions and the HMI
 // follow; the checker has 0 errors, and so does a rebuild from the remapped HMI.
