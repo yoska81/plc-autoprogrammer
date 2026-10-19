@@ -94,6 +94,10 @@ async function analogPass(browser, problems) {
     if (found.length) { problems.push([`analog_${name}`, found]); log(`analog_${name}`, '\n   - ' + found.slice(0, 12).join('\n   - ')); }
   };
   const fail = (msg) => { problems.push(['analog', [msg]]); log('analog:', msg); };
+  // the app keeps its stores in memory and writes them a moment later (src/lib/appStorage.ts): wait for the writes
+  // before reading storage or leaving the page, so the next page starts from what was just set
+  const flushed = () => page.evaluate(async () => { await (await appImport('/src/lib/appStorage.ts')).flushAppStorage(); }).catch(() => {});
+  const go = async (url) => { await flushed(); await page.goto(url); };
 
   await page.goto(BASE + '/spec');
   await page.evaluate(async () => { const m = await appImport('/src/preview/sampleProject.ts'); localStorage.clear(); m.seedSampleProject?.(); });
@@ -101,8 +105,9 @@ async function analogPass(browser, problems) {
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
 
   // An analog input and an analog output module (the example CPU has no analog channels).
-  await page.goto(BASE + '/equipment');
-  await page.waitForTimeout(800);
+  await go(BASE + '/equipment');
+  // wait for the page, not a fixed time (lazy pages load slowly under load)
+  await page.getByRole('button', { name: '+ Add module' }).first().waitFor({ timeout: 20000 }).catch(() => {});
   for (const part of ['C0-04AD-1', 'C0-04DA-1']) {
     await page.getByRole('button', { name: '+ Add module' }).click();
     await page.locator('select').filter({ has: page.locator(`option[value="${part}"]`) }).last().selectOption(part);
@@ -112,8 +117,8 @@ async function analogPass(browser, problems) {
   await check('equipment');
 
   // I/O list: a (non-safety) input and an output become analog, with range, scale and units.
-  await page.goto(BASE + '/io');
-  await page.waitForTimeout(800);
+  await go(BASE + '/io');
+  await page.getByRole('button', { name: 'Discrete', exact: true }).first().waitFor({ timeout: 20000 }).catch(() => {});
   const made = [];
   for (const kind of ['input', 'output']) {
     const id = await page.evaluate((kind) => {
@@ -136,14 +141,20 @@ async function analogPass(browser, problems) {
     const address = (await page.locator(`[aria-label="PLC address for ${id}"]`).getAttribute('placeholder')) || '';
     made.push({ kind, id, desc, address });
   }
-  const stored = await page.evaluate(() => Object.entries(localStorage).filter(([k]) => /io/i.test(k)).map(([, v]) => v).join(' '));
+  // the edits reach storage once written (src/lib/appStorage.ts): poll a few seconds
+  let stored = '';
+  for (let t = 0; t < 10 && !(/"units":"psi"/.test(stored) && /"max":150/.test(stored)); t++) {
+    await flushed();
+    stored = await page.evaluate(() => Object.entries(localStorage).filter(([k]) => /io/i.test(k)).map(([, v]) => v).join(' '));
+    if (!/"units":"psi"/.test(stored)) await page.waitForTimeout(500);
+  }
   if (!/"units":"psi"/.test(stored) || !/"max":150/.test(stored)) fail('analog range/units not saved in the I/O store');
   log('analog points:', made.map((m) => `${m.kind} ${m.id} ${m.address} "${m.desc}"`).join('; '));
   await check('io');
 
   // Drawings: an analog loop sheet exists and renders.
   for (const tab of ['cabinet', 'machine']) {
-    await page.goto(`${BASE}/electrical?tab=${tab}`);
+    await go(`${BASE}/electrical?tab=${tab}`);
     // the page loads lazily and the drawing set is built after it: wait for the sheet list, not a fixed time
     await settled(page);
     await page.locator('nav[aria-label="Drawing sheets"] button[title]').first().waitFor({ timeout: 20000 }).catch(() => {});
@@ -163,9 +174,9 @@ async function analogPass(browser, problems) {
   }
 
   // Simulator: a slider for the analog input; moving it changes the shown value.
-  await page.goto(BASE + '/simulate');
-  await page.waitForTimeout(1500);
+  await go(BASE + '/simulate');
   const slider = page.locator('input[type="range"][aria-label$=" value"]');
+  await slider.first().waitFor({ timeout: 20000 }).catch(() => {});
   if (!(await slider.count())) fail('no analog slider in the simulator');
   else {
     const s = slider.first();
@@ -177,9 +188,9 @@ async function analogPass(browser, problems) {
   await check('simulate');
 
   // HMI: add a bar graph bound to the analog input's address.
-  await page.goto(BASE + '/hmi');
-  await page.waitForTimeout(1500);
+  await go(BASE + '/hmi');
   const edit = page.getByRole('button', { name: 'Edit screen' });
+  await edit.first().waitFor({ timeout: 20000 }).catch(() => {});
   if (!(await edit.count())) fail('HMI has no Edit screen button');
   else {
     await edit.click();
