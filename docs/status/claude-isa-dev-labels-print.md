@@ -386,3 +386,10 @@ Draft PR #4 → `claude/optimistic-maxwell-6nfcs6`.
   - 1 NO, illuminated with a 24 V AC/DC LED: white and blue.
   - Front IP66/67/69K, 22.3 mm hole, 49.7 mm behind the panel.
   - The 230 V and metal variants are left out.
+- **More Siemens panel parts**, each from its Siemens TED datasheet:
+  - 3SU1 pilot lights, white and blue (24 V LED).
+  - 3RT2 contactors from 32 to 110 A: 3RT2027/2028-1BB40 (S0), 3RT2035-2038-1NB30 (S2) and 3RT2045-2047-1NB30 (S3). The S2/S3 coil is 20-33 V AC/DC, which runs on 24 VDC. Each has AC-3 at 400 V and UL FLA / hp at 480 V.
+  - 3SU1400-1AA10-1CA0 1 NC contact module (front-plate mounting in the 3SU1 holder; sold in packs of 5).
+  - 3SU1900-0BC31-0DA0 yellow 75 mm EMERGENCY STOP backing plate.
+  - 8WD44 70 mm column parts: connection element 8WD4408-0AB, LED elements red / yellow / green (8WD4420-5AB/5AD/5AC) and buzzer 8WD4420-0FA.
+- **Gap:** Siemens has no verified pre-assembled red / yellow / green 8WD column, so there is no single Siemens stack-light part. A column is built from the elements above.
