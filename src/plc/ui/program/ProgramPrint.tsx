@@ -5,6 +5,7 @@ import { PrinterIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import type { LadderProgram } from '../../core/ladder';
 import type { ValidationIssue } from '../../core/validate';
 import LadderView from '../ladder/LadderView';
+import type { PlcNameOf } from '../ladder/mnemonics';
 import { useProjectStore, currentRevision } from '../../../store/useProjectStore';
 import type { AnalogSetupRow } from '../../core/analog';
 import { collectProject } from '../../../deliverables/collect';
@@ -21,6 +22,8 @@ interface Props {
   issues: ValidationIssue[];
   /** Address -> I/O description (physical points). */
   labels: Map<string, string>;
+  /** Siemens / Logix: the PLC's own names (the ladder and the tag table show them first). */
+  plcNames?: PlcNameOf;
   /** Analog channel setup rows (CLICK System Configuration). */
   analog?: AnalogSetupRow[];
   onClose: () => void;
@@ -39,7 +42,7 @@ const PRINT_CSS = `
 }`;
 
 /** Printer-friendly program document: cover, block index with rung comments, ladder per block, tag table. */
-export default function ProgramPrint({ program, projectName, plcName, issues, labels, analog = [], onClose }: Props) {
+export default function ProgramPrint({ program, projectName, plcName, issues, labels, analog = [], onClose, plcNames }: Props) {
   const info = useProjectStore((s) => s.info);
   const rev = currentRevision(info);
   const xref = useMemo(() => crossReference(program), [program]);
@@ -161,7 +164,7 @@ export default function ProgramPrint({ program, projectName, plcName, issues, la
             <h3 className="text-sm font-semibold">{b.name} <span className="font-normal text-gray-500">· rungs {b.rungs[0].n}–{b.rungs[b.rungs.length - 1].n}</span></h3>
             <p className="mb-1 text-xs text-gray-600">{b.description}</p>
             <div className="rounded border border-gray-200">
-              <LadderView program={{ ...program, rungs: b.rungs.map(({ r }) => r) }} labels={labels} numberOf={numberOf} />
+              <LadderView program={{ ...program, rungs: b.rungs.map(({ r }) => r) }} labels={labels} numberOf={numberOf} plcNames={plcNames} />
             </div>
           </section>
         ))}
@@ -191,7 +194,7 @@ export default function ProgramPrint({ program, projectName, plcName, issues, la
         <section className="print-block">
           <h2 className="mb-2 text-base font-semibold">4 · Tag table and cross reference</h2>
           <table className="w-full border border-gray-300 text-xs">
-            <thead className="bg-gray-100"><tr><th className={th}>Address</th><th className={th}>Nickname</th><th className={th}>Description</th><th className={th}>Written in rung</th><th className={th}>Read in rung</th></tr></thead>
+            <thead className="bg-gray-100"><tr>{plcNames ? <><th className={th}>PLC tag</th><th className={th}>PLC address</th><th className={th}>App operand</th></> : <><th className={th}>Address</th><th className={th}>Nickname</th></>}<th className={th}>Description</th><th className={th}>Written in rung</th><th className={th}>Read in rung</th></tr></thead>
             <tbody>
               {addresses.map((a) => {
                 const t = nick.get(a);
@@ -199,8 +202,18 @@ export default function ProgramPrint({ program, projectName, plcName, issues, la
                 const list = (k: 'read' | 'write') => [...new Set(u.filter((x) => x.kind === k).map((x) => x.number))].join(', ') || '—';
                 return (
                   <tr key={a}>
-                    <td className={`${td} font-mono font-semibold`}>{a}</td>
-                    <td className={`${td} font-mono`}>{t?.nickname ?? ''}</td>
+                    {plcNames ? (
+                      <>
+                        <td className={`${td} font-mono font-semibold`}>{plcNames(a)?.name ?? a}</td>
+                        <td className={`${td} font-mono`}>{plcNames(a)?.io ?? ''}</td>
+                        <td className={`${td} font-mono text-gray-500`}>{a}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td className={`${td} font-mono font-semibold`}>{a}</td>
+                        <td className={`${td} font-mono`}>{t?.nickname ?? ''}</td>
+                      </>
+                    )}
                     <td className={td}>{t?.comment || labels.get(a) || ''}</td>
                     <td className={`${td} font-mono`}>{list('write')}</td>
                     <td className={`${td} font-mono`}>{list('read')}</td>

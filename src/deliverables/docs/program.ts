@@ -6,6 +6,7 @@ import { describeOutput } from '../../plc/core/clickExport';
 import { buildModel, naturalCompare } from '../../electrical/derive';
 import { getPart } from '../../electrical/catalog';
 import { makeTable, specLines, pad, type DocRow, type DocTable } from './table';
+import { projectPlcNames } from '../plcTagNames';
 
 /**
  * Program analysis for the documents: plain-word names for addresses, the
@@ -292,11 +293,14 @@ export function tagTable(p: ProjectSnapshot, info = programInfo(p)): DocTable {
   }
   const order: Kind[] = ['input', 'output', 'bit', 'timer', 'counter', 'register', 'timerValue', 'counterValue', 'system', 'unknown', 'constant'];
   // The "HMI screens" column only when there are screens.
+  // Siemens / Logix: the PLC's tag name and address first (the app operand last, for cross-checking).
+  const names = projectPlcNames(p);
   const rows = [...all].sort(([a], [b]) => order.indexOf(info.kind(a)) - order.indexOf(info.kind(b)) || naturalCompare(a, b)).map(([a, v]) => [
-    a, v.nick, v.comment || info.name(a), KIND_TEXT[info.kind(a)], (info.reads.get(a) ?? []).join(', ') || '—', (info.writes.get(a) ?? []).join(', ') || '—',
+    ...(names ? [names(a)?.name ?? a, names(a)?.io ?? ''] : [a, v.nick]), v.comment || info.name(a), KIND_TEXT[info.kind(a)], (info.reads.get(a) ?? []).join(', ') || '—', (info.writes.get(a) ?? []).join(', ') || '—',
     ...(p.hmi ? [(hmiUse.get(a) ?? []).join(', ') || '—'] : []),
+    ...(names ? [a] : []),
   ]);
-  return makeTable([['Address', 9], ['Nickname', 20], ['Description / comment', 40], ['Type', 14], ['Read in rungs', 14], ['Written in rungs', 12], ...(p.hmi ? [['HMI screens', 20] as [string, number]] : [])], rows);
+  return makeTable([...(names ? [['PLC tag', 22], ['PLC address', 10]] as [string, number][] : [['Address', 9], ['Nickname', 20]] as [string, number][]), ['Description / comment', 40], ['Type', 14], ['Read in rungs', 14], ['Written in rungs', 12], ...(p.hmi ? [['HMI screens', 20] as [string, number]] : []), ...(names ? [['App operand', 9] as [string, number]] : [])], rows);
 }
 
 /** I/O cross reference: each physical I/O address -> rungs that read / write it. */
