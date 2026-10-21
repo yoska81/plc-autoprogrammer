@@ -41,6 +41,8 @@ import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
 import VoiceTextarea from '../../../voice/VoiceTextarea';
 import { collectProject } from '../../../deliverables/collect';
 import { addComments } from '../../tidy/comments';
+import { applyReorganize, externalAddresses, planReorganize, type ReorgPlan, type SectionId } from '../../tidy/reorganize';
+import { checkEquivalence, equivalenceSummary } from '../../tidy/equivalence';
 import SpeakButton from '../../../voice/SpeakButton';
 import { usePlcNames } from '../ladder/plcNames';
 import { useProjectStore } from '../../../store/useProjectStore';
@@ -292,6 +294,33 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
    * Add comments: every blank rung comment, block description and tag comment in plain words (the AI's with a key,
    * else from the I/O names and the cross-reference). Only comments change; it comes as a proposal to approve.
    */
+  /** Reorganize: the transforms found (each with its checkbox), then the chosen ones checked in the simulator. */
+  const [reorg, setReorg] = useState<{ plan: ReorgPlan; chosen: Set<SectionId> } | null>(null);
+  const openReorganize = () => {
+    const plan = planReorganize(collectProject());
+    setReorg({ plan, chosen: new Set(plan.sections.filter((x) => x.defaultOn).map((x) => x.id)) });
+  };
+  const runReorganize = () => {
+    if (!reorg) return;
+    const { plan, chosen } = reorg;
+    setReorg(null);
+    return runAI('program-revise', 'Reorganize program', async () => {
+      const p = collectProject();
+      const program = applyReorganize(p, plan, chosen);
+      const plant = p.io.map((x) => ({ address: p.addresses.get(x.id) ?? '', description: x.description, type: x.type, category: x.category }));
+      const check = checkEquivalence(p.ladder, program, { observe: [...externalAddresses(p)], plant, budgetMs: 15_000 });
+      return { program, check, titles: plan.sections.filter((x) => chosen.has(x.id)).map((x) => x.title) };
+    }, (r) => {
+      const st = useProgramStore.getState();
+      st.addChat({ role: 'user', text: `Reorganize the program: ${r.titles.join('; ')}.` });
+      const said = equivalenceSummary(r.check);
+      if (r.check.differences.length) { st.addChat({ role: 'assistant', text: `${said}\nNothing is proposed: the reorganized program would not behave the same. Choose fewer changes and try again.`, outcome: 'no-change' }); return; }
+      const text = `Reorganized: ${r.titles.join('; ')}.\n${said}\nAddresses, the I/O and what the HMI reads did not move; kept instructions of the original PLC stay as they were.`;
+      st.addChat({ role: 'assistant', text });
+      st.setProposal({ program: r.program, explanation: text, reasoning: null });
+    }, false);
+  };
+
   const handleComments = (rewrite: boolean) => {
     if (rewrite && !confirm('Rewrite every comment of the program, also the ones already there? You approve the result first, and the current program is kept in History.')) return;
     setTab('fix');
@@ -507,6 +536,23 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 <button onClick={() => handleComments(true)} disabled={isGenerating}
                   title="Write every comment again, also the ones already there (you approve the result first)"
                   className="py-1.5 px-2 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Rewrite all comments</button>
+                <button onClick={() => (reorg ? setReorg(null) : openReorganize())} disabled={isGenerating} aria-expanded={Boolean(reorg)}
+                  title="Rebuild the same behaviour in a simpler shape: grouped by machine function, dead code out, names and comments; checked in the simulator before you approve"
+                  className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Reorganize program…</button>
+              </div>
+            )}
+            {reorg && !proposal && (
+              <div className="rounded border border-gray-200 bg-gray-50 p-2 text-xs space-y-1.5" role="group" aria-label="Reorganize">
+                <p className="text-gray-600">Choose the changes. They are checked together in the simulator before they are proposed; nothing changes until you approve.</p>
+                {reorg.plan.sections.map((sec) => (
+                  <label key={sec.id} className="flex items-start gap-2">
+                    <input type="checkbox" className="mt-0.5" checked={reorg.chosen.has(sec.id)} disabled={!sec.items.length && sec.id !== 'comment' && sec.id !== 'reorder'}
+                      onChange={(e) => { const c = new Set(reorg.chosen); if (e.target.checked) c.add(sec.id); else c.delete(sec.id); setReorg({ ...reorg, chosen: c }); }} />
+                    <span><span className="font-medium text-gray-800">{sec.title}</span><br /><span className="text-gray-500">{sec.note}</span>
+                      {sec.items.length > 0 && sec.id !== 'reorder' && <span className="block text-gray-500">{sec.items.slice(0, 4).join(' · ')}{sec.items.length > 4 ? ` · and ${sec.items.length - 4} more` : ''}</span>}</span>
+                  </label>
+                ))}
+                <button onClick={runReorganize} disabled={!reorg.chosen.size || isGenerating} className="w-full py-1.5 bg-brand-600 text-white rounded font-medium hover:bg-brand-700 disabled:opacity-50">Check and propose</button>
               </div>
             )}
             <VoiceTextarea
