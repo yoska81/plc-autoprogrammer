@@ -19,6 +19,9 @@ export interface NetworkAxisInput {
   motorPartNumber?: string;
   watts?: number;
   source?: 'import' | 'spec' | 'user';
+  /** MECHATROLINK station address (hex, "23") and the axis on it (0 / 1): two axes on one station are one SGD7W. */
+  station?: string;
+  stationAxis?: number;
 }
 
 /**

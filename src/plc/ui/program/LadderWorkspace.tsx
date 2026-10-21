@@ -29,6 +29,7 @@ import { useNarrow } from '../../../components/useNarrow';
 import { useFingerprints, useStages } from '../../../spec/useStages';
 import { useStageStore } from '../../../store/useStageStore';
 import { changedSections, specToText } from '../../../spec/types';
+import { specForAI } from '../../../lib/ai/specForAI';
 import BlockTree from './BlockTree';
 import CrossRefPanel from './CrossRefPanel';
 import { useFullScreen, useLadderHistory } from './workspaceView';
@@ -127,7 +128,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const notesCheck = /^the machine specification and\/or i\/o list changed|^current specification:/i.test(userPrompt.trim()) || userPrompt.length > 600 && specText && userPrompt.includes(specText.slice(0, 80))
     ? { leftOver: true, terms: ['a copy of the update message / specification'] }
     : looksLeftOver(userPrompt, specText);
-  const machineText = [specText, userPrompt.trim() && `Additional notes for the program:\n${userPrompt}`].filter(Boolean).join('\n\n');
+  const machineText = [specText, userPrompt.trim() && `## Additional notes for the program\n${userPrompt}`].filter(Boolean).join('\n\n');
   const recordSource = () => markGenerated('program', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, hmiFp: fp.hmiFp });
 
   // A finding sent from the Design review page opens Fix & Ask with the request filled in.
@@ -219,7 +220,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     setTab('fix');
     return handleRevise(
       `The machine specification and/or I/O list changed${changed.length ? ` (spec sections: ${changed.join(', ')})` : ''}. ` +
-      `Update the program so it matches the current specification below, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specText}`,
+      `Update the program so it matches the current specification below, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specForAI(specText, 'program')}`,
       true,
     );
   };
@@ -341,7 +342,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     // Earlier turns as plain text; the current program is attached fresh by reviseLadder.
     // The conversation must open with a user turn, so lead with the original request.
     const history = [
-      { role: 'user' as const, content: `Machine specification:\n${machineText || '(program was drawn by hand)'}` },
+      { role: 'user' as const, content: `Machine specification (overview):\n${specForAI(machineText, 'fix-it') || '(program was drawn by hand)'}` },
       ...chat.map((m) => ({ role: m.role, content: m.text })),
     ];
     const scoped = activeBlock !== null && !specUpdate ? `[Block: ${blockName}${activeBlock ? ` (id "${activeBlock}")` : ''}] ${req}` : req;
@@ -610,7 +611,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             <span className="font-semibold text-gray-700">{activeBlock === null ? 'Whole program' : blockName}</span>
             <span className="text-gray-400">{shown.rungs.length} rung{shown.rungs.length === 1 ? '' : 's'}</span>
             {activeBlock !== null && (
-              <button onClick={() => { setTab('fix'); handleRevise(`Review and rewrite this block so it fully matches the specification for this part of the machine. Keep its interface (the internal bits other blocks read or write) unless it is wrong, and explain any change to it.\n\nCurrent specification:\n${specText}`); }}
+              <button onClick={() => { setTab('fix'); handleRevise(`Review and rewrite this block so it fully matches the specification for this part of the machine. Keep its interface (the internal bits other blocks read or write) unless it is wrong, and explain any change to it.\n\nCurrent specification:\n${specForAI(specText, 'program')}`); }}
                 disabled={isGenerating || !ready || Boolean(proposal)}
                 className="px-2.5 py-1 rounded-sm border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 disabled:opacity-50">
                 Regenerate this block

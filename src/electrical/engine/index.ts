@@ -121,13 +121,54 @@ export function generateDesign(input0: EngineInput): EngineResult {
   const servoMotors = motion.networkServo ? input.model.motors.filter((m) => isNetworkServoText(m.description) || fromSignal(m)) : [];
   const dropped = (t: string) => servoMotors.some((m) => t.startsWith(`${m.description.replace(/ motor$/i, '')}:`) || t.includes(`${m.tag} `));
   const baseModel = servoMotors.length ? { ...input.model, motors: input.model.motors.filter((m) => !servoMotors.includes(m)), assumptions: input.model.assumptions.filter((t) => !dropped(t)) } : input.model;
-  const model = drivesFromIo(baseModel, io, input.spec ?? '');
+  // One motor per machine motor: the same name read twice (two I/O groups of an imported program, "Conveyor 1" in
+  // IB000x and IB041x) is one motor.
+  const nameKey = (t: string) => t.toLowerCase().replace(/\b(motor|forward|fwd|reverse|rev|run|start|stop|jog|cw|ccw|on|off|output|contactor|starter)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+  const keyWords = (t: string) => nameKey(t).split(' ').filter(Boolean);
+  const seen = new Map<string, string>(), dupes: string[] = [];
+  const unique = baseModel.motors.filter((m) => {
+    const k = nameKey(m.description);
+    if (!k) return true;
+    if (seen.has(k)) { dupes.push(`${m.tag} (${m.description}) is ${seen.get(k)}`); return false; }
+    seen.set(k, m.tag);
+    return true;
+  });
+  // A motor with its own drive ("Driver of conveyor 1 fault"): the drive is on the machine, its type is not known —
+  // shown as that drive (check), its commands and fault wired to it, and no starter or VFD invented.
+  const DRIVER_FAULT = /\bdriver\b[^.]*\b(fault|alarm|error|trip)\b|\b(fault|alarm|error|trip)\b[^.]*\bdriver\b/i;
+  const ownDrive: DesignComponent[] = [], ownWiring: EngineResult['design']['ioWiring'] = [], ownClaimed = new Set<string>();
+  const kept = unique.filter((m) => {
+    const kw = keyWords(m.description);
+    if (!kw.length) return true;
+    const mine = (d: string) => { const dw = keyWords(d); return kw.every((w) => dw.includes(w)); };
+    const fault = io.filter((p) => p.type === 'input' && DRIVER_FAULT.test(p.description) && mine(p.description));
+    if (!fault.length) return true;
+    const tag = tags.next('U');
+    const pts = io.filter((p) => !ownClaimed.has(p.id) && mine(p.description));
+    for (const p of pts) {
+      ownClaimed.add(p.id);
+      const a = input.addresses.get(p.id) ?? '';
+      if (a) ownWiring.push({ address: a, deviceTag: tag, deviceType: 'vfd-input', description: p.description, location: 'Cabinet' });
+    }
+    ownDrive.push({ tag, partNumber: '', quantity: 1, motorTag: m.tag, category: 'other',
+      function: `${m.description.replace(/\b(motor|forward|fwd|reverse|rev|run)\b/gi, ' ').replace(/\s+/g, ' ').trim()} drive (on the machine, type not identified: check) — ${[...new Set(pts.filter((p) => p.type === 'output').map((p) => p.description))].join(', ') || 'no command output'} to it, ${[...new Set(fault.map((p) => p.description))].join(', ')} from it; no starter or VFD drawn` });
+    return false;
+  });
+  const io2 = ownClaimed.size ? io.filter((p) => !ownClaimed.has(p.id)) : io;
+  // the existing drives are parts of the design like the motion parts (drawn with their I/O, no power circuit)
+  motion.components.push(...ownDrive);
+  motion.ioWiring.push(...ownWiring);
+  const motorsModel = kept.length === baseModel.motors.length ? baseModel : { ...baseModel, motors: kept,
+    assumptions: baseModel.assumptions.filter((t) => kept.some((m) => t.includes(m.description.replace(/ motor$/i, ''))) || !baseModel.motors.some((m) => t.startsWith(`${m.description.replace(/ motor$/i, '')}:`))) };
+  const model = drivesFromIo(motorsModel, io2, input.spec ?? '');
   const notes: string[] = [...motion.notes];
+  if (dupes.length) notes.push(`${dupes.join('; ')}: the same motor named twice in the I/O list — drawn once.`);
+  if (ownDrive.length) notes.push(`${ownDrive.map((c) => `${c.tag} ${c.function.split(' (')[0]}`).join(', ')}: each has its own drive on the machine (a "driver … fault" input), type not identified — check the drive on the machine; no starter or VFD is drawn for it.`);
   if (servoMotors.length) notes.push(`${servoMotors.map((m) => `${m.tag} ${m.description}`).join(', ')}: a servo axis on MECHATROLINK-III, not an AC motor — left out of the motor circuits (no VFD or starter). Only AC induction motors get a VFD or starter.`);
   const askUser: string[] = [...model.assumptions, ...motion.askUser];
 
   // Discrete PLC points with addresses (analog channels are wired by electrical/analog.ts).
-  const points = io
+  const points = io2
     .map((point) => ({ point, address: input.addresses.get(point.id) ?? '' }))
     .filter(({ point, address }) => address && point.signal !== 'analog' && !/^DF\d+$/i.test(address));
 
@@ -144,7 +185,7 @@ export function generateDesign(input0: EngineInput): EngineResult {
   const power = motorBranches(pk, tags, model.motors, supply, input.region, reversingByIo);
   notes.push(...power.notes);
   const overTempInput = points.some(({ point }) => point.type === 'input' && OVER_TEMP_RE.test(point.description));
-  const proc = processLoads(pk, tags, model.heaters ?? [], supply, io, overTempInput);
+  const proc = processLoads(pk, tags, model.heaters ?? [], supply, io2, overTempInput);
   notes.push(...proc.notes);
   askUser.push(...proc.askUser);
   const dev = devicesAndWiring(pk, tags, model, power.branches, points, proc);

@@ -5,10 +5,11 @@ import type { HmiDesign, HmiElement, HmiScreen } from '../../hmi/types';
 import { HMI_ELEMENT_KINDS, MACHINE_SYMBOL_KINDS } from '../../hmi/types';
 import { hmiMaker, type HmiModel } from '../../hmi/hmiCatalog';
 import { checkDesign, fixDesignLayout, layoutBands, MIN_TOUCH, GAP } from '../../hmi/layout';
-import { specToText, type SpecSections } from '../../spec/types';
+import type { SpecSections } from '../../spec/types';
 import { callClaude, type RichTurn } from './anthropic';
 import type { HmiTag } from '../../hmi/types';
 import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes, ANSWERED_RULE } from '../../components/questions/classify';
+import { specForAI } from './specForAI';
 
 const obj = (properties: Record<string, unknown>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 const ns = { type: ['string', 'null'] };
@@ -151,7 +152,7 @@ export async function generateHmiDesign(opts: {
   const content = `PLC: ${opts.profile.vendor} ${opts.profile.name} ${opts.cpu.id}
 
 Machine specification:
-${specToText(opts.spec) || '(empty)'}
+${specForAI(opts.spec, 'hmi') || '(empty)'}
 
 Physical I/O (address, type, description):
 ${io}

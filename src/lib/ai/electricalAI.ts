@@ -12,6 +12,8 @@ import { NOTE_KINDS_RULE, NOTE_SCHEMA, normalizeNotes, ANSWERED_RULE } from '../
 import { getPart } from '../../electrical/catalog';
 import { staleMotors } from '../../electrical/engine/machineModel';
 import { chooseEnclosure, smallestEnclosure, withEnclosure, type DrawingContext } from '../../electrical/derive';
+import { specForAI } from './specForAI';
+import { approxTokens } from './budget';
 
 const DEVICE_TYPES: FieldDeviceType[] = ['pushbutton-no', 'pushbutton-nc', 'selector', 'estop-contact', 'sensor-pnp', 'sensor-npn', 'limit-switch', 'pressure-switch', 'safety-relay-output', 'contactor-coil', 'relay-coil', 'solenoid', 'pilot-light', 'stack-light', 'vfd-input', 'other'];
 
@@ -115,6 +117,62 @@ ${NOTE_KINDS_RULE}
 - "motors": every motor the panel drives: the designer's motor list exactly as given, plus any other motor the specification mentions (estimate HP from the description when not stated and say so in "notes").
 - "explanation": a short plain-language summary of the panel for the customer.`;
 
+/** Most tokens the full-AI design's request may take (catalog, project and answer schema); over it the page does not offer it. */
+export const FULL_DESIGN_TOKENS = 120_000;
+
+/** What the full-AI design's catalog is chosen by. */
+export interface DesignNeeds { profile: PlcProfile; cpu: CpuModel; io: IOPoint[]; machineDescription: string; inputs?: DesignInputs; /** The operator panel the project uses (the only one offered). */ hmiPartNumber?: string | null }
+
+/** Most enclosures offered: an even spread of sizes (the app sizes the enclosure from the part footprints afterwards). */
+const MAX_ENCLOSURES = 30;
+
+const ENCODER_KINDS = /^(encoder (cable|coupling|bracket|mounting arm)|measuring wheel|wheel bore reducer bushing)$/;
+const SERVO_KINDS = /^servo (cable|accessory)$/;
+
+/**
+ * The catalog the full-AI design reads: the panel's parts, without what this machine has no use for. Field sensors
+ * are wired, not built into the panel; encoders and their mounting only when the I/O has an encoder; servo drives,
+ * motors and cables only when the machine has servo axes the app designs (not a program read from the machine,
+ * whose drives are its own); VFDs only when a motor is on one or the machine names one; PLCs and modules only of
+ * the project's CPU family; only the project's operator panel; painted-steel enclosures of the rating asked for, an
+ * even spread of sizes (the app sizes the enclosure from the part footprints afterwards), with their back panels.
+ */
+export function designCatalog(all: CatalogPart[], o: DesignNeeds): CatalogPart[] {
+  const ioText = o.io.map((p) => p.description).join('\n');
+  const encoder = /encoder|high.?speed count|\bhsc\b/i.test(ioText);
+  const servo = !o.profile.readOnly && /servo/i.test(`${o.machineDescription}\n${ioText}`);
+  // "not a VFD" (a servo axis described by the program) is no drive to offer
+  const vfd = Boolean(o.inputs?.motors.some((m) => m.starter === 'vfd')) || /\bvfds?\b|inverter|variable.?speed|frequency drive/i.test(`${specForAI(o.machineDescription, 'electrical')}\n${ioText}`.replace(/\bnot an? (vfd|inverter)\b/gi, ''));
+  const cpuMaker = all.find((p) => p.category === 'plc' && p.partNumber === o.cpu.id)?.manufacturer;
+  // NEMA 12 is also met by a 4 / 4X box; NEMA 1 by any.
+  const nema = o.inputs?.enclosureRating.replace('NEMA ', '');
+  const rated = (p: CatalogPart) => !nema || nema === '1' || String(p.ratings.nema ?? '').split('/').some((r) => r === nema || (nema === '12' && /^4X?$/.test(r)) || (nema === '4' && r === '4X'));
+  const steel = (p: CatalogPart) => nema === '4X' || !/stainless|fiberglass|polycarbonate/i.test(String(p.ratings.material ?? ''));
+  const volume = (p: CatalogPart) => (Number(p.ratings.heightIn) || 99) * (Number(p.ratings.widthIn) || 99) * (Number(p.ratings.depthIn) || 99);
+  const fitting = all.filter((p) => p.category === 'enclosure' && p.ratings.kind !== 'subpanel' && rated(p) && steel(p)).sort((a, b) => volume(a) - volume(b));
+  const boxes = fitting.length <= MAX_ENCLOSURES ? fitting : Array.from({ length: MAX_ENCLOSURES }, (_, i) => fitting[Math.round((i * (fitting.length - 1)) / (MAX_ENCLOSURES - 1))]);
+  const backPanels = new Set(boxes.map((p) => String(p.ratings.subpanel ?? '')));
+  return all.filter((p) => {
+    const kind = String(p.ratings.kind ?? '');
+    if (p.category === 'enclosure') return kind === 'subpanel' ? backPanels.has(p.partNumber) : boxes.includes(p);
+    if (p.category === 'vfd') return vfd;
+    if (p.category === 'hmi') return p.partNumber === o.hmiPartNumber;
+    if (p.category === 'sensor') return false;
+    if (p.category === 'encoder' || ENCODER_KINDS.test(kind)) return encoder;
+    if (p.category === 'servoMotor' || p.category === 'servoDrive' || SERVO_KINDS.test(kind)) return servo;
+    if (p.category === 'plc') return p.partNumber === o.cpu.id;
+    if (p.category === 'plcModule') return Boolean(cpuMaker) && p.manufacturer === cpuMaker;
+    return true;
+  });
+}
+
+/** About how many tokens the full-AI design's request takes for this project (to offer it only when it fits). */
+export function fullDesignTokens(o: DesignNeeds): number {
+  const catalog = designCatalog(catalogFor(vendorPreference()), o);
+  const schemaChars = catalog.reduce((n, p) => n + p.partNumber.length + 3, 0) + o.io.length * 12;
+  return approxTokens(SYSTEM + catalogText(catalog) + vendorNotes(catalog) + specForAI(o.machineDescription, 'electrical') + o.io.map((p) => p.description).join('\n')) + Math.ceil(schemaChars / 3.5) + o.io.length * 10;
+}
+
 export async function generateElectricalDesign(opts: {
   apiKey: string; model: string; effort: Effort; signal?: AbortSignal;
   profile: PlcProfile; cpu: CpuModel;
@@ -123,11 +181,14 @@ export async function generateElectricalDesign(opts: {
   inputs: DesignInputs;
   /** Electrical code region; default US. */
   region?: Region;
-  /** Parts the AI may use; default: the project's preferred vendors. */
+  /** Parts the AI may use; default: the project's preferred vendors, what this machine can use (designCatalog). */
   catalog?: CatalogPart[];
+  /** The operator panel the project uses. */
+  hmiPartNumber?: string | null;
 }): Promise<{ design: ElectricalDesign; explanation: string; reasoning: string | null }> {
-  // Only the project's preferred brands (AutomationDirect where they offer nothing in a category).
-  const catalog = opts.catalog ?? catalogFor(vendorPreference());
+  // Only the project's preferred brands (AutomationDirect where they offer nothing in a category), and of those
+  // only what this machine can use.
+  const catalog = opts.catalog ?? designCatalog(catalogFor(vendorPreference()), opts);
   const ioAddrs = opts.io.map((p) => opts.addresses.get(p.id) || '').filter(Boolean);
   const ioText = opts.io.map((p) => `${opts.addresses.get(p.id) || '(unassigned)'}\t${p.type}\t${p.category}\t${p.description || '(no description)'}`).join('\n') || '(no I/O yet)';
   // motors an earlier design read from another machine are not this machine's (defaultMachineModel drops them too)
@@ -136,7 +197,7 @@ export async function generateElectricalDesign(opts: {
   const required = opts.inputs.requiredParts.map((r) => `${r.partNumber} x${r.quantity}`).join('\n') || '(none)';
 
   const content = `Machine description:
-${opts.machineDescription || '(not given)'}
+${specForAI(opts.machineDescription, 'electrical') || '(not given)'}
 
 PLC: ${opts.profile.vendor} ${opts.profile.name}, CPU ${opts.cpu.label}
 

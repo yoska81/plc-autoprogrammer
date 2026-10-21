@@ -1926,6 +1926,8 @@ export function billOfMaterials(ctx: DrawingContext): BomGroup[] {
   const lines = new Map<string, BomLine>();
   const notesFromLayout: BomLine[] = [];
   for (const c of m.rc) {
+    // A device already on the machine whose type is not identified (an imported program's own drive): a note line of its own, never ordered.
+    if (!c.partNumber && /type not identified/i.test(c.comp.function)) { notesFromLayout.push({ item: 0, qty: 1, partNumber: '', manufacturer: '', description: c.comp.function, tags: [c.tag], category: 'note', note: true }); continue; }
     // A kit: one line per real part (qty = kit qty x each), listed with the device it builds; the drawings keep one device.
     const kit = kitPartsOf(c.part);
     if (kit) {
@@ -2970,7 +2972,7 @@ export function designWarnings(ctx: DrawingContext): string[] {
   if (!r.supplies.includes(ctx.design.inputs.supply)) w.push(`The design is for ${SUPPLY_INFO[ctx.design.inputs.supply].label} ${SUPPLY_INFO[ctx.design.inputs.supply].hz} Hz but the project region is ${r.label} (${r.supplies.map((v) => SUPPLY_INFO[v].label).join(', ')}): update the design for the region.`);
   const unverified = new Map<string, string[]>();
   for (const c of m.rc) {
-    if (!c.partNumber) w.push(`${c.tag}: no part number selected.`);
+    if (!c.partNumber) w.push(/type not identified/i.test(c.comp.function) ? `${c.tag}: ${c.comp.function.split(' — ')[0]} — check the drive on the machine (nameplate) and enter its part number.` : `${c.tag}: no part number selected.`);
     else if (!c.part) w.push(`${c.tag}: part ${c.partNumber} not found in the catalog — verify the part number.`);
     else if (!c.part.verified) unverified.set(c.partNumber, [...(unverified.get(c.partNumber) ?? []), c.tag]);
   }
