@@ -3,10 +3,13 @@
 //   app → bridge:                 {"id":7,"cmd":"detect","args":{…}}
 //   bridge → app, while working:  {"id":7,"progress":"Opening TIA Portal V19…"}
 //   bridge → app, at the end:     {"id":7,"ok":true,"result":{…}}  or  {"id":7,"ok":false,"error":"plain words"}
-// Requests run one at a time, in order (Openness is not to be called from two threads).
+// Requests run one at a time, in order (Openness is not to be called from two threads), on a worker thread;
+// an urgent command (Stop) is answered at once on the reading thread, even while a long request runs.
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Threading;
 
 namespace TiaBridge
 {
@@ -23,12 +26,23 @@ namespace TiaBridge
     {
         public const int Version = 1;
         readonly Dictionary<string, Command> _commands = new Dictionary<string, Command>(StringComparer.Ordinal);
+        readonly HashSet<string> _urgent = new HashSet<string>(StringComparer.Ordinal);
         readonly TextWriter _out;
         readonly object _gate = new object();
 
         public Protocol(TextWriter output) { _out = output; }
 
         public Protocol On(string name, Command run) { _commands[name] = run; return this; }
+
+        /// <summary>A command answered as soon as it arrives, while other requests run (e.g. stop).</summary>
+        public Protocol OnUrgent(string name, Command run) { _commands[name] = run; _urgent.Add(name); return this; }
+
+        bool Urgent(string line)
+        {
+            if (_urgent.Count == 0) return false;
+            try { return Json.Parse(line) is Dictionary<string, object> r && r.TryGetValue("cmd", out object c) && c is string s && _urgent.Contains(s); }
+            catch (FormatException) { return false; }
+        }
 
         void Send(Dictionary<string, object> message)
         {
@@ -40,12 +54,26 @@ namespace TiaBridge
         public void Run(TextReader input, string bridgeVersion)
         {
             Send(new Dictionary<string, object> { ["ready"] = true, ["protocol"] = Version, ["version"] = bridgeVersion });
+            var queue = new BlockingCollection<string>();
+            var done = new ManualResetEventSlim();
+            var worker = new Thread(() =>
+            {
+                foreach (var l in queue.GetConsumingEnumerable()) if (!Handle(l)) break;
+                done.Set();
+            }) { IsBackground = true, Name = "requests" };
+            // Openness, UI Automation and SendKeys want a single-threaded apartment (Windows only)
+#pragma warning disable CA1416 // Windows only; elsewhere (the tests) it throws and the default is kept
+            try { worker.SetApartmentState(ApartmentState.STA); } catch (PlatformNotSupportedException) { /* not Windows: the tests */ }
+#pragma warning restore CA1416
+            worker.Start();
             string line;
-            while ((line = input.ReadLine()) != null)
+            while (!done.IsSet && (line = input.ReadLine()) != null)
             {
                 if (line.Trim().Length == 0) continue;
-                if (!Handle(line)) break;
+                if (Urgent(line)) Handle(line); else queue.Add(line);
             }
+            queue.CompleteAdding();
+            worker.Join();
         }
 
         /// <summary>Answers one request line; false after "quit".</summary>

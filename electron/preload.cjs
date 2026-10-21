@@ -51,6 +51,16 @@ contextBridge.exposeInMainWorld('isaDesktop', {
       return () => ipcRenderer.removeListener('isa:tia-progress', h);
     },
   },
+  // Send to CLICK (electron/clickBridge.cjs): the same shape as tia.
+  click: {
+    call: async (cmd, args) => { const r = await ipcRenderer.invoke('isa:click', cmd, args); if (!r.ok) throw new Error(r.error); return r.value; },
+    logPath: () => ipcRenderer.invoke('isa:click-log'),
+    onProgress: (cb) => {
+      const h = (_e, p) => cb(p);
+      ipcRenderer.on('isa:click-progress', h);
+      return () => ipcRenderer.removeListener('isa:click-progress', h);
+    },
+  },
   modbus: {
     connect: async (o) => { const r = await ipcRenderer.invoke('isa:modbus', 'connect', [o]); return r.ok ? r.value : { ok: false, error: r.error }; },
     disconnect: () => mb('disconnect'),

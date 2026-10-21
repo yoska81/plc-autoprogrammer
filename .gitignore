@@ -74,3 +74,10 @@ tools/tia-bridge/obj/
 tools/tia-bridge/tests/bin/
 tools/tia-bridge/tests/obj/
 resources/tia-bridge/
+
+# CLICK bridge: built by scripts/build-click-bridge.cjs into resources/click-bridge for the installer
+tools/click-bridge/bin/
+tools/click-bridge/obj/
+tools/click-bridge/tests/bin/
+tools/click-bridge/tests/obj/
+resources/click-bridge/

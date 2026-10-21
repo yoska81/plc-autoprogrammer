@@ -10,6 +10,7 @@ const { registerModbusIpc } = require('./modbus.cjs');
 const mic = require('./micPermission.cjs');
 const { registerDwgReaderIpc } = require('./dwgReader.cjs');
 const { registerTiaBridgeIpc } = require('./tiaBridge.cjs');
+const { registerClickBridgeIpc } = require('./clickBridge.cjs');
 
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://isa`;
@@ -298,6 +299,8 @@ registerModbusIpc(ipcMain);
 registerDwgReaderIpc(ipcMain, app, dialog, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources'));
 // ── Send to TIA Portal: the TIA Openness bridge shipped with the installer (electron/tiaBridge.cjs) ──
 registerTiaBridgeIpc(ipcMain, app, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources'));
+// ── Send to CLICK: the CLICK bridge (UI Automation of CLICK Programming Software, electron/clickBridge.cjs) ──
+registerClickBridgeIpc(ipcMain, app, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources'));
 
 // ── Microphone for voice input: a native question the first time (electron/micPermission.cjs) ──
 let micState = { always: false, session: false };
