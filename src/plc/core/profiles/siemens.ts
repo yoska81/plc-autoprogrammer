@@ -27,6 +27,7 @@ import { toIecSt, type StDialect, type StProgram, type StVariable } from './iecS
 import { logixName } from './logixExport';
 import { getPart } from '../../../electrical/catalog';
 import { outsideUserText } from '../userText';
+import { tiaLadFiles } from './siemensLad';
 
 type Family = 'S7-1200' | 'S7-1500';
 
@@ -270,7 +271,9 @@ const KNOWLEDGE = (c: CpuModel) => `Target: Siemens ${c.label}, programmed in TI
 - First scan SC2 → #FirstScan (generated); SC1 → TRUE; SC7 → generated 1-second clock. No other SC bits or SD registers.`;
 
 const EXPORTERS: ProgramExporter[] = [
-  { id: 'siemens-scl', label: 'SCL external source for TIA Portal (Generate blocks from source)', fileName: (b) => `${b}_s7.scl`, build: (p, c) => buildScl(p, c).scl },
+  // Ladder first: what the technician works with in TIA Portal (a SimaticML block per file, siemensLad.ts).
+  { id: 'siemens-lad', label: 'Ladder (LAD) blocks for TIA Portal (Version control interface)', fileName: (b) => `${b}_TIA_LAD/`, build: () => '', files: (p, c, b) => tiaLadFiles(p, c, b) },
+  { id: 'siemens-scl', label: 'SCL source (text) for TIA Portal (Generate blocks from source)', fileName: (b) => `${b}_s7.scl`, build: (p, c) => buildScl(p, c).scl },
   { id: 'siemens-tags', label: 'PLC tag table (TIA Portal PLC tags › Import, .sdf)', fileName: (b) => `${b}_PLCTags.sdf`, build: (p, c) => siemensTagsSdf(p, c) },
 ];
 

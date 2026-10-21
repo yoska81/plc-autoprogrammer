@@ -104,6 +104,8 @@ export interface ProgramExporter {
   label: string;
   fileName(base: string): string;
   build(program: LadderProgram, ctx: ExportContext): string;
+  /** Several files instead of one (names may have a folder: "<base>_TIA_LAD/Main.xml"); then `build` is not used. */
+  files?(program: LadderProgram, ctx: ExportContext, base: string): { name: string; content: string }[];
 }
 
 export interface PlcProfile {
