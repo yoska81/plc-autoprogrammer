@@ -1,6 +1,7 @@
 // The commands of the CLICK bridge:
 //   ping · detect (CLICK Programming Software installed: version, program) · start (attach to the running CLICK
 //   or start it) · run (a step plan, while the user watches) · stop (urgent: ends a run before its next step)
+//   · resume (urgent: the user finished their turn, the run goes on)
 //   · dump (the controls of CLICK's windows, for the log) · writeFile (a file the plan imports, e.g. nicknames).
 using System;
 using System.Collections.Generic;
@@ -17,6 +18,7 @@ namespace ClickBridge
         {
             int pid = 0;
             CancellationTokenSource current = null;
+            var resume = new AutoResetEvent(false);
             bool keyWatched = false, keyOk = false;
             folder = folder ?? Path.Combine(Path.GetTempPath(), "isa-click");
 
@@ -85,11 +87,18 @@ namespace ClickBridge
                     try
                     {
                         pr(keyOk ? "Starting. Watch CLICK; press Stop or the Pause key to end at any time." : "Starting. Watch CLICK; press Stop to end at any time.");
-                        int n = new Runner(ui, pid, cts.Token, pr).Run(steps);
+                        resume.Reset();
+                        int n = new Runner(ui, pid, cts.Token, pr, resume).Run(steps);
                         return new Dictionary<string, object> { ["steps"] = n };
                     }
                     finally { current = null; }
                 }
+            });
+            p.OnUrgent("resume", (a, pr) =>
+            {
+                bool running = current != null;
+                if (running) resume.Set();
+                return new Dictionary<string, object> { ["resumed"] = running };
             });
             p.OnUrgent("stop", (a, pr) =>
             {

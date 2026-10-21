@@ -12,7 +12,7 @@ const fails = [];
 const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', what); } else console.log('  ✓', what); };
 
 const FAKE = () => {
-  window.__click = { calls: [], installed: true, stepMs: 60 };
+  window.__click = { calls: [], installed: true, stepMs: 60, resumed: false };
   const listeners = new Set();
   let stopped = false;
   const say = (text) => listeners.forEach((cb) => cb({ id: 1, text }));
@@ -23,6 +23,7 @@ const FAKE = () => {
         const t = window.__click;
         t.calls.push({ cmd, args });
         if (cmd === 'stop') { stopped = true; return { stopping: true }; }
+        if (cmd === 'resume') { t.resumed = true; return { resumed: true }; }
         await new Promise((r) => setTimeout(r, 100));
         if (cmd === 'detect') return t.installed ? { ready: true, installs: [{ name: 'CLICK Programming Software Ver. 3.71', version: '3.71', exe: 'C:\\AD\\CLICK.exe' }], running: false, steps: [] } : { ready: false, installs: [], running: false, steps: ['Install CLICK Programming Software from AutomationDirect (free download), then Check again.'] };
         if (cmd === 'start') return { version: '3.71', processId: 4242, windows: ['CLICK Programming Software - [Untitled]'], attached: false };
@@ -32,7 +33,14 @@ const FAKE = () => {
           stopped = false;
           for (let i = 0; i < args.steps.length; i++) {
             if (stopped) throw new Error(`Stopped at step ${i + 1}, as you asked. Nothing was saved: close CLICK without saving, or keep what was entered and save it yourself.`);
-            say(`${i + 1}/${args.steps.length} ${args.steps[i].say ?? args.steps[i].do}`);
+            const st = args.steps[i];
+            if (st.do === 'waitUser') {
+              t.resumed = false;
+              say(`Your turn: ${st.text} Then press Continue.`);
+              while (!t.resumed) { if (stopped) throw new Error(`Stopped at step ${i + 1}, as you asked. Nothing was saved.`); await new Promise((r) => setTimeout(r, 50)); }
+              continue;
+            }
+            say(`${i + 1}/${args.steps.length} ${st.say ?? st.do}`);
             await new Promise((r) => setTimeout(r, t.stepMs));
           }
           return { steps: args.steps.length };
@@ -100,6 +108,30 @@ const FAKE = () => {
   check(run.args.steps.some((s) => s.do === 'click' && /C0-1/.test(s.find?.name ?? '')), 'the project\'s CPU chosen');
   check(!run.args.steps.some((s) => /save/i.test(JSON.stringify(s.path ?? s.find ?? s.keys ?? ''))), 'no step saves');
   check(/save it there \(File › Save Project\)/.test(await dialog.getByTestId('click-done').innerText()), 'done: the user saves in CLICK');
+
+  // Enter the rungs: in order; the rungs the app cannot enter are the user's turn (Continue).
+  check(await dialog.getByTestId('click-rungs').count() === 1, 'step 4 after the set-up');
+  await page.evaluate(() => { window.__click.stepMs = 1; });
+  await dialog.getByTestId('click-rungs-button').click();
+  let turns = 0;
+  for (;;) {
+    const r = await Promise.race([
+      dialog.getByTestId('click-continue').waitFor({ timeout: 20000 }).then(() => 'turn'),
+      dialog.getByTestId('click-done').waitFor({ timeout: 20000 }).then(() => 'done'),
+    ]);
+    if (r === 'done') break;
+    turns++;
+    if (turns === 1) check(/^Your turn: Type rung \d+/.test((await dialog.getByRole('status').innerText()).trim()), 'your turn: which rung to type');
+    await dialog.getByTestId('click-continue').click();
+    await dialog.getByTestId('click-continue').waitFor({ state: 'detached', timeout: 5000 });
+  }
+  const rungRun = (await page.evaluate(() => window.__click.calls)).filter((c) => c.cmd === 'run').at(-1);
+  const rungNumbers = rungRun.args.steps.filter((x) => /^Rung \d+/.test(x.say ?? '')).map((x) => Number(/^Rung (\d+)/.exec(x.say)[1]));
+  log('rungs:', rungNumbers.length, 'turns:', turns, '|', (await dialog.getByTestId('click-done').innerText()).slice(0, 120));
+  // a rung handed to the user says its number twice (the new rung, then the user's turn)
+  check(new Set(rungNumbers).size === 42 && rungNumbers.every((n, i) => i === 0 || n >= rungNumbers[i - 1]), 'every rung, in order');
+  check(turns > 0 && new RegExp(`, ${turns} typed by you`).test(await dialog.getByTestId('click-done').innerText()), 'the user\'s turns counted in the result');
+  check(!rungRun.args.steps.some((x) => /save/i.test(JSON.stringify(x.path ?? x.find ?? x.keys ?? ''))), 'no rung step saves');
 
   // Stop during a run.
   await page.evaluate(() => { window.__click.stepMs = 400; });

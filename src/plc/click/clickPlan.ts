@@ -11,7 +11,7 @@
 export interface ClickSelector { id?: string; name?: string; type?: string; index?: number }
 
 export interface ClickStep {
-  do: 'window' | 'menu' | 'click' | 'setText' | 'select' | 'keys' | 'wait' | 'note' | 'waitGone';
+  do: 'window' | 'menu' | 'click' | 'doubleClick' | 'setText' | 'select' | 'keys' | 'wait' | 'note' | 'waitGone' | 'waitUser';
   title?: string;
   find?: ClickSelector;
   text?: string;
@@ -89,6 +89,6 @@ export function saveSteps(steps: ClickStep[]): number[] {
   return steps.flatMap((s, i) => (
     (s.do === 'keys' && /\^\{?[sS]\}?|\{F12\}/.test(s.keys ?? ''))
     || (s.do === 'menu' && (s.path ?? []).some((p) => saveName.test(p)))
-    || ((s.do === 'click' || s.do === 'select') && saveName.test(s.find?.name ?? ''))
+    || ((s.do === 'click' || s.do === 'doubleClick' || s.do === 'select') && saveName.test(s.find?.name ?? ''))
       ? [i] : []));
 }
