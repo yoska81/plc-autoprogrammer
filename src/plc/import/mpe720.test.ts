@@ -17,7 +17,7 @@ import { readEmtp } from './emtp';
 import { importProgramFiles } from './index';
 import { runParse } from '../../workers/parseOps';
 import type { LadderElement, LadderOutput, Rung } from '../core/ladder';
-import { planUpgrade } from './upgrade';
+import { describeProgram, planUpgrade, questionsFor, readOnlyNote } from './upgrade';
 import { getProfile } from '../core/profiles';
 import { yaskawaCpuOf } from '../core/profiles/yaskawa';
 import { validateProgram } from '../core/validate';
@@ -141,6 +141,23 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   assert.deepEqual([...hmi.addresses.keys()], ['MB000237', 'MW00010', 'ML00500']);
   const { program } = importProgramFiles([{ name: 'demo_mp.YMW7', text: '', bytes: ymw }, { name: 'panel.emtp', text: '', bytes }]);
   assert.ok(program.report.notes.some((n) => /Touch panel .*2 screens \(Main, Alarms\)/.test(n)));
+  // The machine description written from the project: rack, drawings, I/O by word, axes, motion program, panel.
+  const d = describeProgram(program);
+  assert.match(d.overview ?? '', /^Existing machine program "demo_mp"/);
+  assert.match(d.overview ?? '', /Rack: DEMOCPU, DEMOIO\./);
+  assert.match(d.overview ?? '', /Drawings \(in scan order\):\n- H01 Demo conveyor\n- H01\.01 Demo sub/);
+  assert.match(d.overview ?? '', /- Inputs IB00000–IB0000F: Start button, Stop button, Reset button, Count sensor/);
+  assert.match(d.overview ?? '', /- Outputs OB00000–OB0000F: Run lamp, Horn, Done lamp, Busy lamp/);
+  assert.match(d.motion ?? '', /^Servo axes on MECHATROLINK \(1\): [^\n]*\n- axis 1 \(line 1\): SGDEMO-AMP01 with motor SGMDEMO-MOT01/);
+  assert.match(d.motion ?? '', /Motion programs \(1\), kept as written:\n- MPM001 "DEMO"; \(1 line: MOV \[A1\]1000;\)/);
+  assert.match(d.motion ?? '', /each servo axis is a Yaskawa servo drive with its servo motor, not a VFD or an AC motor/);
+  assert.match(d.sequence ?? '', /^H01 Demo conveyor\nH01\.01 Demo sub/, 'the drawings in scan order, each once');
+  assert.doesNotMatch(d.sequence ?? '', /H01 Demo conveyor:\n {2}- H01 Demo conveyor/, 'not the drawing name twice');
+  const qs = questionsFor(program);
+  assert.ok(qs.includes('The original program has motion program MPM001 "DEMO", 1 line. It is kept as written (shown under Motion and on the Upgrade page); the simulator can\'t run it. What does it do on the machine?'), 'the motion program is named, not pasted');
+  assert.ok(!qs.some((x) => /MOV \[A1\]/.test(x)), 'no raw motion code in a question');
+  assert.match(d.operator ?? '', /^Touch panel: EasyBuilder Pro 5\.07\.01 project with 2 screens \(Main, Alarms\)\./);
+  assert.deepEqual(program.source.panel, { vendor: 'weintek', software: 'EasyBuilder Pro 5.07.01', screens: ['Main', 'Alarms'] }, 'the panel project, for the brand rows');
   assert.ok(program.report.notes.some((n) => /3 PLC addresses: 1 of them appear in the ladder/.test(n)));
   assert.throws(() => importProgramFiles([{ name: 'panel.emtp', text: '', bytes }]), /touch-panel project/);
   console.log('emtp: ok');
@@ -188,13 +205,28 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   assert.deepEqual(plan.modules, []);
   assert.deepEqual(plan.io.map((p) => p.plcAddress).sort(), ['IB00000', 'IB00001', 'IB00002', 'IB00003', 'OB00000', 'OB00001', 'OB00002', 'OB00003']);
   assert.match(plan.original.cpuNote ?? '', /Yaskawa CPU-DEMO\(4axes\)\. The app cannot program it yet/);
-  assert.match(plan.original.cpuNote ?? '', /These are the Yaskawa modules: DEMOCPU, DEMOIO\. They stay with the original\. Choose the new PLC and the app picks its modules\./);
+  assert.match(plan.original.cpuNote ?? '', /These are the Yaskawa modules: DEMOIO\. They stay with the original\. Choose the new PLC and the app picks its modules\./, 'the CPU is not a module');
+  // The CPU-301's built-in functions are said apart from the rack's modules.
+  const note = readOnlyNote({ ...program.source, controller: 'CPU-301(16axes)', modules: ['CPU301(16)', 'CPU', '218IFD', 'SVC', 'SVR', 'M-EXECUTOR', 'LIO-01', '218IF-01'].map((catalog, slot) => ({ slot, catalog })) }, getProfile('yaskawa-mp'));
+  assert.match(note, /Built into the CPU-301: Ethernet \(218IFD\), MECHATROLINK-III \(SVC\), virtual axes \(SVR\), M-EXECUTOR\./);
+  assert.match(note, /These are the Yaskawa modules: LIO-01, 218IF-01\./, '218IF-01 is a real Ethernet module, not the built-in 218IFD');
   assert.match(plan.original.cpuNote ?? '', /Servo axes \(1\): axis 1 \(line 1\): SGDEMO-AMP01 with motor SGMDEMO-MOT01/);
   assert.doesNotMatch(JSON.stringify(plan), /CLICK|AutomationDirect|C0-\d/, 'nothing of a CLICK in the plan');
   const profile = getProfile(plan.plcId);
   assert.equal(profile.readOnly, true);
   const issues = validateProgram(plan.program, profile, new Set(plan.io.map((p) => p.plcAddress!)));
   assert.deepEqual(issues.filter((i) => i.severity === 'error' && /address/i.test(i.message)).map((i) => i.message), [], 'the program checks on its own registers');
+  // SEE calls and unread codes are the PLC's own instructions here: "Not understood" warnings, never "cannot run on".
+  assert.deepEqual(issues.filter((i) => /cannot run on/.test(i.message)).map((i) => i.message), [], 'no "cannot run on" on its own Yaskawa');
+  assert.ok(issues.some((i) => i.severity === 'warning' && /Not understood: check by hand \(SEE H01\.01\)/.test(i.message)));
+  // A project saved before (its boxes tagged 'yaskawa') is the same family.
+  const old = { ...plan.program, rungs: plan.program.rungs.map((r) => ({ ...r, outputs: r.outputs.map((o) => (o.type === 'RAW' ? { ...o, vendor: 'yaskawa' } : o)) })) };
+  assert.deepEqual(validateProgram(old, profile, new Set(plan.io.map((p) => p.plcAddress!))).filter((i) => /cannot run on/.test(i.message)), [], 'older tag: still its own PLC');
+  // Written but never read by the rungs: on the machine's own PLC its panel may read it (said, not "does nothing").
+  assert.ok(issues.some((i) => /DS2 is written but never read by the program: it does nothing unless the touch panel reads it\./.test(i.message)));
+  assert.ok(!issues.some((i) => /this logic does nothing/.test(i.message)));
+  // On another PLC they are errors, named as Yaskawa MPE720.
+  assert.ok(validateProgram(plan.program, getProfile('siemens-s7'), new Set()).some((i) => /from Yaskawa MPE720 cannot run on/.test(i.message)));
   assert.equal(yaskawaCpuOf('CPU-301(16axes)').id, 'CPU-301');
   assert.equal(yaskawaCpuOf('MP3300').id, 'MP3300');
   assert.equal(profile.parseAddress('IB0001F')?.kind, 'input');
