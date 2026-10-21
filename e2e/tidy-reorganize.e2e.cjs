@@ -30,7 +30,8 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByRole('button', { name: 'Reorganize program…' }).click();
   const panel = page.getByRole('group', { name: 'Reorganize' });
   await panel.waitFor({ timeout: 10000 });
-  check(await panel.getByRole('checkbox').count() === 7, 'each change has its own checkbox');
+  check(await panel.getByRole('checkbox').count() === 8, 'each change has its own checkbox (the example has one long rung to split)');
+  check(!(await panel.getByLabel(/Split \d+ long rung/).isChecked().catch(() => true)), 'splitting long rungs is off by default');
   check(!(await panel.getByLabel(/registers or retentive memory/).isChecked().catch(() => true)) && !(await panel.getByLabel(/can never be true/).isChecked().catch(() => true)), 'registers and never-true removals are off by default');
   await panel.getByRole('button', { name: 'Check and propose' }).click();
   const approve = page.getByRole('button', { name: 'Approve', exact: true });
