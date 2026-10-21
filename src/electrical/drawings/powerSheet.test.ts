@@ -43,6 +43,8 @@ const destroyed = (c: DrawingContext) => designWarnings(c).filter((w) => /destro
 const lowBreaker = (c: DrawingContext) => designWarnings(c).filter((w) => /V bus: choose a breaker/.test(w));
 assert.equal(destroyed(withParts('480VAC-3PH', 'C0-01AC')).length, 1, 'a 100-240 VAC supply fed L1-L2 at 480 V');
 assert.deepEqual(destroyed(withParts('480VAC-3PH', 'ABL8RPS24050')), [], '"100-120VAC L-N or 200-500VAC L-L" takes 480 V L-L');
+assert.deepEqual(destroyed(withParts('240VAC-3PH', '6EP3334-8SB00-0AY0')), [], '"120/230 VAC" auto-range takes 240 V');
+assert.equal(destroyed(withParts('480VAC-3PH', '6EP3334-8SB00-0AY0')).length, 1, 'but not 480 V');
 assert.deepEqual(lowBreaker(withParts('400VAC-3PH', 'ABL8RPS24050', '5SY4106-7')), [], 'a 230/400 VAC breaker on a 400 V bus');
 assert.equal(lowBreaker(withParts('480VAC-3PH', 'ABL8RPS24050', '5SY4106-7')).length, 1, 'a 230/400 VAC breaker on a 480 V bus');
 
