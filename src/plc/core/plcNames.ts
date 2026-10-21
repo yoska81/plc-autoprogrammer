@@ -41,6 +41,8 @@ export function plcNameLookup(profile: PlcProfile, program: LadderProgram, ctx: 
       const plcTag = /^[XY]\d+$/.test(a) || t.scope === 'PLC tags';
       return { name: plcTag ? `"${member}"` : `#${member}`, ...(io ? { io } : {}) };
     }
+    // Yaskawa: the register is the name (IB00000, MB000000); the I/O address would only repeat it.
+    if (profile.id === 'yaskawa-mp') return { name: t.name };
     return { name: t.name, ...(io ? { io } : {}) };
   };
 }
