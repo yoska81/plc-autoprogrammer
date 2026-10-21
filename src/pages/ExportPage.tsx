@@ -8,7 +8,7 @@ import { buildEngineeringPdf } from '../deliverables/engineering';
 import { buildProgramListingPdf } from '../deliverables/programListingPdf';
 import { hmiReadme, hmiTagCsv, needsHmiTagList } from '../deliverables/hmiTags';
 import { hmiImagesNote, hmiMissingLine, type HmiImageFailure } from '../deliverables/hmiImages';
-import { buildDrawingsPdf, buildEverythingZip, dataUrlToBlob, buildHmiImages, buildHmiPdf, buildMachiningPdf, ioCsv, programFiles, saveBlob } from '../deliverables/files';
+import { buildDrawingsPdf, buildEverythingZip, dataUrlToBlob, buildHmiImages, buildHmiPdf, buildMachiningPdf, ioCsv, programFiles, programDownloads, downloadBlob, saveBlob } from '../deliverables/files';
 import { bomCsv, terminalPlanCsv } from '../electrical/derive';
 import { wireListCsvWithNotes } from '../edits/lists';
 import { Spinner } from '../components/common';
@@ -336,8 +336,8 @@ export default function ExportPage() {
                   </div>
                 )}
                 <div className="flex flex-wrap gap-2">
-                  {progFiles.map((f) => (
-                    <B busy={busy} key={f.name} label={f.name} disabled={progErrors.length > 0 && !exportAnyway} onClick={run(f.name, () => saveBlob(f.name, new Blob([f.content], { type: 'text/plain' })))} />
+                  {programDownloads(progFiles).map((d) => (
+                    <B busy={busy} key={d.name} label={d.name} disabled={progErrors.length > 0 && !exportAnyway} onClick={run(d.name, async () => saveBlob(d.name, await downloadBlob(d)))} />
                   ))}
                   {p.profile.language === 'ladder' && <B busy={busy} label="Program listing PDF" onClick={run('Program listing PDF', async () => { const pdf = await buildProgramListingPdf(p); if (pdf) saveBlob(`${p.fileBase}_program.pdf`, pdf); })} />}
                 </div>

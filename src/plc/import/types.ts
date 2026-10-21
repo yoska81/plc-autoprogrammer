@@ -69,7 +69,11 @@ export interface ForeignRoutine {
  * One network axis as the project file has it: MECHATROLINK line (circuit) and axis number, the drive and motor
  * model when the file names them. 'virtual': no drive (an SVR virtual axis).
  */
-export interface NetworkAxisImport { line: number; axis: number; drive?: string; motor?: string; kind: 'servo' | 'virtual' }
+export interface NetworkAxisImport {
+  line: number; axis: number; drive?: string; motor?: string; kind: 'servo' | 'virtual';
+  /** MECHATROLINK station address (hex, "13") and the axis within it (0 / 1 on a two-axis drive), when the file has them. */
+  station?: string; stationAxis?: number;
+}
 
 export interface ForeignProgram {
   format: SourceFormat;

@@ -29,7 +29,13 @@ assert.ok(click[6].online && click[0].link?.url.startsWith('https://www.automati
 assert.match(loadGuide(base('click', clickFiles, { errors: 2 }))[3].text.join(' '), /checker finds 2 errors/);
 // Other brands: their import path and their files.
 assert.deepEqual(loadGuide(base('logix', ['M.L5X', 'M_logix_io.csv', 'M_program.json'])).flatMap((s) => s.files ?? []), ['M.L5X', 'M_logix_io.csv']);
-assert.match(loadGuide(base('siemens-s7', ['M_s7.scl', 'M_PLCTags.sdf']))[0].text[0], /Generate blocks from source/);
+// Siemens: PLC tags first, then the ladder blocks (one ZIP, Version control interface) with the SCL source as the text option.
+const s7 = loadGuide(base('siemens-s7', ['M_TIA_LAD.zip', 'M_s7.scl', 'M_PLCTags.sdf']));
+assert.match(s7[0].text[0], /PLC tags > Import/);
+assert.deepEqual(s7[0].files, ['M_PLCTags.sdf']);
+assert.match(s7[1].text[0], /Version control interface > Add new workspace/);
+assert.match(s7[1].text.join(' '), /Generate blocks from source/);
+assert.deepEqual(s7[1].files, ['M_TIA_LAD.zip', 'M_s7.scl']);
 assert.match(loadGuide(base('micro800', ['M_micro800.st', 'M_micro800_variables.csv']))[0].text[0], /paste the \.st file/);
 const uni = loadGuide(base('unitronics-unistream', ['M_unilogic.st', 'M_unilogic_io_links.csv', 'M_program.json'], { importSteps: ['Import ST Code From File …', 'Call Machine_Logic …'] }));
 assert.deepEqual(uni.map((s) => s.text[0]), ['Import ST Code From File …', 'Call Machine_Logic …']);

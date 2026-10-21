@@ -12,6 +12,8 @@ import { toMicro800St } from './profiles/micro800';
 import { buildScl, unusedIoTags } from './profiles/siemens';
 import { buildUniLogicSt } from './profiles/unilogic';
 import { visiOperands } from './profiles/visilogic';
+import { layoutFor, yaskawaName } from './profiles/yaskawa';
+import { rungAddresses } from './ladder';
 
 export interface PlcTagName {
   /** As the PLC software shows it: 'Start_PB', 'Jam_Timer.DN', '"Machine_DB".Run', 'C1001'. */
@@ -81,6 +83,19 @@ export function plcTagNames(profile: PlcProfile, program: LadderProgram, ctx: Ex
         out.set(b, { name, scope: 'VisiLogic', dataType: v.type === 'I' || v.type === 'O' || v.type === 'SB' || v.type === 'MB' || n ? 'Bit' : v.type });
         // Timer / counter current values (a timer counts down from its preset).
         if (n) out.set(`${n[1] === 'T' ? 'TD' : 'CTD'}${n[2]}`, { name: `${v.operand} current`, scope: 'VisiLogic', dataType: n[1] === 'T' ? 'Timer' : 'Counter' });
+      }
+      break;
+    }
+    case 'yaskawa-mp': {
+      // MP registers in MPE720's form: an imported register as it was, I / O by module, memory by the project's layout.
+      const all = new Set<string>([...program.tags.map((t) => t.address), ...ctx.extraTags.map((t) => t.address), ...ctx.addresses.values(),
+        ...program.rungs.flatMap((r) => [...rungAddresses(r), ...r.outputs.flatMap((o) => (o.type === 'MATH' ? o.expression.match(/\b[A-Z]{1,3}\d+\b/gi) ?? [] : []))])].map((a) => a.trim().toUpperCase()).filter((a) => a && !/^-?\d/.test(a)));
+      const at = { cpuId: ctx.cpuId, modules: ctx.modules, tags: program.tags, layout: layoutFor(program, ctx.yaskawaMemory) };
+      for (const a of all) {
+        const name = yaskawaName(a, at);
+        if (!name) continue;
+        const type = profile.dataTypeOf?.(a) ?? 'BOOL';
+        out.set(a, { name, scope: 'MPE720', dataType: type, ...(/^[IO][BW]/.test(name) ? { io: name } : {}) });
       }
       break;
     }
