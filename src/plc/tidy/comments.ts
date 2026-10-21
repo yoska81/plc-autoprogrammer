@@ -7,7 +7,7 @@
 import type { ProjectSnapshot } from '../../deliverables/collect';
 import { programInfo, type ProgramInfo } from '../../deliverables/docs/program';
 import { rungWrites, type LadderOutput, type LadderProgram, type Rung } from '../core/ladder';
-import { approxTokens, INPUT_TOKENS, programParts } from '../../lib/ai/budget';
+import { programParts } from '../../lib/ai/budget';
 import { callClaude } from '../../lib/ai/anthropic';
 import { callOpenAI } from '../../lib/ai/openai';
 import type { AIConfig } from '../ai/ladderAI';
@@ -129,15 +129,25 @@ For each item asked, write one or two short plain sentences: what it does, why (
 Use the names given (I/O descriptions, tag names), not only addresses. Do not invent devices or behaviour that the logic does not show.
 Answer only for the keys listed under "Write comments for", with the exact key.`;
 
+/** One rung as the AI reads it: its key, its place, its comment if kept, and its logic in words (never the program JSON). */
+function rungLine(r: Rung, info: ProgramInfo, t: Targets): string {
+  const self = r.outputs.find((o): o is Extract<LadderOutput, { address: string }> => 'address' in o)?.address;
+  return `rung:${r.id} (rung ${info.rungNo(r)}${r.block ? `, block ${r.block}` : ''})${r.comment && !t.rungs.has(r.id) ? ` [comment: ${r.comment}]` : ''}: ${r.outputs.map((o) => outputText(o, info)).join(', ') || 'no outputs'} WHEN ${r.branches.length ? info.conditionText(r, self) : 'always'}`;
+}
+
+/** Characters of rung text in one request: about 100 000 (≈ 30 000 tokens), so a big program takes few calls. */
+export const PART_CHARS = 100_000;
+
+/** Tokens the answer of a part may take: about 70 per comment asked, plus room to think (low effort); never 64 000. */
+export const answerTokens = (keys: number) => Math.min(16_000, Math.max(2_000, 1_500 + 70 * keys));
+
 /** One part's request: the rungs (logic in words and the listing), the blocks and tags to comment. */
 function partRequest(p: ProjectSnapshot, info: ProgramInfo, rungs: Rung[], t: Targets): { text: string; keys: Set<string> } {
   const keys = new Set<string>();
   const lines: string[] = [];
   for (const r of rungs) {
-    const self = r.outputs.find((o): o is Extract<LadderOutput, { address: string }> => 'address' in o)?.address;
-    const k = `rung:${r.id}`;
-    if (t.rungs.has(r.id)) keys.add(k);
-    lines.push(`${k} (rung ${info.rungNo(r)}${r.block ? `, block ${r.block}` : ''})${r.comment && !t.rungs.has(r.id) ? ` [comment: ${r.comment}]` : ''}: ${r.outputs.map((o) => outputText(o, info)).join(', ') || 'no outputs'} WHEN ${r.branches.length ? info.conditionText(r, self) : 'always'}`);
+    if (t.rungs.has(r.id)) keys.add(`rung:${r.id}`);
+    lines.push(rungLine(r, info, t));
   }
   const blockIds = new Set(rungs.map((r) => r.block).filter(Boolean));
   for (const b of p.ladder.blocks ?? []) if (blockIds.has(b.id) && t.blocks.has(b.id)) { keys.add(`block:${b.id}`); lines.push(`block:${b.id}: block "${b.name}"`); }
@@ -149,11 +159,12 @@ function partRequest(p: ProjectSnapshot, info: ProgramInfo, rungs: Rung[], t: Ta
   return { keys, text: `Program of ${p.projectName || 'the machine'} (${p.profile.name}).\n\n${lines.join('\n')}\n\nWrite comments for: ${[...keys].join(', ')}` };
 }
 
-async function ask(ai: AIConfig, content: string): Promise<{ key: string; text: string }[]> {
+async function ask(ai: AIConfig, content: string, keys: number): Promise<{ key: string; text: string }[]> {
   const messages = [{ role: 'user' as const, content }];
+  const maxTokens = answerTokens(keys);
   const text = ai.provider === 'anthropic'
-    ? (await callClaude({ ...ai, task: 'program', system: SYSTEM, messages, schema: COMMENTS_SCHEMA })).text
-    : await callOpenAI({ ...ai, system: SYSTEM, messages, schema: COMMENTS_SCHEMA });
+    ? (await callClaude({ ...ai, task: 'comments', system: SYSTEM, messages, schema: COMMENTS_SCHEMA, maxTokens })).text
+    : await callOpenAI({ ...ai, system: SYSTEM, messages, schema: COMMENTS_SCHEMA, maxTokens });
   const parsed = JSON.parse(text) as { items?: { key: string; text: string }[] };
   return Array.isArray(parsed.items) ? parsed.items : [];
 }
@@ -166,7 +177,11 @@ export async function addComments(p: ProjectSnapshot, o: { ai?: AIConfig; rewrit
   const t = targetsOf(p.ladder, Boolean(o.rewrite));
   if (!o.ai?.apiKey || !p.ladder.rungs.length) return withComments(p, t, new Map(), [], 0);
   const info = programInfo(p);
-  const parts = programParts(p.ladder, (r) => 1.5 * approxTokens(JSON.stringify(r)), Math.floor(INPUT_TOKENS / 2))
+  // Parts measured in the request's own text (the rung lines), about PART_CHARS each, whole blocks together.
+  // A rung brings its own line and the lines of the blank tags it writes (asked in its part).
+  const tagLine = new Map(p.ladder.tags.filter((tg) => t.tags.has(tg.address.toUpperCase())).map((tg) => [tg.address.toUpperCase(), `tag:${tg.address.toUpperCase()}: ${tg.nickname} — ${tagComment(tg.address, info)}`.length + 1]));
+  const cost = (r: Rung) => rungLine(r, info, t).length + 1 + [...new Set(rungWrites(r).map((a) => a.toUpperCase()))].reduce((n, a) => n + (tagLine.get(a) ?? 0), 0);
+  const parts = programParts(p.ladder, cost, PART_CHARS)
     .filter((rs) => rs.some((r) => t.rungs.has(r.id) || (r.block && t.blocks.has(r.block)) || rungWrites(r).some((a) => t.tags.has(a.toUpperCase()))));
   const got = new Map<string, string>();
   const notes: string[] = [];
@@ -175,7 +190,7 @@ export async function addComments(p: ProjectSnapshot, o: { ai?: AIConfig; rewrit
     const req = partRequest(p, info, rungs, t);
     if (!req.keys.size) continue;
     try {
-      for (const it of await ask(o.ai, req.text)) {
+      for (const it of await ask(o.ai, req.text, req.keys.size)) {
         const text = typeof it.text === 'string' ? it.text.replace(/\s+/g, ' ').trim() : '';
         // Only the keys asked for, never another rung's comment; the text short and in one piece.
         if (req.keys.has(it.key) && text) got.set(it.key, cut(text));
