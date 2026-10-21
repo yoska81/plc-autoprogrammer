@@ -269,6 +269,13 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
   const { buildProgramListingPdf } = await import('./programListingPdf');
   const listing = await buildProgramListingPdf(p);
   if (listing) zip.file(`plc/${p.fileBase}_program_listing.pdf`, listing);
+  // How the program works, one section per block (with the AI's paragraphs when they were asked for).
+  if (p.profile.language === 'ladder' && p.ladder.rungs.length) {
+    const [{ explainProgram }, { explainSummaries }, { buildExplanationPdf, buildExplanationDocx }] = await Promise.all([import('../plc/tidy/explain'), import('../plc/tidy/explainStore'), import('../plc/tidy/explainExport')]);
+    const x = explainProgram(p, explainSummaries());
+    zip.file(`plc/${p.fileBase}_how_the_program_works.pdf`, await buildExplanationPdf(p, x));
+    zip.file(`plc/${p.fileBase}_how_the_program_works.docx`, await buildExplanationDocx(x));
+  }
   // Labels and the complete package PDF (reuses the PDFs built above).
   const { addPackageToZip } = await import('./fullPackage');
   await addPackageToZip(zip, p, pre, onProgress);

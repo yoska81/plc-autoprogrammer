@@ -42,7 +42,7 @@ function logicOf(p: LadderProgram): string {
 export const sameLogic = (a: LadderProgram, b: LadderProgram) => logicOf(a) === logicOf(b);
 
 /** Plain words for one output instruction. */
-function outputText(o: LadderOutput, info: ProgramInfo): string {
+export function outputText(o: LadderOutput, info: ProgramInfo): string {
   switch (o.type) {
     case 'OUT': return `turns on ${info.ref(o.address)}`;
     case 'SET': return `latches ${info.ref(o.address)} ON`;
