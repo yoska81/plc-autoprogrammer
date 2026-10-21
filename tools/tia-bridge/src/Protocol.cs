@@ -82,6 +82,12 @@ namespace TiaBridge
             var inner = err;
             while (inner.InnerException != null) inner = inner.InnerException;
             if (inner is BridgeError) return inner.Message;
+            // TIA Portal refused the connection: the user answered No, or is not allowed to use Openness
+            if (inner.GetType().Name == "EngineeringSecurityException")
+                return "TIA Portal did not allow ISA Auto Programmer to connect. When TIA Portal asks whether to allow it, answer Yes; and check that your Windows user is in the \"Siemens TIA Openness\" group (Check this PC).";
+            // Openness itself missing from TIA Portal (a version the bridge does not know)
+            if (inner is MissingMethodException || inner is MissingMemberException)
+                return $"This TIA Portal version does not offer what the app needs ({inner.Message}). Send us the log (Send to TIA Portal shows where it is).";
             return $"TIA Portal reported: {inner.Message}";
         }
     }

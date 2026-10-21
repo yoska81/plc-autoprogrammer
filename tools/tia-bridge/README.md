@@ -33,11 +33,15 @@ on (`BridgeError`), or "TIA Portal reported: …" with the innermost cause.
 |---|---|
 | `ping` | `{pong: true}` |
 | `detect` | `{ready, installed: ["V19"], openness: [{version, assemblyVersion, dll}], inOpennessGroup, user, steps: [...]}`: what this PC has, and what to do when something is missing (install TIA Openness; add the user to the "Siemens TIA Openness" group, then sign out and in). |
+| `portals` `{version?}` | `{version, portals: [{processId, project}]}`: the TIA Portals running now. |
+| `open` `{version?, processId?, dir?, name}` | Attaches to that TIA Portal (keeping its open project) or starts one; opens the project `dir\name` or creates it (default folder: Documents\ISA Auto Programmer\TIA). `{version, project, plc}`. TIA Portal asks the user once whether to allow the bridge; a refusal comes back in words. |
+| `firmware` `{orderNumber}` | `{versions: ["V4.6", …]}` from TIA Portal's hardware catalog, newest first. Openness cannot read the firmware of a connected PLC: the user picks it (the CPU's label, or Accessible devices). |
+| `plc` `{orderNumber, firmware?, name, modules: [{orderNumber, slot}]}` | Adds the CPU (newest firmware unless given) and its local modules. A project that already has this CPU keeps it; another CPU is refused in words. `{plc, added, problems}` (a module not in the catalog or not fitting its slot is a problem, not a failure). Saves. |
+| `tags` `{tags: [{name, dataType, logicalAddress, comment}]}` | Writes them into the app's own tag table "ISA Auto Programmer" (created when missing; the user's tables are not touched): new ones created, existing ones updated. `{table, created, updated, failed: [{name, error}]}`. Saves. |
 
-Coming next (one pull request each): attach to a running TIA Portal or create a project with the CPU and
-modules; PLC tags; LAD blocks (SimaticML from the program export), with SCL as the fallback; compile with the
-messages mapped to rungs; download to the PLC from a confirm screen only; read the program back for the
-Upgrade page.
+Coming next (one pull request each): LAD blocks (SimaticML from the program export), with SCL as the fallback;
+compile with the messages mapped to rungs; download to the PLC from a confirm screen only; read the program back
+for the Upgrade page.
 
 ## Build and test
 
@@ -73,3 +77,14 @@ Run on each TIA Portal version we support (V16 … V20) before a release; note t
 5. **Bridge missing**: rename `resources\tia-bridge\TiaBridge.exe` → the dialog says the bridge is not in this
    installation (no crash); rename it back.
 6. **Browser**: the web version (preview) has no Send to TIA Portal button; a CLICK project has none either.
+7. **New project**: no TIA Portal running → Open TIA Portal → TIA Portal starts, asks to allow ISA Auto Programmer
+   (answer Yes), and the project appears in Documents\ISA Auto Programmer\TIA\<project>. Answer No once: the
+   dialog says TIA Portal did not allow it.
+8. **Firmware**: the list matches the versions TIA Portal offers for that CPU (Device view › change device);
+   the newest is chosen; pick an older one → the CPU in TIA has that firmware.
+9. **PLC and modules**: an S7-1200 with two signal modules → CPU in slot 1, modules in slots 2 and 3 (Device
+   view); a module TIA does not know is listed as a problem; the project is saved.
+10. **Tags**: the table "ISA Auto Programmer" has every tag of the .sdf export with address and comment; run it
+    again → 0 new, all updated; a tag on an address the CPU does not have is listed with TIA's reason.
+11. **Running TIA Portal**: open a project with another CPU in TIA Portal → Send to TIA Portal offers that
+    TIA Portal first; after Open it says the project already has another PLC and changes nothing.

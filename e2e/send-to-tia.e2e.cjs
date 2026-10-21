@@ -1,7 +1,9 @@
 // "Send to TIA Portal" on the Program page, with a fake desktop bridge in the page (window.isaDesktop.tia;
 // the real one is electron/tiaBridge.cjs): hidden in the browser and for CLICK; on a Siemens project it checks the
-// PC with live progress and says what to fix (Openness group), or that the PC is ready; a bridge error in plain
-// words. Real TIA Portal is tried by hand: tools/tia-bridge/README.md.
+// PC with live progress and says what to fix (Openness group); when ready, opens TIA Portal (a new project, or the
+// running one with its project), offers the CPU's firmware (newest first) and adds the PLC, its modules and the PLC
+// tags, with what TIA refused; a project with another PLC is not touched; a bridge error in plain words.
+// Real TIA Portal is tried by hand: tools/tia-bridge/README.md.
 //   npm run dev -- --port 5214 &  ;  BASE_URL=http://localhost:5214 node e2e/send-to-tia.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const { useAppModules } = require('./lib/appModule.cjs');
@@ -12,18 +14,31 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 
 /** The fake bridge: window.__tia.detect is what the PC has, window.__tia.fail an error to throw; calls are logged. */
 const FAKE = () => {
-  window.__tia = { calls: [], detect: null, fail: null };
+  window.__tia = { calls: [], detect: null, fail: null, portals: [], plcInProject: null };
   const listeners = new Set();
+  const answer = (cmd, args) => {
+    const t = window.__tia;
+    if (cmd === 'detect') return t.detect;
+    if (cmd === 'portals') return { version: 'V19', portals: t.portals };
+    if (cmd === 'open') {
+      if (args.processId) { const x = t.portals.find((q) => q.processId === args.processId); return { version: 'V19', project: x.project, plc: t.plcInProject }; }
+      return { version: 'V19', project: `C:\\Users\\tech\\Documents\\ISA Auto Programmer\\TIA\\${args.name}\\${args.name}.ap19`, plc: null };
+    }
+    if (cmd === 'firmware') return { orderNumber: args.orderNumber, versions: ['V4.6', 'V4.5', 'V4.4'] };
+    if (cmd === 'plc') return { plc: { name: args.name, orderNumber: '6ES7 214-1AG40-0XB0', firmware: args.firmware }, added: true, problems: [] };
+    if (cmd === 'tags') return { table: 'ISA Auto Programmer', created: args.tags.length - 1, updated: 0, failed: [{ name: args.tags[0].name, error: 'The address is outside the CPU\'s range.' }] };
+    return null;
+  };
   window.isaDesktop = {
     isDesktop: true, version: 'test', print: async () => ({ ok: true }),
     tia: {
-      call: async (cmd, args) => {
-        window.__tia.calls.push(cmd);
+      call: async (cmd, args = {}) => {
+        window.__tia.calls.push({ cmd, args });
         await new Promise((r) => setTimeout(r, 100));
-        listeners.forEach((cb) => cb({ id: 1, text: 'Looking for TIA Portal and TIA Openness…' }));
-        await new Promise((r) => setTimeout(r, 600));
+        listeners.forEach((cb) => cb({ id: 1, text: cmd === 'detect' ? 'Looking for TIA Portal and TIA Openness…' : `Working on ${cmd}…` }));
+        await new Promise((r) => setTimeout(r, 300));
         if (window.__tia.fail) throw new Error(window.__tia.fail);
-        return cmd === 'detect' ? window.__tia.detect : null;
+        return answer(cmd, args);
       },
       logPath: async () => 'C:\\Users\\tech\\AppData\\Roaming\\ISA Auto Programmer\\logs\\tia-bridge.log',
       onProgress: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
@@ -81,16 +96,45 @@ const READY = { ...NOT_IN_GROUP, ready: true, inOpennessGroup: true, steps: [] }
   check(/TIA Portal V19/.test(await dialog.innerText()) && /not in the "Siemens TIA Openness" group/.test(steps) && /sign out of Windows/.test(steps), 'not in the Openness group: the steps say what to do');
   check(/tia-bridge\.log/.test(await dialog.innerText()), 'the log path for support');
 
-  await page.evaluate((d) => { window.__tia.detect = d; }, READY);
+  // Ready: TIA Portal is not running → start it with a new project, newest firmware, PLC and tags.
+  await page.evaluate((d) => { window.__tia.detect = d; window.__tia.portals = []; }, READY);
   await dialog.getByRole('button', { name: 'Check again' }).click();
-  await dialog.getByTestId('tia-ready').waitFor({ timeout: 5000 });
-  check(/This PC is ready/.test(await dialog.getByTestId('tia-ready').innerText()), 'check again: ready');
+  await dialog.getByTestId('tia-open').waitFor({ timeout: 5000 });
+  check(/Start TIA Portal V19 with a new project "Conveyor/.test(await dialog.getByTestId('tia-open').innerText()), 'ready: start TIA Portal with a new project named after the project');
+  await dialog.getByTestId('tia-open-button').click();
+  await dialog.getByTestId('tia-opened').waitFor({ timeout: 5000 });
+  check(/ISA Auto Programmer\\TIA\\Conveyor/.test(await dialog.getByTestId('tia-opened').innerText()), 'opened: the new project\'s path');
+  const fw = dialog.getByLabel('Firmware');
+  await fw.waitFor({ timeout: 5000 });
+  check(await fw.inputValue() === 'V4.6' && /V4\.6 \(newest\)/.test(await fw.innerText()), 'firmware: the newest by default');
+  await fw.selectOption('V4.4');
+  await dialog.getByTestId('tia-send-button').click();
+  await dialog.getByTestId('tia-tags-done').waitFor({ timeout: 5000 });
+  const calls = await page.evaluate(() => window.__tia.calls);
+  const plcCall = calls.find((c) => c.cmd === 'plc');
+  const tagsCall = calls.find((c) => c.cmd === 'tags');
+  log('plc:', JSON.stringify(plcCall.args), '| tags:', tagsCall.args.tags.length);
+  check(plcCall.args.orderNumber === '6ES7214-1AG40-0XB0' && plcCall.args.firmware === 'V4.4', 'the PLC with the chosen firmware');
+  check(tagsCall.args.tags.length > 5 && tagsCall.args.tags.every((t) => t.name && t.dataType && /^%[IQM]/.test(t.logicalAddress)), 'the PLC tags with their addresses');
+  check(/Added the PLC PLC_1 \(6ES7 214-1AG40-0XB0, firmware V4\.4\)/.test(await dialog.getByTestId('tia-plc-done').innerText()), 'PLC added, said');
+  const tagsText = await dialog.getByTestId('tia-tags-done').innerText();
+  check(new RegExp(`${tagsCall.args.tags.length - 1} new, 0 updated, 1 not written`).test(tagsText) && /outside the CPU's range/.test(tagsText), 'tags: counts and what TIA refused');
+
+  // A running TIA Portal whose project has another PLC: offered, opened, and not touched.
+  await page.evaluate(() => { window.__tia.portals = [{ processId: 4242, project: 'D:\\Line\\Line.ap19' }]; window.__tia.plcInProject = { name: 'PLC_9', orderNumber: '6ES7 215-1AG40-0XB0', firmware: 'V4.5' }; window.__tia.calls = []; });
+  await dialog.getByRole('button', { name: 'Check again' }).click();
+  await dialog.getByTestId('tia-open').waitFor({ timeout: 5000 });
+  check(await dialog.getByRole('radio', { name: /The TIA Portal that is open with D:\\Line\\Line\.ap19/ }).isChecked(), 'the running TIA Portal is offered first');
+  await dialog.getByTestId('tia-open-button').click();
+  await dialog.getByTestId('tia-send').waitFor({ timeout: 5000 });
+  check(/already has another PLC \(6ES7 215-1AG40-0XB0\)/.test(await dialog.getByTestId('tia-send').innerText()) && await dialog.getByTestId('tia-send-button').count() === 0, 'another PLC in the project: said, nothing sent');
+  check((await page.evaluate(() => window.__tia.calls)).find((c) => c.cmd === 'open').args.processId === 4242, 'attached to the running one');
 
   await page.evaluate(() => { window.__tia.fail = 'The TIA Portal bridge stopped (exit code 3). Try again; the log is at C:\\logs\\tia-bridge.log.'; });
   await dialog.getByRole('button', { name: 'Check again' }).click();
   await dialog.getByRole('alert').waitFor({ timeout: 5000 });
   check(/bridge stopped \(exit code 3\)/.test(await dialog.getByRole('alert').innerText()), 'a bridge error in plain words');
-  check((await page.evaluate(() => window.__tia.calls)).every((c) => c === 'detect'), 'only detect was asked');
+  check(/tia-bridge\.log/.test(await dialog.innerText()), 'the log path for support');
   await dialog.getByRole('button', { name: 'Close' }).click();
   check(await dialog.count() === 0, 'closes');
 
