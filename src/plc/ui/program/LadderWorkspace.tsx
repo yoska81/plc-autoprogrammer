@@ -44,12 +44,15 @@ import { addComments } from '../../tidy/comments';
 import { applyReorganize, externalAddresses, planReorganize, type ReorgPlan, type SectionId } from '../../tidy/reorganize';
 import { equivalenceSummary } from '../../tidy/equivalence';
 import { checkEquivalenceOffThread } from '../../tidy/equivalenceOffThread';
+import { explainWithAi } from '../../tidy/explain';
+import { explainSummaries, saveExplainSummaries } from '../../tidy/explainStore';
+import ExplainPanel from './ExplainPanel';
 import SpeakButton from '../../../voice/SpeakButton';
 import { usePlcNames } from '../ladder/plcNames';
 import { useProjectStore } from '../../../store/useProjectStore';
 import { ptoPointsFor } from '../../../electrical/highSpeedIo';
 
-type Tab = 'describe' | 'fix' | 'history';
+type Tab = 'describe' | 'fix' | 'explain' | 'history';
 
 interface Props {
   ai: AIConfig;
@@ -346,6 +349,17 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     }, false);
   };
 
+  /** Explain with AI: a paragraph per block, saved with the project (kept while the block's logic stays the same). */
+  const handleExplainAi = () => runAI('program-revise', 'Explain the program', (signal, stage) =>
+    explainWithAi(collectProject(), { ...ai, signal }, (done, total) => stage(`part ${Math.min(done + 1, total)} of ${total}`)), (r) => {
+    saveExplainSummaries({ ...explainSummaries(), ...r.summaries });
+    if (r.notes.length) setError(r.notes.join(' '));
+  });
+
+  /**
+   * Add comments: every blank rung comment, block description and tag comment in plain words (the AI's with a key,
+   * else from the I/O names and the cross-reference). Only comments change; it comes as a proposal to approve.
+   */
   const handleComments = (rewrite: boolean) => {
     if (rewrite && !confirm('Rewrite every comment of the program, also the ones already there? You approve the result first, and the current program is kept in History.')) return;
     setTab('fix');
@@ -422,6 +436,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
         <div className="flex border-b border-gray-200">
           {tabButton('describe', 'Build')}
           {tabButton('fix', 'Change')}
+          {tabButton('explain', 'Explain')}
           {tabButton('history', `History (${versions.length})`)}
         </div>
 
@@ -516,6 +531,10 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             </>
           )}
 
+          {tab === 'explain' && (
+            <ExplainPanel aiReady={ready} busy={isGenerating} onExplainWithAi={handleExplainAi}
+              onShowBlock={(id) => { setBlock(id || GENERAL); if (narrow) setPhonePane('ladder'); }} />
+          )}
           {tab === 'history' && (
             <>
               {!versions.length && <p className="text-sm text-gray-500">A copy of the program is saved here before every AI change, new generation or restore.</p>}
