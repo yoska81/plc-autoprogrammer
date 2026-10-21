@@ -65,6 +65,18 @@ static class Tests
             }
             return created;
         }
+        public List<string> Imported = new List<string>();
+        public CompileResult Compiled = new CompileResult();
+        public void ImportBlocks(IList<BlockFile> files, Action<string> progress, Action<string, string> failed)
+        {
+            foreach (var f in files)
+            {
+                progress($"Importing {f.Name}…");
+                if (f.Text.Contains("BROKEN")) failed(f.Name, "The XML does not match the schema of this TIA Portal version.");
+                else Imported.Add($"{f.Kind}:{f.Name}");
+            }
+        }
+        public CompileResult Compile() { Calls.Add("compile"); return Compiled; }
         public void Save() => Calls.Add("save");
     }
 
@@ -279,6 +291,49 @@ static class Tests
             Eq("6ES7 214-1AG40-0XB0", Openness.TypeOrder("6ES7 214-1AG40-0XB0"));
             Eq("V4.10|V4.9|V4.2", string.Join("|", new[] { "V4.2", "V4.10", "V4.9" }.OrderByDescending(v => v, Openness.Firmware_)));
             Eq("Line_ A_B", Commands.Safe("Line: A/B"));
+        });
+
+        Test("blocks: imported in the order sent (SCL source, then the XML blocks); a refused one is listed with TIA's reason", () =>
+        {
+            var output = new StringWriter();
+            var tia = new FakeTia();
+            var p = Commands.Register(new Protocol(output), ReadyPc(), api => tia);
+            var m = Talk(p, output, "{\"id\":1,\"cmd\":\"open\",\"args\":{\"name\":\"L\"}}",
+                "{\"id\":2,\"cmd\":\"blocks\",\"args\":{\"files\":[{\"name\":\"Machine_tia_helpers.scl\",\"kind\":\"scl\",\"text\":\"FUNCTION x\"},{\"name\":\"Machine_DB.xml\",\"kind\":\"xml\",\"text\":\"<Document/>\"},{\"name\":\"Conveyor.xml\",\"kind\":\"xml\",\"text\":\"BROKEN\"},{\"name\":\"Main.xml\",\"text\":\"<Document/>\"}]}}",
+                "{\"id\":3,\"cmd\":\"blocks\",\"args\":{\"files\":[]}}");
+            Eq("scl:Machine_tia_helpers.scl|xml:Machine_DB.xml|xml:Main.xml", string.Join("|", tia.Imported));
+            var r = (Dictionary<string, object>)m.First(x => Equals(x.GetValueOrDefault("id"), 2.0) && x.ContainsKey("result"))["result"];
+            Eq(3.0, Convert.ToDouble(r["imported"]));
+            Eq("Conveyor.xml", ((Dictionary<string, object>)((List<object>)r["failed"]).Single())["name"]);
+            True(m.Any(x => Equals(x.GetValueOrDefault("progress"), "Importing Main.xml…")), "progress per file");
+            True(((string)m.Last()["error"]).Contains("no program files"), "nothing to import");
+        });
+
+        Test("compile: counts and messages with their block and network", () =>
+        {
+            var output = new StringWriter();
+            var tia = new FakeTia();
+            tia.Compiled = new CompileResult { Errors = 1, Warnings = 1 };
+            tia.Compiled.Messages.Add(CompileText.Message("error", "PLC_1 > Program blocks > Conveyor (FC1) > Network 3", "Operand \"Start_PB\" not defined."));
+            tia.Compiled.Messages.Add(CompileText.Message("warning", "PLC_1 > Program blocks > Main (OB1)", "Network 2: The block call is never reached."));
+            var p = Commands.Register(new Protocol(output), ReadyPc(), api => tia);
+            var m = Talk(p, output, "{\"id\":1,\"cmd\":\"open\",\"args\":{\"name\":\"L\"}}", "{\"id\":2,\"cmd\":\"compile\"}");
+            var r = (Dictionary<string, object>)m.Last()["result"];
+            Eq(1.0, r["errors"]); Eq(1.0, r["warnings"]);
+            var msgs = ((List<object>)r["messages"]).Cast<Dictionary<string, object>>().ToList();
+            Eq("Conveyor", msgs[0]["block"]); Eq(3.0, msgs[0]["network"]);
+            Eq("Main", msgs[1]["block"]); Eq(2.0, msgs[1]["network"]);
+            True(Json.Write(r).Contains("\"network\":3"), Json.Write(r));
+        });
+
+        Test("compile message paths: German TIA, a message about a tag table, no network", () =>
+        {
+            var de = CompileText.Message("error", "PLC_1 > Programmbausteine > Pusher (FC2) > Netzwerk 5", "x");
+            Eq("Pusher", de.Block); Eq(5, de.Network);
+            var tags = CompileText.Message("warning", "PLC_1 > PLC tags > ISA Auto Programmer", "Address overlaps");
+            Eq("ISA Auto Programmer", tags.Block); Eq(null, tags.Network);
+            var none = CompileText.Message("error", "", "Compiling finished with errors");
+            Eq(null, none.Block); Eq(null, none.Network);
         });
 
         Console.WriteLine($"TiaBridge tests: all passed ({_passed})");

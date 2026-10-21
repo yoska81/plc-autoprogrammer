@@ -31,6 +31,30 @@ namespace TiaBridge
         public int Slot;
     }
 
+    /// <summary>One file of the program to import: a SimaticML block (xml) or an SCL external source (scl).</summary>
+    public sealed class BlockFile
+    {
+        public string Name, Kind, Text;
+    }
+
+    public sealed class CompileMessage
+    {
+        /// <summary>"error" / "warning".</summary>
+        public string Severity;
+        /// <summary>Where TIA Portal says it is ("PLC_1 > Program blocks > Conveyor > Network 3").</summary>
+        public string Path;
+        public string Text;
+        /// <summary>The block and network number read from the path / text (null when it names none).</summary>
+        public string Block;
+        public int? Network;
+    }
+
+    public sealed class CompileResult
+    {
+        public int Errors, Warnings;
+        public List<CompileMessage> Messages = new List<CompileMessage>();
+    }
+
     public interface IEngineering
     {
         /// <summary>The TIA Portals running now (of the loaded version).</summary>
@@ -51,6 +75,10 @@ namespace TiaBridge
         PlcInfo AddPlc(string orderNumber, string firmware, string name, IList<ModuleRow> modules, Action<string> problem);
         /// <summary>Writes tags into a tag table of the PLC (created when missing); returns how many were new.</summary>
         int WriteTags(string table, IList<TagRow> tags, Action<string, string> failed);
+        /// <summary>Imports the files in order (SimaticML replaces a block of the same name; an SCL source generates its blocks); failed(name, why) for each one TIA refuses.</summary>
+        void ImportBlocks(IList<BlockFile> files, Action<string> progress, Action<string, string> failed);
+        /// <summary>Compiles the PLC's software (blocks and tags).</summary>
+        CompileResult Compile();
         void Save();
     }
 }

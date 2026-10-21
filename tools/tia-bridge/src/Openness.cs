@@ -131,6 +131,59 @@ namespace TiaBridge
             return created;
         }
 
+        public void ImportBlocks(IList<BlockFile> files, Action<string> progress, Action<string, string> failed)
+        {
+            var sw = PlcSoftware();
+            // the files go through a folder of their own (Openness imports from files), removed afterwards
+            string dir = Path.Combine(Path.GetTempPath(), "isa-tia-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                foreach (var f in files)
+                {
+                    progress($"Importing {f.Name}…");
+                    string file = Path.Combine(dir, Path.GetFileName(f.Name));
+                    File.WriteAllText(file, f.Text, new System.Text.UTF8Encoding(true));
+                    try
+                    {
+                        if (f.Kind == "scl")
+                        {
+                            var sources = R.Get(R.Get(sw, "ExternalSourceGroup"), "ExternalSources");
+                            var old = R.Call(sources, "Find", f.Name);
+                            if (old != null) R.Call(old, "Delete");
+                            var source = R.Call(sources, "CreateFromFile", f.Name, file);
+                            R.Call(source, "GenerateBlocksFromSource");
+                        }
+                        else R.Call(R.Get(R.Get(sw, "BlockGroup"), "Blocks"), "Import", new FileInfo(file), R.Enum("Siemens.Engineering.ImportOptions", "Override"));
+                    }
+                    catch (Exception e) { failed(f.Name, R.Inner(e).Message); }
+                }
+            }
+            finally { try { Directory.Delete(dir, true); } catch (Exception) { /* a temp folder */ } }
+        }
+
+        public CompileResult Compile()
+        {
+            var service = R.Service(PlcSoftware(), "Siemens.Engineering.Compiler.ICompilable") ?? throw new BridgeError("This TIA Portal cannot compile the PLC from another program.");
+            var result = R.Call(service, "Compile");
+            var r = new CompileResult { Errors = Convert.ToInt32(R.Get(result, "ErrorCount")), Warnings = Convert.ToInt32(R.Get(result, "WarningCount")) };
+            void Walk(object messages, string path)
+            {
+                foreach (var m in R.Items(messages))
+                {
+                    string here = R.Get(m, "Path") as string;
+                    string at = string.IsNullOrEmpty(here) ? path : here;
+                    var inner = R.Get(m, "Messages");
+                    bool leaf = !R.Items(inner).Any();
+                    string state = R.Get(m, "State")?.ToString();
+                    if (leaf && (state == "Error" || state == "Warning")) r.Messages.Add(CompileText.Message(state == "Error" ? "error" : "warning", at, R.Get(m, "Description") as string ?? ""));
+                    Walk(inner, at);
+                }
+            }
+            Walk(R.Get(result, "Messages"), "");
+            return r;
+        }
+
         public void Save() => R.Call(Project, "Save");
 
         static IEnumerable<object> AllItems(object parent)
