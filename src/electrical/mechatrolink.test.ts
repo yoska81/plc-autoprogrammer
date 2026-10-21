@@ -118,4 +118,13 @@ const named = { ...user, spec: `${user.spec} Hydraulic pump motor 5 HP on a star
 const nd = generateDefaultDesign(named).design;
 assert.equal(nd.components.filter((x) => getPart(x.partNumber)?.category === 'vfd').length, 0, 'Feed roll is a servo axis');
 assert.ok(nd.components.some((x) => x.motorTag === 'M2' && getPart(x.partNumber)?.category === 'contactor'), 'the pump keeps its starter');
+
+// Stations from the program ($SVP), as on the user's file: 13 SGDV, 23 (2 axes), 43 (axes 4 and 8!), 53 SGDV, 63 (2 axes):
+// the axes on one station are one SGD7W wherever they sit in the list — 5 SERVOPACKs, 3 of them SGD7W.
+const st = (axis: number, station: string, stationAxis = 0, drive = 'SGD7W-2R8A20A700', motor = 'SGM7J-04AFA61') => ({ ...nax(axis, drive, motor), station, stationAxis });
+const stations = [st(1, '13', 0, 'SGDV-280D21A', 'SGMGV-1ADDA61'), st(2, '23'), st(3, '23', 1), st(4, '43'), st(5, '53', 0, 'SGDV-280D21A', 'SGMGV-1ADDA61'), st(6, '63'), st(7, '63', 1), st(8, '43', 1)];
+const sd = generateDefaultDesign({ ...user, networkAxes: stations }).design;
+const sdrv = sd.components.filter((x) => getPart(x.partNumber)?.category === 'servoDrive');
+assert.deepEqual(sdrv.map((c) => `${c.partNumber} ${c.motorTag}`), ['SGDV-280D21A AX1', 'SGD7W-2R8A20A700 AX2+3', 'SGD7W-2R8A20A700 AX4+8', 'SGDV-280D21A AX5', 'SGD7W-2R8A20A700 AX6+7'], 'paired by station');
+assert.equal(sd.components.filter((x) => getPart(x.partNumber)?.category === 'servoMotor').length, 8);
 console.log('mechatrolink tests passed');

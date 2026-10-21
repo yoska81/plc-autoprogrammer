@@ -489,17 +489,41 @@ function networkServos(input: MotionInput, out: MotionResult, pick: (ok: (p: Cat
   };
   const listOfPairs = (d: CatalogPart) => listOf(d.ratings.pairsWith);
   const units: { drive?: CatalogPart; axes: NetworkAxisInput[]; watts: number[] }[] = [];
-  for (let i = 0; i < axes.length; i++) {
+  const wOf = (a: NetworkAxisInput) => {
+    const w = motorW(a) ?? 400;
+    if (a.watts === undefined && motorW(a) === undefined) out.askUser.push(`${a.name}: servo sized for ${w} W — size it from the load (torque, inertia, speed) and confirm the motor and SERVOPACK.`);
+    return w;
+  };
+  const givenOf = (a: NetworkAxisInput) => {
+    const g = catalog(a.drivePartNumber);
+    if (a.drivePartNumber && !g) out.notes.push(`${a.name}: ${a.drivePartNumber} is not in the catalog — check the SERVOPACK model; a catalog drive is used instead.`);
+    return g;
+  };
+  if (axes.some((a) => a.station !== undefined)) {
+    // The program's MECHATROLINK stations decide the drives: the axes on one station are one SERVOPACK (an SGD7W
+    // carries two), wherever they sit in the axis list (the user's file: axes 4 and 8 on station 43).
+    const byStation = new Map<string, NetworkAxisInput[]>();
+    for (const a of axes) { const k = a.station ?? `axis ${a.key}`; byStation.set(k, [...(byStation.get(k) ?? []), a]); }
+    for (const [station, g0] of byStation) {
+      const g = [...g0].sort((x, y) => (x.stationAxis ?? 0) - (y.stationAxis ?? 0));
+      if (g.length > 2) out.notes.push(`Station ${station}: ${g.length} axes (${g.map((x) => x.name).join(', ')}) — a SERVOPACK carries at most 2; check the station addresses.`);
+      const pair = g.slice(0, 2), w = pair.map(wOf), given = givenOf(pair[0]);
+      if (pair.length === 2) {
+        if (given && (num(given.ratings.axes) ?? 1) !== 2) out.notes.push(`Station ${station}: ${pair.map((x) => x.name).join(' and ')} share the station but ${given.partNumber} is a single-axis SERVOPACK — check the model.`);
+        const drive = given && (num(given.ratings.axes) ?? 1) === 2 ? given : sized(Math.max(...w), 2, true) ?? sized(Math.max(...w), 2, false);
+        units.push({ drive, axes: pair, watts: w });
+      } else units.push({ drive: given ?? sized(w[0], 1, true) ?? sized(w[0], 1, false), axes: pair, watts: w });
+      for (const x of g.slice(2)) units.push({ drive: undefined, axes: [x], watts: [wOf(x)] });
+    }
+  } else for (let i = 0; i < axes.length; i++) {
+    // No stations in the list: neighbours naming the same two-axis model share it; unnamed neighbours share an SGD7W.
     const a = axes[i], b = axes[i + 1];
-    const wa = motorW(a) ?? 400;
-    if (a.watts === undefined && motorW(a) === undefined) out.askUser.push(`${a.name}: servo sized for ${wa} W — size it from the load (torque, inertia, speed) and confirm the motor and SERVOPACK.`);
-    const given = catalog(a.drivePartNumber);
-    if (a.drivePartNumber && !given) out.notes.push(`${a.name}: ${a.drivePartNumber} is not in the catalog — check the SERVOPACK model; a catalog drive is used instead.`);
-    if (given && (num(given.ratings.axes) ?? 1) === 2 && b && b.drivePartNumber === given.partNumber) { units.push({ drive: given, axes: [a, b], watts: [wa, motorW(b) ?? 400] }); i++; continue; }
+    const wa = wOf(a);
+    const given = givenOf(a);
+    if (given && (num(given.ratings.axes) ?? 1) === 2 && b && b.drivePartNumber === given.partNumber) { units.push({ drive: given, axes: [a, b], watts: [wa, wOf(b)] }); i++; continue; }
     if (given) { units.push({ drive: given, axes: [a], watts: [wa] }); continue; }
-    // No model named: two neighbouring axes share a two-axis SGD7W when one carries both, else one SGD7S each.
     if (b && !b.drivePartNumber) {
-      const wb = motorW(b) ?? 400;
+      const wb = wOf(b);
       const dual = sized(Math.max(wa, wb), 2, true) ?? sized(Math.max(wa, wb), 2, false);
       if (dual) { units.push({ drive: dual, axes: [a, b], watts: [wa, wb] }); i++; continue; }
     }
