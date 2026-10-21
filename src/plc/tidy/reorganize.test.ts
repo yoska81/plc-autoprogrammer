@@ -80,6 +80,26 @@ const plantOf = (p: ReturnType<typeof collectProject>) => p.io.map((x) => ({ add
   assert.deepEqual(some.rungs.map((x) => x.id), l.rungs.map((x) => x.id), 'nothing moved without reorder');
 }
 
+// Removal across groups: a timer read only by a counter (registers group, off) stays when only internal bits go.
+{
+  seedSampleProject();
+  const l: LadderProgram = { tags: [], rungs: [
+    { id: 'tmr', comment: '', branches: [[{ type: 'NO', address: 'X001' }]], outputs: [{ type: 'TMR', address: 'T5', mode: 'ON_DELAY', preset: '1', unit: 'sec', accumulate: false, resetAddress: null }] },
+    { id: 'cnt', comment: '', branches: [[{ type: 'NO', address: 'T5' }]], outputs: [{ type: 'CNT', address: 'CT5', direction: 'UP', preset: '3', resetAddress: null }] },
+    { id: 'done', comment: '', branches: [[{ type: 'NO', address: 'CT5' }]], outputs: [{ type: 'OUT', address: 'C40' }] },
+    { id: 'out', comment: '', branches: [[{ type: 'NO', address: 'X002' }]], outputs: [{ type: 'OUT', address: 'Y001' }] },
+  ] };
+  useProgramStore.getState().setGeneratedLadder(l, 'x', null);
+  const p = collectProject();
+  const plan = planReorganize(p);
+  assert.deepEqual([[...plan.removals['remove-internal']!].sort(), [...plan.removals['remove-registers']!]], [['done', 'tmr'], ['cnt']], 'the counter is retentive: its own group');
+  const ids = (s: SectionId[]) => applyReorganize(p, plan, new Set(s)).rungs.map((x) => x.id);
+  assert.deepEqual(ids(['remove-internal']), ['tmr', 'cnt', 'out'], 'the timer the kept counter reads stays');
+  assert.deepEqual(ids(['remove-internal', 'remove-registers']), ['out']);
+  const r = checkEquivalence(p.ladder, applyReorganize(p, plan, new Set<SectionId>(['remove-internal'])), { random: 30, steps: 30 });
+  assert.deepEqual(r.differences, [], equivalenceSummary(r));
+}
+
 // Read-only Yaskawa program (synthetic fixture): its blocks (drawings) and their order kept, kept boxes in place.
 {
   const bytes = new Uint8Array(readFileSync(join(here, '..', 'import', '__fixtures__', 'demo_mp.YMW7')));

@@ -112,21 +112,23 @@ const NUMBER_RE = /^[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?$/;
 const WORD_RE = /^(CTD|TXT|DS|DD|DH|DF|TD|SD)\d+$/;
 const BIT_RE = /^(X|Y|CT|C|T|SC)\d+$/;
 
-export function normAddress(a: string): string {
-  return a.trim().toUpperCase();
+/** Results per address string: a program has few distinct ones, a scan asks for each many times. */
+function memo<T>(f: (a: string) => T): (a: string) => T {
+  const cache = new Map<string, T>();
+  return (a) => {
+    let v = cache.get(a);
+    if (v === undefined) { if (cache.size > 100_000) cache.clear(); v = f(a); cache.set(a, v); }
+    return v;
+  };
 }
 
-export function isConstant(a: string): boolean {
-  return NUMBER_RE.test(a.trim());
-}
+export const normAddress: (a: string) => string = memo((a) => a.trim().toUpperCase());
+export const isConstant: (a: string) => boolean = memo((a) => NUMBER_RE.test(a.trim()));
+export const isWordAddress: (a: string) => boolean = memo((a) => WORD_RE.test(normAddress(a)));
+export const isBitAddress: (a: string) => boolean = memo((a) => BIT_RE.test(normAddress(a)));
 
-export function isWordAddress(a: string): boolean {
-  return WORD_RE.test(normAddress(a));
-}
-
-export function isBitAddress(a: string): boolean {
-  return BIT_RE.test(normAddress(a));
-}
+const LEAN_TRUE: RungPower = { branches: [], closed: [], rungTrue: true };
+const LEAN_FALSE: RungPower = { branches: [], closed: [], rungTrue: false };
 
 export function unitMs(u: TimeUnit): number {
   return UNIT_MS[u] ?? 1000;
@@ -228,6 +230,11 @@ export interface SimOptions {
   retentive?: (address: string) => boolean;
   /** System bits and retentive defaults of the target PLC (default CLICK). */
   semantics?: SimSemantics;
+  /**
+   * Memory only, for a check that runs thousands of scans and reads nothing else: step() returns no bit changes and
+   * rungPower() has no per-contact power (saves copying every bit and building arrays each scan).
+   */
+  lean?: boolean;
 }
 
 export { clickRetentive };
@@ -239,6 +246,15 @@ export function createSimulator(program: LadderProgram, options: SimOptions = {}
   /** Previous value per edge contact instance / counter instance. */
   let edges = new Map<string, boolean>();
   let power = new Map<string, RungPower>();
+  /** Lean: the edge / counter keys per rung and place, made once (the program does not change under a lean run). */
+  const leanKeys: Map<number, string>[] = [];
+  const keyAt = (ri: number, slot: number, rung: Rung, tail: string): string => {
+    if (!options.lean) return `${slot < 0 ? 'cnt:' : ''}${ri}:${rung.id}:${tail}`;
+    const m = leanKeys[ri] ??= new Map();
+    let k = m.get(slot);
+    if (k === undefined) { k = `${slot < 0 ? 'cnt:' : ''}${ri}:${rung.id}:${tail}`; m.set(slot, k); }
+    return k;
+  };
   const mathCache = new Map<string, Expr | Error>();
 
   const readBit = (raw: string): boolean => state.bits.get(normAddress(raw)) ?? false;
@@ -275,6 +291,17 @@ export function createSimulator(program: LadderProgram, options: SimOptions = {}
   }
 
   function solveRung(rung: Rung, ri: number): RungPower {
+    if (options.lean) {
+      let rungTrue = rung.branches.length === 0;
+      for (let b = 0; b < rung.branches.length; b++) {
+        const br = rung.branches[b];
+        let p = true;
+        // evaluate all so edges track every scan
+        for (let i = 0; i < br.length; i++) { const el = br[i]; if (!evalElement(el, el.type === 'RISE' || el.type === 'FALL' ? keyAt(ri, b * 10_000 + i, rung, `${b}:${i}`) : '')) p = false; }
+        if (p) rungTrue = true;
+      }
+      return rungTrue ? LEAN_TRUE : LEAN_FALSE;
+    }
     const branches: boolean[][] = [];
     const closed: boolean[][] = [];
     let rungTrue = rung.branches.length === 0;
@@ -283,7 +310,8 @@ export function createSimulator(program: LadderProgram, options: SimOptions = {}
       const pb: boolean[] = [];
       const cb: boolean[] = [];
       br.forEach((el, i) => {
-        const c = evalElement(el, `${ri}:${rung.id}:${b}:${i}`); // evaluate all so edges track every scan
+        // evaluate all so edges track every scan
+        const c = evalElement(el, el.type === 'RISE' || el.type === 'FALL' ? keyAt(ri, b * 10_000 + i, rung, `${b}:${i}`) : '');
         p = p && c;
         cb.push(c);
         pb.push(p);
@@ -351,7 +379,7 @@ export function createSimulator(program: LadderProgram, options: SimOptions = {}
         case 'SET': if (on) setBit(normAddress(o.address), true); break;
         case 'RST': if (on) setBit(normAddress(o.address), false); break;
         case 'TMR': execTimer(o, on, dt); break;
-        case 'CNT': execCounter(o, on, `cnt:${ri}:${rung.id}:${k}`); break;
+        case 'CNT': execCounter(o, on, keyAt(ri, -1 - k, rung, `${k}`)); break;
         case 'COPY': if (on) writeWord(o.dest, readWord(o.source)); break;
         case 'MATH': {
           if (!on) break;
@@ -375,7 +403,7 @@ export function createSimulator(program: LadderProgram, options: SimOptions = {}
   }
 
   function step(dtMs = 10): BitChange[] {
-    const before = new Map(state.bits);
+    const before = options.lean ? null : new Map(state.bits);
     state.timeMs += dtMs;
     // system bits
     if (sem.alwaysOn) state.bits.set(sem.alwaysOn, true);
@@ -385,8 +413,17 @@ export function createSimulator(program: LadderProgram, options: SimOptions = {}
     for (const [a, v] of state.inputs) state.bits.set(a, v);
     applyForces();
     // logic
+    if (options.lean) {
+      // Memory only: no per-rung power kept (rungPower() stays empty).
+      const rungs = program.rungs;
+      for (let ri = 0; ri < rungs.length; ri++) {
+        const rung = rungs[ri];
+        if (state.bypassedRungs.size && state.bypassedRungs.has(rung.id)) continue;
+        execOutputs(rung, ri, solveRung(rung, ri).rungTrue, dtMs);
+      }
+    }
     const next = new Map<string, RungPower>();
-    program.rungs.forEach((rung, ri) => {
+    if (!options.lean) program.rungs.forEach((rung, ri) => {
       if (state.bypassedRungs.has(rung.id)) {
         const last = power.get(rung.id);
         next.set(rung.id, { branches: last?.branches ?? [], closed: last?.closed ?? [], rungTrue: last?.rungTrue ?? false, bypassed: true });
@@ -396,11 +433,12 @@ export function createSimulator(program: LadderProgram, options: SimOptions = {}
       next.set(rung.id, p);
       execOutputs(rung, ri, p.rungTrue, dtMs);
     });
-    power = next;
+    if (!options.lean) power = next;
     applyForces();
     state.scanCount++;
 
     const changes: BitChange[] = [];
+    if (!before) return changes;
     for (const [a, v] of state.bits) {
       if (a.startsWith('SC')) continue;
       if ((before.get(a) ?? false) !== v) changes.push({ address: a, value: v, timeMs: state.timeMs });

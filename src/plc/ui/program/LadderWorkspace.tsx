@@ -42,7 +42,8 @@ import VoiceTextarea from '../../../voice/VoiceTextarea';
 import { collectProject } from '../../../deliverables/collect';
 import { addComments } from '../../tidy/comments';
 import { applyReorganize, externalAddresses, planReorganize, type ReorgPlan, type SectionId } from '../../tidy/reorganize';
-import { checkEquivalence, equivalenceSummary } from '../../tidy/equivalence';
+import { equivalenceSummary } from '../../tidy/equivalence';
+import { checkEquivalenceOffThread } from '../../tidy/equivalenceOffThread';
 import SpeakButton from '../../../voice/SpeakButton';
 import { usePlcNames } from '../ladder/plcNames';
 import { useProjectStore } from '../../../store/useProjectStore';
@@ -248,14 +249,14 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const rungNumber = (id: string) => (review?.display ?? ladder).rungs.findIndex((r) => r.id === id) + 1;
 
   /** Run an AI step as a global job: it keeps going (and its result is applied) when the user leaves the page. */
-  const runAI = <T,>(kind: 'program' | 'program-revise', label: string, run: (signal: AbortSignal) => Promise<T>, apply: (r: T) => void, needsKey = true) => {
+  const runAI = <T,>(kind: 'program' | 'program-revise', label: string, run: (signal: AbortSignal, stage: (text: string) => void) => Promise<T>, apply: (r: T) => void, needsKey = true) => {
     if ((needsKey && !ready) || isGenerating) return;
     setError(null);
     void startAiJob({
       kind, label,
       run: async (h) => {
         useProgramStore.getState().setIsGenerating(true);
-        try { return await run(h.signal); } finally { useProgramStore.getState().setIsGenerating(false); }
+        try { return await run(h.signal, h.stage); } finally { useProgramStore.getState().setIsGenerating(false); }
       },
       apply,
     });
@@ -305,18 +306,21 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     if (!reorg) return;
     const { plan, chosen } = reorg;
     setReorg(null);
-    return runAI('program-revise', 'Reorganize program', async () => {
+    return runAI('program-revise', 'Reorganize program', async (signal, stage) => {
       const p = collectProject();
       const program = applyReorganize(p, plan, chosen);
       const plant = p.io.map((x) => ({ address: p.addresses.get(x.id) ?? '', description: x.description, type: x.type, category: x.category }));
-      const check = checkEquivalence(p.ladder, program, { observe: [...externalAddresses(p)], plant, budgetMs: 15_000 });
-      return { program, check, titles: plan.sections.filter((x) => chosen.has(x.id)).map((x) => x.title) };
+      // In a worker: the page stays free, the job bar shows how far it got, Cancel stops it.
+      const check = await checkEquivalenceOffThread(p.ladder, program, { observe: [...externalAddresses(p)], plant }, {
+        signal, onProgress: (done, total) => stage(`checking in the simulator, sequence ${done + 1} of ${total}`),
+      });
+      return { program, check, before: p.ladder.rungs.length, titles: plan.sections.filter((x) => chosen.has(x.id)).map((x) => x.title) };
     }, (r) => {
       const st = useProgramStore.getState();
       st.addChat({ role: 'user', text: `Reorganize the program: ${r.titles.join('; ')}.` });
       const said = equivalenceSummary(r.check);
       if (r.check.differences.length) { st.addChat({ role: 'assistant', text: `${said}\nNothing is proposed: the reorganized program would not behave the same. Choose fewer changes and try again.`, outcome: 'no-change' }); return; }
-      const text = `Reorganized: ${r.titles.join('; ')}.\n${said}\nAddresses, the I/O and what the HMI reads did not move; kept instructions of the original PLC stay as they were.`;
+      const text = `Reorganized: ${r.titles.join('; ')} (${r.before} rungs → ${r.program.rungs.length}; a removal is kept back when a rung that stays reads it).\n${said}\nAddresses, the I/O and what the HMI reads did not move; kept instructions of the original PLC stay as they were.`;
       st.addChat({ role: 'assistant', text });
       st.setProposal({ program: r.program, explanation: text, reasoning: null });
     }, false);
