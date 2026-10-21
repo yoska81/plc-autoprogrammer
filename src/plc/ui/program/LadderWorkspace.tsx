@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SPEC_SECTIONS } from '../../../spec/types';
 import { useIOStore } from '../../../store/useIOStore';
 import { looksLeftOver } from '../../../spec/leftovers';
-import { ArrowsPointingInIcon, ArrowsPointingOutIcon, ArrowsRightLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, MagnifyingGlassMinusIcon, MagnifyingGlassPlusIcon, PrinterIcon } from '@heroicons/react/20/solid';
+import { ArrowsPointingInIcon, ArrowsPointingOutIcon, ArrowsRightLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, MagnifyingGlassMinusIcon, MagnifyingGlassPlusIcon, PrinterIcon, SparklesIcon } from '@heroicons/react/20/solid';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useReviewStore } from '../../../review/useReviewStore';
 import { replaceProgramQuestion, useProgramStore } from '../../../store/useProgramStore';
@@ -160,7 +160,27 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const [xrefOpen, setXrefOpen] = useUi('program.xrefOpen', false);
   // Phones: one pane at a time (the assistant, the program, its blocks, the cross-reference) from a tab strip.
   const narrow = useNarrow();
-  const [phonePane, setPhonePane] = useState<'assistant' | 'ladder' | 'blocks' | 'xref'>('ladder');
+  const [phonePane, setPhonePane] = useState<'assistant' | 'ladder' | 'blocks' | 'xref'>(() => (searchParams.get('tidy') === '1' ? 'assistant' : 'ladder'));
+  /**
+   * "Simplify & explain" (the toolbar button, or /program?tidy=1 from the Upgrade page): the Change tab with the
+   * Tidy up group in view and marked for a moment.
+   */
+  const tidyRef = useRef<HTMLDivElement>(null);
+  const [tidyAsk, setTidyAsk] = useState(() => (searchParams.get('tidy') === '1' ? 1 : 0));
+  const tidyShown = useRef(0);
+  const openTidy = () => { setTab('fix'); if (narrow) setPhonePane('assistant'); setTidyAsk((n) => n + 1); };
+  useEffect(() => {
+    if (!tidyAsk || tidyShown.current === tidyAsk) return;
+    if (tab !== 'fix') { setTab('fix'); return; }
+    const el = tidyRef.current;
+    if (!el) return;
+    tidyShown.current = tidyAsk;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const mark = ['bg-brand-50', 'ring-2', 'ring-brand-400'];
+    el.classList.add(...mark);
+    const t = setTimeout(() => el.classList.remove(...mark), 2000);
+    return () => { clearTimeout(t); el.classList.remove(...mark); };
+  }, [tidyAsk, tab, setTab]);
   // Full screen (button, Ctrl+Shift+F, Esc), zoom of the diagram, undo / redo of hand edits.
   const { full, toggle: toggleFull } = useFullScreen();
   const [zoom, setZoom] = useUi('program.zoom', 1);
@@ -532,15 +552,18 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 Ask AI to fix the {issues.length} checker issue{issues.length !== 1 && 's'}
               </button>
             )}
-            {!proposal && ladder.rungs.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Tidy up">
-                <button onClick={() => handleComments(false)} disabled={isGenerating}
+            {ladder.rungs.length > 0 && (
+              <div ref={tidyRef} className="flex flex-wrap items-center gap-2 rounded p-1.5 -m-1.5 transition-colors" role="group" aria-label="Tidy up" data-testid="tidy-up">
+                <p className="w-full text-xs font-semibold text-gray-700">Simplify &amp; explain</p>
+                {proposal && <p className="w-full text-xs text-amber-800" data-testid="tidy-wait">Approve or reject the current proposal first.</p>}
+                <button onClick={() => handleComments(false)} disabled={isGenerating || Boolean(proposal)}
                   title="Fill in every missing rung comment, block description and tag comment in plain words; the logic is not changed"
                   className="flex-1 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Add comments</button>
-                <button onClick={() => handleComments(true)} disabled={isGenerating}
+                <button onClick={() => handleComments(true)} disabled={isGenerating || Boolean(proposal)}
                   title="Write every comment again, also the ones already there (you approve the result first)"
                   className="py-1.5 px-2 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Rewrite all comments</button>
-                <button onClick={() => (reorg ? setReorg(null) : openReorganize())} disabled={isGenerating} aria-expanded={Boolean(reorg)}
+                <p className="w-full text-[11px] text-gray-500 -mt-1">Adds a plain-words note on every rung, then you can simplify.</p>
+                <button onClick={() => (reorg ? setReorg(null) : openReorganize())} disabled={isGenerating || Boolean(proposal)} aria-expanded={Boolean(reorg)}
                   title="Rebuild the same behaviour in a simpler shape: grouped by machine function, dead code out, names and comments; checked in the simulator before you approve"
                   className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Reorganize program…</button>
               </div>
@@ -622,6 +645,12 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               </button>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
+              <button onClick={openTidy} data-testid="simplify-explain"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-sm border border-brand-600 bg-brand-600 text-white hover:bg-brand-700"
+                title="Comments in plain words on every rung, dead code found, the program grouped by machine function; every change checked in the simulator before you approve">
+                <SparklesIcon className="h-3.5 w-3.5" /> Simplify &amp; explain
+              </button>
+              <span className="mx-1 h-4 border-l border-gray-300" />
               <button onClick={history.undo} disabled={!history.canUndo || isGenerating} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Undo the last hand edit (Ctrl+Z)"><ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo</button>
               <button onClick={history.redo} disabled={!history.canRedo || isGenerating} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Redo (Ctrl+Shift+Z / Ctrl+Y)"><ArrowUturnRightIcon className="h-3.5 w-3.5" /> Redo</button>
               <span className="mx-1 h-4 border-l border-gray-300" />
