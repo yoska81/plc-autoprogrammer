@@ -24,6 +24,9 @@ import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
 
 import TroubleshootPanel from '../troubleshoot/TroubleshootPanel';
+import ManualCommands from './ManualCommands';
+import FollowRung from './FollowRung';
+import { hmiCommands, isStale } from './manualCommands';
 
 /** The brand's own software for watching the PLC online. */
 const ONLINE_SOFTWARE: Record<string, string> = {
@@ -31,7 +34,7 @@ const ONLINE_SOFTWARE: Record<string, string> = {
   'unitronics-unistream': 'UniLogic (Online)', 'unitronics-vision': 'VisiLogic (Online test mode)',
 };
 
-type Tab = 'monitor' | 'ladder' | 'hmi' | 'checkout' | 'troubleshoot';
+type Tab = 'monitor' | 'commands' | 'ladder' | 'hmi' | 'checkout' | 'troubleshoot';
 
 const input = 'border border-steel-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 const btn = 'px-3 py-1.5 text-sm rounded border border-steel-300 bg-white hover:bg-steel-50 disabled:opacity-40';
@@ -52,7 +55,7 @@ export default function OnlinePage() {
   const [params] = useSearchParams();
   const linked = params.get('tab');
   useEffect(() => {
-    if (linked === 'monitor' || linked === 'ladder' || linked === 'hmi' || linked === 'checkout' || linked === 'troubleshoot') setTab(linked);
+    if (linked === 'monitor' || linked === 'commands' || linked === 'ladder' || linked === 'hmi' || linked === 'checkout' || linked === 'troubleshoot') setTab(linked);
   }, [linked, setTab]);
   const [filter, setFilter] = useUi('online.filter', '');
   const [screenId, setScreenId] = useUi<string | null>('online.screen', null);
@@ -62,8 +65,9 @@ export default function OnlinePage() {
   const [checks, setChecks] = useState<{ title: string; lines: CheckLine[] } | null>(null);
   const [checking, setChecking] = useState<string | null>(null);
   const isClick = profile.id === 'click';
-  // The Modbus monitor is CLICK's: another brand opens on the I/O check-out.
-  const tab: Tab = savedTab === 'monitor' && !isClick ? 'checkout' : savedTab;
+  // The Modbus monitor and manual commands are CLICK's: another brand opens on the I/O check-out.
+  const tab: Tab = (savedTab === 'monitor' || savedTab === 'commands') && !isClick ? 'checkout' : savedTab;
+  const [followId, setFollowId] = useUi<string | null>('online.followRung', null);
 
   // Every address the project uses: I/O, program, HMI.
   const names = useMemo(() => {
@@ -87,6 +91,12 @@ export default function OnlinePage() {
   useEffect(() => () => { void disconnectPlc(); }, []);
 
   const connected = st.status === 'connected';
+  // "Stale" needs a clock: the last read gets older while nothing new arrives.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { if (!connected) return; const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t); }, [connected]);
+  const stale = isStale(st.status, st.lastUpdate, Math.max(now, st.lastUpdate ?? 0), st.settings.pollMs, st.settings.timeoutMs);
+  const commands = useMemo(() => hmiCommands(ladder, hmi), [ladder, hmi]);
+  const liveBit = (a: string): boolean | null => { const k = a.toUpperCase(); return st.bits.has(k) ? st.bits.get(k)! : null; };
   const value = (a: string): string => {
     const k = a.toUpperCase();
     if (st.failed.has(k)) return 'read error';
@@ -165,7 +175,7 @@ export default function OnlinePage() {
         {isClick
           ? <p className="text-xs text-steel-500 mt-0.5">Live values from the real {profile.name} {cpu.id} over Ethernet (Modbus TCP). Read-only unless you switch on writes. Use it at the machine during commissioning: watch the ladder, the HMI and every I/O point, and tick the I/O check-out.</p>
           : <p className="text-xs text-steel-500 mt-0.5">The I/O check-out and fault finding for the {profile.name} {cpu.id}.</p>}
-        <div className="flex mt-2 overflow-x-auto">{isClick && tabBtn('monitor', 'Monitor')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}{tabBtn('troubleshoot', 'Fault finding')}</div>
+        <div className="flex mt-2 overflow-x-auto">{isClick && tabBtn('monitor', 'Monitor')}{isClick && tabBtn('commands', 'Manual commands')}{tabBtn('ladder', 'Live ladder')}{tabBtn('hmi', 'Live HMI')}{tabBtn('checkout', `I/O check-out (${sum.verified}/${sum.total})`)}{tabBtn('troubleshoot', 'Fault finding')}</div>
       </header>
 
       {/* Connection bar (CLICK only) */}
@@ -256,8 +266,13 @@ export default function OnlinePage() {
           </div>
         )}
 
+        {tab === 'commands' && (
+          <ManualCommands commands={commands} live={liveBit} stale={stale} labelOf={(a) => names.get(a.toUpperCase()) ?? ''} />
+        )}
+
         {tab === 'ladder' && (
           <div className="space-y-2">
+            {isClick && <FollowRung program={ladder} power={power} rungId={followId} onRung={setFollowId} stale={stale} labelOf={(a) => names.get(a.toUpperCase()) ?? ''} />}
             <p className="text-xs text-steel-500">Power flow from the values read from the PLC{connected ? '' : ' (not connected: everything shows OFF)'}. Edge contacts (one-shots) show the bit's present state; timers and counters show their done bits.</p>
             <LiveLadder program={ladder} power={power} bits={st.bits} words={st.words} timers={NO_TIMERS} counters={NO_TIMERS}
               labelOf={(a) => names.get(a.toUpperCase()) ?? ''} groups={groups} />

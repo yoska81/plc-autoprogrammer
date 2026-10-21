@@ -4,6 +4,7 @@ import { desktopBridge, type ModbusBridge } from '../desktop/bridge';
 import { clickModbus, isWritable } from './clickModbus';
 import { encodeWord, planReads, pollOnce, wordValueError, type ModbusRef, type ReadBlock } from './poll';
 import { appPersistStorage } from '../lib/appStorage';
+import { HoldQueue, RefusedError } from './manualCommands';
 
 /**
  * Connection to a real CLICK PLC (desktop app only). Read-only by default:
@@ -38,6 +39,8 @@ interface OnlineStore {
   setAllowWrites: (v: boolean) => void;
   /** Log of writes made, newest first. */
   writes: { at: string; address: string; value: string; ok: boolean; error?: string }[];
+  /** Manual commands held ON right now (hold-to-run). */
+  held: string[];
 }
 
 export const useOnlineStore = create<OnlineStore>()(
@@ -55,6 +58,7 @@ export const useOnlineStore = create<OnlineStore>()(
       allowWrites: false,
       setAllowWrites: (allowWrites) => set({ allowWrites }),
       writes: [],
+      held: [],
     }),
     { name: 'isa-online-settings', storage: appPersistStorage(), partialize: (s) => ({ settings: s.settings }) },
   ),
@@ -107,7 +111,10 @@ export async function connectPlc(addresses: string[], bridge: ModbusBridge | nul
       const m = e instanceof Error ? e.message : String(e);
       // Between two polls the socket closed: say what that means at the machine.
       const why = /^Not connected$/.test(m) ? 'the PLC closed the connection (PLC switched off or restarted, cable unplugged, or its connection limit reached)' : m;
-      useOnlineStore.setState({ status: 'error', error: `Connection lost: ${why}. Connect again.`, allowWrites: false });
+      const stuck = [...holds.held];
+      holds.held.clear();
+      useOnlineStore.setState({ status: 'error', allowWrites: false, held: [],
+        error: `Connection lost: ${why}. Connect again.${stuck.length ? ` ${stuck.join(', ')} ${stuck.length > 1 ? 'were' : 'was'} held ON when the connection dropped: the PLC keeps ${stuck.length > 1 ? 'them' : 'it'} ON until the program or the CLICK software turns it OFF. Check the machine.` : ''}` });
       await bridge.disconnect().catch(() => {});
       session++;
       break;
@@ -117,6 +124,8 @@ export async function connectPlc(addresses: string[], bridge: ModbusBridge | nul
 }
 
 export async function disconnectPlc(bridge: ModbusBridge | null = modbusBridge()): Promise<void> {
+  // A held command goes OFF before the connection closes.
+  if (holds.held.size) { const p = holds.releaseAll(); syncHeld(); await p; }
   session++;
   useOnlineStore.setState({ status: 'disconnected', allowWrites: false });
   await bridge?.disconnect().catch(() => {});
@@ -146,4 +155,46 @@ export async function writePlc(address: string, value: boolean | number, bridge:
     log(false, msg);
     throw new Error(`Write to ${address} failed: ${msg}`, { cause: e });
   }
+}
+
+/**
+ * Hold-to-run manual commands: `press` writes the C bit ON (writes must be allowed), `release` writes it OFF.
+ * The OFF of a held command always goes out while connected, even if "Allow writes" was switched off in between.
+ * Every write is in the write log.
+ */
+async function commandWrite(address: string, value: boolean, bridge: ModbusBridge | null): Promise<void> {
+  const st = useOnlineStore.getState();
+  const r = clickModbus(address);
+  const log = (ok: boolean, error?: string) => useOnlineStore.setState((s) => ({ writes: [{ at: new Date().toLocaleTimeString(), address, value: `${value ? 'ON' : 'OFF'} (${value ? 'held' : 'released'})`, ok, error }, ...s.writes].slice(0, 50) }));
+  if (!bridge || st.status !== 'connected') { log(false, 'not connected'); throw new RefusedError('Not connected to a PLC.'); }
+  if (!r || r.table !== 'coil' || !isWritable(address)) { log(false, 'not a C bit'); throw new RefusedError(`${address} is not a C bit: manual commands write C bits only.`); }
+  if (value && !st.allowWrites) { log(false, 'writes off'); throw new RefusedError('Writes are switched off. Turn on "Allow writes" first.'); }
+  try { await bridge.writeCoil(r.register, value); log(true); } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    log(false, msg);
+    throw new Error(`Write to ${address} failed: ${msg}`, { cause: e });
+  }
+}
+
+let commandBridge: () => ModbusBridge | null = modbusBridge;
+const holds = new HoldQueue((a, v) => commandWrite(a, v, commandBridge()));
+const syncHeld = () => useOnlineStore.setState({ held: [...holds.held] });
+
+/** Tests: the bridge manual commands write to. */
+export function setCommandBridge(b: () => ModbusBridge | null) { commandBridge = b; }
+
+export function pressCommand(address: string): Promise<void> {
+  const p = holds.press(address);
+  syncHeld();
+  return p;
+}
+export function releaseCommand(address: string): Promise<void> {
+  const p = holds.release(address);
+  syncHeld();
+  return p;
+}
+export function releaseAllCommands(): Promise<void> {
+  const p = holds.releaseAll();
+  syncHeld();
+  return p;
 }
