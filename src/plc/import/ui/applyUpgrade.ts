@@ -13,6 +13,8 @@ import type { SpecSectionId } from '../../../spec/types';
 import type { LadderProgram } from '../../core/ladder';
 import { panelTags, programRoles } from '../hmiRoles';
 import type { UpgradeRoles } from '../../../hmi/engine/upgradeHmi';
+import type { VendorGroup } from '../../../electrical/catalogs';
+import type { VendorId } from '../../../electrical/types';
 
 /**
  * Make the imported program the open project: PLC and modules, the I/O list (replaced), the program
@@ -24,6 +26,7 @@ export function applyUpgrade(imp: ImportedProgram, fileText?: string, planned?: 
   const plan = planned ?? planUpgrade(imp, useProjectStore.getState().plcId);
   const project = useProjectStore.getState();
   project.setPlc(plan.plcId, plan.cpuId);
+  machineBrands(imp);
   project.setModules(plan.modules);
   useIOStore.getState().importPoints(plan.io, true);
   const s = imp.source;
@@ -46,6 +49,21 @@ export function applyUpgrade(imp: ImportedProgram, fileText?: string, planned?: 
   // The original file goes with the project (compressed) so the download can write the changes into it.
   if (fileText && canPatch(plan.original, plan.plcId)) void keepFile(fileText, plan.original.importedAt);
   return plan;
+}
+
+/**
+ * A program read from a Yaskawa MPE720 project: the brand rows follow the machine. The PLC row shows the project's
+ * PLC (a PLC brand chosen before no longer overrides it); its servo drives are Yaskawa, and a Weintek panel project
+ * that came with it makes the panel row Weintek. The other rows keep the user's choice.
+ */
+function machineBrands(imp: ImportedProgram): void {
+  if (imp.source.format !== 'yaskawa-mpe720') return;
+  const { info, setInfo } = useProjectStore.getState();
+  const vendors: Partial<Record<VendorGroup, VendorId[]>> = { ...info.vendors };
+  delete vendors.plc;
+  if (imp.source.axes?.some((a) => a.kind === 'servo')) vendors.drives = ['yaskawa'];
+  if (imp.source.panel) vendors.hmi = [imp.source.panel.vendor as VendorId];
+  setInfo({ vendors, plcChosen: false });
 }
 
 /** Largest compressed original kept with the project (the project is saved in the browser's storage). */

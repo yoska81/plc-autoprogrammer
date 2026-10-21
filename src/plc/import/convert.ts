@@ -247,7 +247,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
   const total = outRungs.length + notConverted.filter((n) => !n.kept).length;
   const converted = outRungs.filter((r) => ![...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW')).length;
   return {
-    source: { format: fp.format, vendor: fp.vendor, controller: fp.controller, projectName: fp.projectName, fileName, ...(fp.modules?.length ? { modules: fp.modules } : {}), ...(fp.axes?.length ? { axes: fp.axes } : {}) },
+    source: { format: fp.format, vendor: fp.vendor, controller: fp.controller, projectName: fp.projectName, fileName, ...(fp.modules?.length ? { modules: fp.modules } : {}), ...(fp.axes?.length ? { axes: fp.axes } : {}), ...(fp.panel ? { panel: fp.panel } : {}) },
     program, io, names, blockOrigin, rungOrigin,
     report: { rungs: total, converted, notConverted, notes: [...new Set(notes)], outside: fp.outside ?? [] },
   };

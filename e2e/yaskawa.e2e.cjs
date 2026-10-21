@@ -28,7 +28,14 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.evaluate(() => localStorage.clear());
   await page.goto(BASE + '/upgrade');
 
-  await page.getByTestId('program-file').setInputFiles(FIXTURE);
+  // With a synthetic Weintek EasyBuilder Pro panel project (two screens, Memobus addresses), as src/plc/import/mpe720.test.ts builds it.
+  const MEMO = 'Memobus (Yaskawa MP Series Controllers)';
+  const cs = (t) => [0xff, 0xfe, 0xff, t.length, ...[...t].flatMap((ch) => [ch.charCodeAt(0), 0])];
+  const u32 = (v) => [v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, v >>> 24];
+  const PANEL = path.join(OUT, 'panel.emtp');
+  fs.writeFileSync(PANEL, Buffer.from([0xa9, 0, 0, 0, ...cs('5.07.01'), 0, 0, 0, 0, ...cs('Main'), ...u32(800), ...u32(480), ...u32(0), ...u32(0),
+    ...cs('Alarms'), ...u32(800), ...u32(480), ...u32(0), ...u32(0), ...cs('Local HMI'), ...cs(MEMO), 0, 0, 0, 0, 0x00, 0x05, ...cs('0'), ...cs('237')]));
+  await page.getByTestId('program-file').setInputFiles([FIXTURE, PANEL]);
   const found = page.getByTestId('program-found');
   await found.waitFor({ timeout: 15000 });
   const text = await found.innerText();
@@ -89,6 +96,12 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   const eq = await page.locator('main').innerText();
   check(!/to CLICK|CLICK is not in|CLICK only/.test(eq), '/equipment: no panel judged against a CLICK');
   check(/Choose the PLC first: the MP-CPU is the machine's own controller/.test(eq), '/equipment: panels wait for the PLC to be chosen');
+  // The brand rows follow the machine: its Yaskawa PLC and servo drives, its Weintek panel; never AutomationDirect for those.
+  const brands = await page.locator('section[aria-label="Preferred brands"] select[aria-label^="Brand for"]').evaluateAll((els) => els.map((e) => [e.getAttribute('aria-label'), e.selectedOptions[0]?.textContent ?? '']));
+  const row = (re) => brands.find(([label]) => re.test(label))?.[1] ?? '';
+  check(/^Yaskawa/.test(row(/PLC/)), `/equipment: PLC and I/O brand is Yaskawa ("${row(/PLC/)}")`);
+  check(/^Yaskawa/.test(row(/drive/i)), `/equipment: drives brand is Yaskawa ("${row(/drive/i)}")`);
+  check(/^Weintek/.test(row(/HMI|panel \(HMI\)|Operator/i)), `/equipment: HMI brand is Weintek ("${row(/HMI|Operator/i)}")`);
   await noClick('/export');
   check(await page.getByTestId('export-read-only').isVisible(), 'the deliverables say a PLC is needed for the program files');
 

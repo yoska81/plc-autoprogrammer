@@ -35,7 +35,7 @@ const has = (id: string) => (t: SpecView) => Boolean(t.sections[id]?.trim());
 export const NEEDS: Need[] = [
   // Equipment
   { id: 'brand', stage: 'equipment', topic: 'Equipment', question: 'Which PLC and HMI brand should be used (e.g. Allen-Bradley, Siemens, AutomationDirect), or is any brand fine?',
-    covered: /allen[- ]?bradley|rockwell|siemens|automation ?direct|\bclick\b|omron|mitsubishi|schneider|beckhoff|productivity|compactlogix|controllogix|micro ?8\d0|\bs7-?\d|any brand|no preference/i,
+    covered: /allen[- ]?bradley|rockwell|siemens|automation ?direct|\bclick\b|omron|mitsubishi|schneider|beckhoff|productivity|compactlogix|controllogix|micro ?8\d0|\bs7-?\d|yaskawa|mpe720|any brand|no preference/i,
     settles: /\b(plc|hmi|controller)\b.*\b(brand|make|manufacturer|vendor)\b|\bbrand\b.*\b(plc|hmi)\b/i },
   // I/O
   { id: 'sensor-type', stage: 'io', topic: 'Sensors and I/O', question: 'Which 24 VDC sensor outputs are used: PNP (sourcing) or NPN (sinking)?',

@@ -336,8 +336,10 @@ export function describeProgram(imp: ImportedProgram): Partial<Record<SpecSectio
   const byBlock = rungsByBlock(imp);
   const partsShown = blocks.slice(0, max(MAX_LINES.parts));
   for (const b of partsShown) {
-    const comments = (byBlock.get(b.id) ?? []).filter((r) => r.comment.trim()).map((r) => `  - ${r.comment.trim()}`);
+    const comments = (byBlock.get(b.id) ?? []).filter((r) => r.comment.trim() && r.comment.trim() !== b.name).map((r) => `  - ${r.comment.trim()}`);
     if (comments.length) seq.push(`${b.name}:`, ...capped(comments, max(MAX_LINES.perPart), (n) => `  - … and ${n} more rung comments`));
+    // An MPE720 drawing is a step of the scan even when its rungs say nothing more than its title.
+    else if (imp.source.format === 'yaskawa-mpe720') seq.push(`${b.name}`);
   }
   if (blocks.length > partsShown.length) seq.push(`… and ${blocks.length - partsShown.length} more parts (see the PLC program).`);
   const nick = new Map(imp.program.tags.map((t) => [t.address, t.nickname]));
@@ -356,7 +358,52 @@ export function describeProgram(imp: ImportedProgram): Partial<Record<SpecSectio
   const blockName = new Map(blocks.map((b) => [b.id, b.name]));
   const alarms = imp.program.rungs.filter((r) => /alarm|fault|jam|timeout|overload/i.test(`${r.comment} ${(r.block && blockName.get(r.block)) ?? ''}`));
   if (alarms.length) out.alarms = capped([...new Set(alarms.map((r) => `- ${r.comment.trim() || 'Alarm rung'}`))], max(MAX_LINES.list), (n) => `- … and ${n} more alarm rungs`).join('\n');
+  machineFacts(imp, out, byBlock, max);
   return out;
+}
+
+/** "IB00012" → its I/O word ("IB0001"), for the MP registers of a Yaskawa project; null for other addresses. */
+const mpWord = (a: string) => /^([IO])B([0-9A-F]{4})[0-9A-F]$/i.exec(a.trim())?.slice(1, 3).join('').toUpperCase() ?? null;
+
+/**
+ * What the project file says about the machine beyond the rungs (an MPE720 project: its rack, its drawings with
+ * their first comment, the I/O by register word, the servo axes, the motion programs, the touch panel), added to
+ * the description written from the program.
+ */
+function machineFacts(imp: ImportedProgram, out: Partial<Record<SpecSectionId, string>>, byBlock: Map<string, ImportedProgram['program']['rungs']>, max: (n: number) => number): void {
+  const s = imp.source;
+  const add = (id: SpecSectionId, lines: string[], after = false) => { if (lines.length) out[id] = (after ? [out[id], lines.join('\n')] : [lines.join('\n'), out[id]]).filter(Boolean).join('\n\n'); };
+  const over: string[] = [];
+  if (s.modules?.length) over.push(`Rack: ${s.modules.map((m) => m.catalog).join(', ')}.`);
+  if (s.format === 'yaskawa-mpe720') {
+    // Each drawing with what its first commented rung says it does.
+    const drawings = (imp.program.blocks ?? []).map((b) => {
+      const first = (byBlock.get(b.id) ?? []).find((r) => r.comment.trim() && r.comment.trim() !== b.name)?.comment.trim();
+      return `- ${b.name}${first ? ` — ${first}` : ''}`;
+    });
+    if (drawings.length) over.push('Drawings (in scan order):', ...capped(drawings, max(MAX_LINES.parts), (n) => `- … and ${n} more drawings`));
+    // The I/O by register word: one word is one 16-point module group on the machine.
+    const words = new Map<string, string[]>();
+    for (const p of imp.io) { const w = mpWord(p.original); if (w) words.set(w, [...(words.get(w) ?? []), p.description || p.name]); }
+    if (words.size) over.push('I/O by register word:', ...capped([...words].sort(([a], [b]) => a.localeCompare(b)).map(([w, names]) => `- ${w[0] === 'I' ? 'Inputs' : 'Outputs'} ${w[0]}B${w.slice(1)}0–${w[0]}B${w.slice(1)}F: ${names.join(', ')}`), max(MAX_LINES.list), (n) => `- … and ${n} more words`));
+  }
+  add('overview', over, true);
+  const motion: string[] = [];
+  const servos = (s.axes ?? []).filter((a) => a.kind === 'servo').length;
+  if (s.axes?.length) {
+    motion.push(`Servo axes on MECHATROLINK (${s.axes.length}${servos < s.axes.length ? `, ${s.axes.length - servos} virtual` : ''}): each servo axis is a ${s.vendor} servo drive with its servo motor, not a VFD or an AC motor.`, ...s.axes.map((a) => `- ${axisText(a)}`));
+    // The motion I/O written below are the program's signals: no motor of their own unless they name a contactor or a VFD.
+    if (out.motion) out.motion = `Motion I/O (signals of the program; an AC motor only where a contactor or VFD output is named, from the program: check):\n${out.motion}`;
+  }
+  const programs = imp.report.notConverted.filter((n) => / motion program$/.test(n.where));
+  if (programs.length) {
+    motion.push(`Motion programs (${programs.length}), kept as written:`, ...capped(programs.map((n) => {
+      const body = n.text.split('\n').map((l) => l.trim()).filter((l) => l && !/^end;?$/i.test(l));
+      return `- ${body[0] ?? n.where}${body.length > 1 ? ` (${body.length - 1} line${body.length === 2 ? '' : 's'}: ${body.slice(1, 3).join(' ')}${body.length > 3 ? ' …' : ''})` : ''}`;
+    }), max(MAX_LINES.list), (n) => `- … and ${n} more motion programs`));
+  }
+  add('motion', motion);
+  if (s.panel) add('operator', [`Touch panel: ${s.panel.software} project with ${s.panel.screens.length} screen${s.panel.screens.length === 1 ? '' : 's'}${s.panel.screens.length ? ` (${capped(s.panel.screens, 30, (n) => `and ${n} more`).join(', ')})` : ''}.`]);
 }
 
 /** Most lines of each kind in the description written from a big program (one of more lines than BIG_DESCRIPTION_LINES). */
@@ -380,6 +427,8 @@ export function questionsFor(imp: ImportedProgram): string[] {
     q.push(`Rewrite by hand: the original program has an instruction that could not be read, "${n.text}" (${n.where}). In this program it does nothing. What does it do on the machine?`);
   }
   for (const n of imp.report.notConverted.filter((x) => !isUnreadBox(x.text)).slice(0, 8)) {
+    // A block of code (a motion program, a function kept whole) is named, not pasted into the question.
+    if (n.text.includes('\n')) { q.push(`The original program has ${codeName(n)}. It is kept as written (shown under Motion and on the Upgrade page); the simulator can't run it. What does it do on the machine?`); continue; }
     q.push(n.kept
       ? `The original program has "${n.text}" (${n.where}). It is kept as it was and goes back into the PLC, but the simulator can't run it. What does it do on the machine?`
       : `The original program has "${n.text}" (${n.where}) that could not be brought in. What does it do on the machine?`);
@@ -388,6 +437,17 @@ export function questionsFor(imp: ImportedProgram): string[] {
   for (const d of imp.report.notes.filter((x) => /^Hard to read:/.test(x))) q.push(`${d.replace(/\.$/, '')}. Please check it against the printout: is it right as read?`);
   q.push('What problems does the machine have today, and what should the upgrade fix?');
   return q;
+}
+
+/** A block of code by its name and size: motion program MPM001 "DEMO", 3 lines; else its part and first line. */
+function codeName(n: ImportedProgram['report']['notConverted'][number]): string {
+  const lines = n.text.split('\n').map((l) => l.trim()).filter((l) => l && !/^end;?$/i.test(l));
+  const mpm = /^(MPM\d+)\s+"([^"]*)"/.exec(lines[0] ?? '');
+  // a motion program's first line is its name: the lines after it are its code
+  const n0 = mpm ? lines.length - 1 : lines.length;
+  const count = `${n0} line${n0 === 1 ? '' : 's'}`;
+  if (mpm) return `motion program ${mpm[1]} "${mpm[2]}", ${count}`;
+  return `a block of ${count} in ${n.where} starting "${(lines[0] ?? '').slice(0, 60)}"`;
 }
 
 /** Short plain-text summary of the import (shown on the page and given to the AI that writes the description). */
