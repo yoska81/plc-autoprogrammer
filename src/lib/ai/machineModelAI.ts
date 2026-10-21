@@ -5,6 +5,7 @@ import { defaultMachineModel, generateDesign, type EngineInput, type EngineResul
 import type { ModelMotor, MotorStart } from '../../electrical/engine/machineModel';
 import { callClaude } from './anthropic';
 import { ANSWERED_RULE } from '../../components/questions/classify';
+import { specForAI } from './specForAI';
 
 /**
  * Electrical design, rule-based first and AI second: the AI reads the specification into a small
@@ -98,7 +99,7 @@ export async function machineModelFromSpec(opts: AiOptions & { spec: string; io:
   const kept = new Set(base.motors.map((m) => m.tag));
   const motors = opts.inputs.motors.filter((m) => kept.has(m.tag)).map((m) => `${m.tag}: ${m.description}, ${m.hp} HP, ${m.starter}${m.reversing ? ', reversing' : ''}`).join('\n') || '(none)';
   const io = opts.io.map((p) => `${p.type}\t${p.description}`).join('\n') || '(no I/O yet)';
-  const content = `Machine specification:\n${opts.spec || '(not given)'}\n\nSupply: ${opts.inputs.supply}\nDesigner's motor list:\n${motors}\n\nI/O list (type, description):\n${io}`;
+  const content = `Machine specification:\n${specForAI(opts.spec, 'machine') || '(not given)'}\n\nSupply: ${opts.inputs.supply}\nDesigner's motor list:\n${motors}\n\nI/O list (type, description):\n${io}`;
   const { text, reasoning } = await callClaude({ ...opts, task: 'machine', system: SYSTEM, messages: [{ role: 'user', content }], schema: MACHINE_MODEL_SCHEMA });
   let parsed: AiModel;
   try { parsed = JSON.parse(text); } catch (err) { throw new Error('The AI answer could not be read.', { cause: err }); }
