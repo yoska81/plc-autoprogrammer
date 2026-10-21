@@ -2164,6 +2164,7 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     const order: CatalogCategory[] = ['disconnect', 'breaker', 'fuse', 'powerSupply', 'plc', 'plcModule', 'commModule', 'motorProtector', 'contactor', 'vfd', 'safetyRelay', 'relay', 'other'];
     // A communication module mounted on the CPU's left (S7-1200 CM, FX5 adapter) goes just before the CPU.
     if (c.category === 'commModule' && /left side/i.test(String(c.part?.ratings.forUse ?? ''))) return order.indexOf('plc') - 0.5;
+    if (c.part?.ratings.kind === 'plc-base-unit') return order.indexOf('plc');
     const i = order.indexOf(c.category);
     return i < 0 ? 99 : i;
   };
@@ -2174,10 +2175,12 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     used.add(c);
     if (c.category === 'fan') { unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: 'Enclosure side/door mounted' }); continue; }
     if (c.category === 'commModule' && c.part?.ratings.inCpu === 'yes') { unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: 'Option board inside the PLC CPU' }); continue; }
+    // CPU and option modules that plug into a base unit (Yaskawa MP3300): the base unit takes the panel space.
+    if (c.part?.ratings.inRack === 'yes') { const bu = bp.find((x) => x.part?.ratings.kind === 'plc-base-unit'); unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: `In a slot of the base unit${bu ? ` ${bu.tag} ${bu.partNumber}` : ''}` }); continue; }
     if (c.category === 'overload' && bp.some((x) => x.category === 'contactor' && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag)) continue;
     if (c.category === 'groundBar') groundBars.push(...expand(c));
     else if (['disconnect', 'breaker', 'fuse'].includes(c.category)) rows[0].push(...expand(c));
-    else if (['powerSupply', 'plc', 'plcModule', 'commModule'].includes(c.category)) rows[1].push(...expand(c));
+    else if (['powerSupply', 'plc', 'plcModule', 'commModule'].includes(c.category) || c.part?.ratings.kind === 'plc-base-unit') rows[1].push(...expand(c));
     else if (c.category === 'contactor') {
       const it = mk(c);
       const ol = bp.find((x) => x.category === 'overload' && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag);
@@ -3095,8 +3098,12 @@ export function designWarnings(ctx: DrawingContext): string[] {
     inCap += (i ?? 0) * qty; outCap += (o ?? 0) * qty;
   }
   const nIn = m.io.filter((p) => p.type === 'input').length, nOut = m.io.filter((p) => p.type === 'output').length;
-  if (capKnown && nIn > inCap) w.push(`PLC inputs over capacity: ${nIn} used, ${inCap} available — add an input module.`);
-  if (capKnown && nOut > outCap) w.push(`PLC outputs over capacity: ${nOut} used, ${outCap} available — add an output module.`);
+  // A rack CPU (Yaskawa MP3300) with no I/O module in its base unit: the machine's field I/O is remote I/O (MECHATROLINK
+  // or Ethernet stations) — said once, no I/O modules drawn or asked for until the stations are identified.
+  const remoteIo = !!m.plcPart?.ratings.baseUnit && inCap === 0 && outCap === 0 && nIn + nOut > 0;
+  if (remoteIo) w.push(`Field I/O (${nIn} inputs, ${nOut} outputs): existing remote I/O (not identified) — the ${m.plcPart?.partNumber ?? ctx.plc.cpuPartNumber} has no I/O modules in its base unit, so the points stay at their PLC registers and no rack I/O modules are drawn. Identify the remote I/O stations (e.g. MTD2310 on MECHATROLINK-III, or Ethernet remote I/O) to draw their wiring.`);
+  if (!remoteIo && capKnown && nIn > inCap) w.push(`PLC inputs over capacity: ${nIn} used, ${inCap} available — add an input module.`);
+  if (!remoteIo && capKnown && nOut > outCap) w.push(`PLC outputs over capacity: ${nOut} used, ${outCap} available — add an output module.`);
   for (const g of m.groups) {
     if (g.type === 'input' && g.points.some((p) => p.deviceType === 'sensor-npn') && g.points.some((p) => p.deviceType === 'sensor-pnp')) w.push(`${g.label}: mixed PNP and NPN sensors on one common — not possible; split commons or change sensors.`);
     // NPN sensors put the common on +24V: the group's dry contacts are wired to switch 0V (said, so the electrician
@@ -3283,7 +3290,7 @@ export function plcRack(ctx: DrawingContext): PlcRackSlot[] {
   const out: PlcRackSlot[] = [];
   const cpu = m.plcPart;
   out.push({
-    slot: 0, tag: m.plcTag, partNumber: ctx.plc.cpuPartNumber, part: cpu, description: cpu?.description ?? ctx.plc.cpuLabel,
+    slot: 0, tag: m.plcTag, partNumber: cpu?.partNumber ?? ctx.plc.cpuPartNumber, part: cpu, description: cpu?.description ?? ctx.plc.cpuLabel,
     inputs: ins(cpu) ?? 0, outputs: outs(cpu) ?? 0, outputStyle: outputStyleOf(ctx.plc.cpuPartNumber, cpu), known: ins(cpu) !== undefined || outs(cpu) !== undefined,
   });
   const modules = byCat(m.rc, 'plcModule');

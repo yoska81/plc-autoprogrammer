@@ -5,6 +5,7 @@ import { ALLEN_BRADLEY } from './allenBradley';
 import { SIEMENS } from './siemens';
 import { SCHNEIDER } from './schneider';
 import { YASKAWA } from './yaskawa';
+import { YASKAWA_MOTION } from './yaskawaMotion';
 import { IFM } from './ifm';
 import { PEPPERL } from './pepperl';
 import { BANNER } from './banner';
@@ -91,7 +92,7 @@ export const VENDORS: Vendor[] = [
     notes: 'TeSys Deca LC1D…BD = 24 VDC coil, built-in 1 N.O. + 1 N.C. auxiliary contact. LRD overloads mount directly on LC1D; choose the range containing the motor FLA. GV2ME motor circuit breakers are for group motor installation together with an LC1D contactor (not UL Type E); a UL Type E self-protected starter is the GV2P with a GV2GH7 line spacer. Multi9 C60BP breakers are UL 489; 2- and 3-pole are 480Y/277 V (wye only). ATV320 has Modbus and CANopen built in (EtherNet/IP needs an option card); ATV630 has Modbus TCP Ethernet built in. M221 / M241 take up to 7 local TM3 modules. Pair the XB5AS8444 (2 N.C.) E-stop with the XPSUAF13AP safety relay (2 channels, 3 N.O. safety outputs, 24 V AC/DC). Linergy NSYTRV terminals: end cover NSYTRAC22 and end stops NSYTRAAB35. The Harmony GTU is two parts ordered together: HMIG3U box + HMIDT732 display.',
   },
   {
-    id: 'yaskawa', name: 'Yaskawa', supplier: 'Yaskawa (distributor)', parts: tag('yaskawa', YASKAWA), otherGroup: 'drives',
+    id: 'yaskawa', name: 'Yaskawa', supplier: 'Yaskawa (distributor)', parts: tag('yaskawa', [...YASKAWA, ...YASKAWA_MOTION]), otherGroup: 'drives',
     notes: 'GA500 / GA800 US model numbers; size the drive by output current (Normal Duty hp480 / hp230, Heavy Duty *HD). Network option cards are not in the catalog: when the drive must be on EtherNet/IP or PROFINET, say in "notes" that the option card (and on the GA500 the JOHB-GA50 carrier) is ordered with the drive.',
   },
   {

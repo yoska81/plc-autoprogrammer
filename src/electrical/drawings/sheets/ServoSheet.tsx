@@ -36,24 +36,33 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
   const relayTag = plan.model.safety.relay?.tag ?? 'SR';
   const fbIn = P && plan.model.wires.find((w) => w.to === `${d.tag}:${P.sto.fbPlus}`);
   const fbOut = P && plan.model.wires.find((w) => w.from === `${d.tag}:${P.sto.fbMinus}`);
+  // the maker's signal names (SureServo2 STO_A / STO_B / FDBK; Yaskawa /HWBB1 / /HWBB2 / EDM1)
+  const n = P?.stoNames ? { a: P.stoNames.a, b: P.stoNames.b, fb: P.stoNames.fb, what: 'HARD WIRE BASE BLOCK (STO)' } : { a: 'STO_A', b: 'STO_B', fb: 'FDBK', what: 'SAFE TORQUE OFF' };
   const sto: string[][] = P && a.sto ? [
-    [P.sto.aPlus, a.sto.a.wire, `STO_A+ — SAFE TORQUE OFF CH A (${a.sto.a.from.replace(/^TB1 /, '')})`, a.sto.a.from], [P.sto.aMinus, '0V', '/STO_A', tbOf('0V')],
-    [P.sto.bPlus, a.sto.b.wire, `STO_B+ — SAFE TORQUE OFF CH B (${a.sto.b.from})`, a.sto.b.from], [P.sto.bMinus, '0V', '/STO_B', tbOf('0V')],
+    [P.sto.aPlus, a.sto.a.wire, `${n.a}+ — ${n.what} CH 1 (${a.sto.a.from.replace(/^TB1 /, '')})`, a.sto.a.from], [P.sto.aMinus, '0V', `${n.a}-`, tbOf('0V')],
+    [P.sto.bPlus, a.sto.b.wire, `${n.b}+ — ${n.what} CH 2 (${a.sto.b.from})`, a.sto.b.from], [P.sto.bMinus, '0V', `${n.b}-`, tbOf('0V')],
     // the feedback loop's own wire numbers on FDBK+ / FDBK- (wire list), and the devices they come from / go to
-    [P.sto.fbPlus, fbIn?.wire ?? 'S33', `FDBK+ — STO FEEDBACK IN ${relayTag} S33-S34 LOOP (S33 SIDE)`, fbIn?.from ?? `${relayTag}:S33`],
-    [P.sto.fbMinus, fbOut?.wire ?? 'S34', `FDBK- — TOWARD ${relayTag} S34`, fbOut?.to ?? `${relayTag}:S34`],
+    [P.sto.fbPlus, fbIn?.wire ?? 'S33', `${n.fb}+ — STO FEEDBACK IN ${relayTag} S33-S34 LOOP (S33 SIDE)`, fbIn?.from ?? `${relayTag}:S33`],
+    [P.sto.fbMinus, fbOut?.wire ?? 'S34', `${n.fb}- — TOWARD ${relayTag} S34`, fbOut?.to ?? `${relayTag}:S34`],
+  ] : [];
+  // MECHATROLINK-III: in from the CPU / previous drive, out to the next one (the last stays open: no terminator)
+  const net: string[][] = P?.network && a.link ? [
+    [P.network.in, a.link.cable?.tag ?? 'NW', `${P.network.name} IN${a.link.cable ? ` — CABLE ${a.link.cable.partNumber}` : ''}`, a.link.in.replace(/^PLC:/, 'PLC ')],
+    [P.network.out, a.link.out ? 'NW' : '—', a.link.out ? `${P.network.name} OUT TO NEXT STATION` : `${P.network.name} OUT — OPEN (LAST STATION, NO TERMINATOR)`, a.link.out ?? ''],
   ] : [];
   const ctl: string[][] = P && a.control === '24V' ? [['24V', '24+', 'CONTROL POWER 24 VDC (460 V DRIVE)', tbOf('24+')], ['0V', '0V', 'CONTROL POWER 0 V', tbOf('0V')]] : [];
-  const fixed = [...pullUps, ...ctl, ...sto];
+  const fixed = [...net, ...pullUps, ...ctl, ...sto];
   const boxH = Math.max(40, (a.terminals.length + fixed.length) * pitch + 14);
   // Each device with its tag as its own text (the CAD export turns a text equal to a tag into a device reference).
-  const chain = [a.protection && [a.protection.tag, a.protection.partNumber], a.filter && [a.filter.tag, `EMI FILTER ${a.filter.partNumber}`], [d.tag, d.partNumber], a.motor && [a.motor.tag, `MOTOR ${a.motor.partNumber}`]].filter(Boolean) as [string, string][];
+  const motors = a.motors?.length ? a.motors : a.motor ? [a.motor] : [];
+  const chain = [a.protection && [a.protection.tag, a.protection.partNumber], a.filter && [a.filter.tag, `EMI FILTER ${a.filter.partNumber}`], [d.tag, d.partNumber],
+    ...motors.map((m, i) => [m.tag, `MOTOR ${m.partNumber}${motors.length > 1 ? ` (AXIS ${i ? 'B' : 'A'}: ${(i ? P?.motorB : P?.power.motor)?.join(' / ') ?? ''})` : ''}`])].filter(Boolean) as [string, string][];
   return (
     <g>
-      <Txt x={AREA.x + 6} y={AREA.y + 7} size={3.2} bold>{`AXIS ${a.axis} — SERVO ${d.tag} ${d.partNumber}${P ? ` (${P.family.toUpperCase()})` : ''}${a.motor ? ` · MOTOR ${a.motor.tag} ${a.motor.partNumber}` : ''}`}</Txt>
+      <Txt x={AREA.x + 6} y={AREA.y + 7} size={3.2} bold>{`AXIS ${a.axis} — SERVO ${d.tag} ${d.partNumber}${P ? ` (${P.family.toUpperCase()})` : ''}${motors.length ? ` · MOTOR ${motors.map((m) => `${m.tag} ${m.partNumber}`).join(', ')}` : ''}`}</Txt>
       <Txt x={AREA.x + 6} y={AREA.y + 12} size={2.3}>{`${d.comp.function.toUpperCase()}`}</Txt>
       <Txt x={X.plc + 10} y={y0 - 4} size={2.4} bold anchor="middle">PLC</Txt>
-      <Txt x={X.drv + 15} y={y0 - 4} size={2.4} bold anchor="middle">{`${d.tag} CN1 / CN10`}</Txt>
+      <Txt x={X.drv + 15} y={y0 - 4} size={2.4} bold anchor="middle">{P?.network ? `${d.tag} ${P.network.in} / ${P.stoNames?.connector ?? 'CN8'}` : `${d.tag} CN1 / CN10`}</Txt>
       <rect x={X.drv} y={y0} width={30} height={boxH} strokeWidth={0.45} fill="#fff" />
       {a.terminals.map((t, i) => {
         const y = y0 + 8 + i * pitch;
@@ -93,11 +102,11 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
             <Txt x={right + 2} y={y + 1.5} size={2.1} bold>{ctag}</Txt>
             <Txt x={right + 16} y={y + 1.5} size={2.1} maxW={AREA_R - right - 22}>{ctext}</Txt>
             {i < chain.length - 1 && <Line x1={right + 12} y1={y + 5} x2={right + 12} y2={y + 10} w={LW_THIN} />}
-            {i < chain.length - 1 && <Txt x={right + 15} y={y + 8.5} size={1.8}>{i === chain.length - 2 && a.motor ? `${P?.power.motor.join(' / ') ?? 'U / V / W'} + PE · SERVO POWER CABLE` : `${P ? P.power.line.join(' / ') : 'L1 / L2 / L3'}${P && i === chain.length - 2 && a.control === 'ac' ? ` + ${P.power.control.join(' / ')} (CONTROL)` : ''}`}</Txt>}
+            {i < chain.length - 1 && <Txt x={right + 15} y={y + 8.5} size={1.8}>{i >= chain.length - 1 - motors.length && motors.length ? `${(i === chain.length - 2 && motors.length > 1 ? P?.motorB : P?.power.motor)?.join(' / ') ?? 'U / V / W'} + PE · SERVO POWER CABLE` : `${P ? P.power.line.join(' / ') : 'L1 / L2 / L3'}${P && i === chain.length - 2 - Math.max(0, motors.length - 1) && a.control === 'ac' ? ` + ${P.power.control.join(' / ')} (CONTROL)` : ''}`}</Txt>}
           </g>
         );
       })}
-      <Txt x={right} y={y0 + 8 + chain.length * 14} size={2.0} maxW={AREA_R - right - 4}>{a.brakingResistor ? `EXTERNAL REGEN RESISTOR ${a.brakingResistor.tag} ON ${P?.power.regen.p}-${P?.power.regen.c}, JUMPER ${P?.power.regen.p}-${P?.power.regen.d} REMOVED` : `BUILT-IN REGEN RESISTOR: JUMPER ${P?.power.regen.p ?? 'P'}-${P?.power.regen.d ?? 'D'} IN PLACE`}</Txt>
+      <Txt x={right} y={y0 + 8 + chain.length * 14} size={2.0} maxW={AREA_R - right - 4}>{P?.network ? (/^no/i.test(String(d.part?.ratings.builtInRegen ?? '')) ? 'NO BUILT-IN REGEN RESISTOR: B2-B3 NOT CONNECTED (EXTERNAL RESISTOR ON B1/+ - B2 IF NEEDED)' : 'BUILT-IN REGEN RESISTOR: SHORT BAR B2-B3 IN PLACE') : a.brakingResistor ? `EXTERNAL REGEN RESISTOR ${a.brakingResistor.tag} ON ${P?.power.regen.p}-${P?.power.regen.c}, JUMPER ${P?.power.regen.p}-${P?.power.regen.d} REMOVED` : `BUILT-IN REGEN RESISTOR: JUMPER ${P?.power.regen.p ?? 'P'}-${P?.power.regen.d ?? 'D'} IN PLACE`}</Txt>
       {/* power wire numbers of this axis (wire list: protection → drive, control power jumpers, drive → motor) */}
       {(() => {
         const ws = plan.model.wires.filter((w) => w.wire.startsWith(`${d.tag}-`));
@@ -120,7 +129,7 @@ export function ServoSheet({ plan, sheet }: { plan: DrawingPlan; sheet: PlannedS
         <Txt key={i} x={AREA.x + 6} y={y0 + boxH + 12 + i * 5} size={2.0} maxW={right - AREA.x - 14}>{`${i + 1}. ${n.toUpperCase()}`}</Txt>
       ))}
       <Txt x={AREA.x + 6} y={AREA_B - 5} size={2.1} maxW={AREA.w - 12}>
-        {`${P ? `TERMINALS PER ${P.source.toUpperCase()}. ` : ''}CONTROL WIRING 18 AWG; PULSE / DIRECTION IN A SHIELDED CABLE AWAY FROM MOTOR POWER; MOTOR POWER AND ENCODER CABLES ARE THE MAKER'S, PLUGGED BOTH ENDS.`}
+        {`${P ? `TERMINALS PER ${P.source.toUpperCase()}. ` : ''}${P?.network ? `${P.network.name}: NO TERMINATOR REQUIRED — THE LAST STATION'S ${P.network.out} STAYS OPEN. ` : ''}CONTROL WIRING 18 AWG; ${P?.network ? `${P.network.name} CABLES ARE THE MAKER'S (MAX 50 M BETWEEN STATIONS), ROUTED AWAY FROM MOTOR POWER` : 'PULSE / DIRECTION IN A SHIELDED CABLE AWAY FROM MOTOR POWER'}; MOTOR POWER AND ENCODER CABLES ARE THE MAKER'S, PLUGGED BOTH ENDS.`}
       </Txt>
     </g>
   );

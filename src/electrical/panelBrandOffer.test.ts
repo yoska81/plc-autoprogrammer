@@ -30,4 +30,6 @@ const ct = partsFor('contactor', normalizePreference(next)).parts[0];
 assert.equal(ct?.vendor, 'siemens', `contactors from Siemens (${ct?.partNumber})`);
 // What the maker doesn't sell stays with the default brand, and the offer says so.
 assert.ok(s!.stillDefault.length > 0 && s!.stillDefault.every((c) => partsFor(c, normalizePreference(next)).fallback), `still default: ${s!.stillDefault.join(', ')}`);
+// Yaskawa makes the controller and servos but sells no panel parts in the catalog: no offer, the default brand stays.
+assert.equal(panelBrandOffer('click', 'Yaskawa MP3300 machine controller with Sigma-7 MECHATROLINK-III servos', undefined), null, 'no panel offer for Yaskawa');
 console.log(`panel brand offer tests passed (Siemens; still default: ${s!.stillDefault.join(', ')})`);
