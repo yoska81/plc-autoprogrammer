@@ -145,6 +145,48 @@ const plantOf = (p: ReturnType<typeof collectProject>) => p.io.map((x) => ({ add
   assert.ok(checkEquivalence(p.ladder, after, { random: 20, steps: 20 }).differences.length > 0);
 }
 
+// Simplify: flatten paths, SET / RESET pairs into seal-ins (both orders), split long rungs (CLICK: free C bits from
+// the top); each alone and all together behave the same.
+{
+  seedSampleProject();
+  const NO = (address: string) => ({ type: 'NO' as const, address }), NC = (address: string) => ({ type: 'NC' as const, address });
+  const OUT = (address: string) => ({ type: 'OUT' as const, address });
+  const l: LadderProgram = { tags: [], rungs: [
+    { id: 'f', comment: '', branches: [[NO('X001')], [NO('X001'), NO('X002')], [NO('X003'), NO('X003')], [NO('X004'), NC('X004')]], outputs: [OUT('Y001')] },
+    { id: 's', comment: 'Start latch', branches: [[NO('X005')]], outputs: [{ type: 'SET', address: 'C40' }] },
+    { id: 'r', comment: 'Stop', branches: [[NO('X006')]], outputs: [{ type: 'RST', address: 'C40' }] },
+    { id: 'r2', comment: '', branches: [[NO('X007')]], outputs: [{ type: 'RST', address: 'C41' }] },
+    { id: 's2', comment: '', branches: [[NO('X008'), NC('X005')]], outputs: [{ type: 'SET', address: 'C41' }] },
+    { id: 'use', comment: '', branches: [[NO('C40')], [NO('C41')]], outputs: [OUT('Y002')] },
+    { id: 'many', comment: 'Lots of outputs', branches: [[NO('X001'), NC('X002')], [NO('X003')]], outputs: ['C50', 'C51', 'C52', 'C53', 'C54', 'C55', 'Y003'].map(OUT) },
+    { id: 'paths', comment: 'Lots of paths', branches: ['X001', 'X002', 'X003', 'X004', 'X005', 'X006', 'X007'].map((a) => [NO(a), NC('X008')]), outputs: [OUT('Y004')] },
+  ] };
+  useProgramStore.getState().setGeneratedLadder(l, 'x', null);
+  const p = collectProject();
+  const plan = planReorganize(p);
+  assert.deepEqual([...plan.flatten], ['f']);
+  const flat = applyReorganize(p, plan, new Set<SectionId>(['flatten'])).rungs.find((x) => x.id === 'f')!;
+  assert.deepEqual(flat.branches, [[NO('X001')], [NO('X003')]]);
+  assert.deepEqual(plan.seals.map((x) => [x.address, x.setFirst]), [['C40', true], ['C41', false]]);
+  const sealed = applyReorganize(p, plan, new Set<SectionId>(['seal']));
+  assert.deepEqual(sealed.rungs.map((x) => x.id), ['f', 's', 's2', 'use', 'many', 'paths']);
+  assert.deepEqual(sealed.rungs[1].branches, [[NO('X005'), NC('X006')], [NO('C40'), NC('X006')]]);
+  assert.deepEqual(sealed.rungs[2].branches, [[NO('C41'), NC('X007')], [NO('X008'), NC('X005')]]);
+  assert.deepEqual([...plan.splits].sort(), ['many', 'paths']);
+  assert.ok(!plan.sections.find((x) => x.id === 'split')!.defaultOn);
+  const split = applyReorganize(p, plan, new Set<SectionId>(['split']));
+  assert.ok(split.rungs.filter((x) => /^(many|paths)/.test(x.id)).every((x) => x.outputs.length <= 3 && x.branches.length <= 3), split.rungs.map((x) => `${x.id}:${x.outputs.length}/${x.branches.length}`).join(' '));
+  assert.ok(split.tags.some((t) => t.address === 'C1999'), 'internal bits from the top of C memory, as tags');
+  for (const chosen of [['flatten'], ['seal'], ['split'], ['flatten', 'seal', 'split', 'merge', 'reorder']] as SectionId[][]) {
+    const r = checkEquivalence(p.ladder, applyReorganize(p, plan, new Set(chosen)), { random: 60, steps: 40 });
+    assert.deepEqual(r.differences, [], `${chosen.join('+')}: ${equivalenceSummary(r)}`);
+  }
+  // A wrong seal-in (reset wins the other way round) would be caught: the check is what keeps the transform honest.
+  const wrong = structuredClone(sealed);
+  wrong.rungs[1].branches = [[NO('X005')], [NO('C40'), NC('X006')]];
+  assert.ok(checkEquivalence(p.ladder, wrong, { random: 60, steps: 40 }).differences.length > 0);
+}
+
 // Read-only Yaskawa program (synthetic fixture): its blocks (drawings) and their order kept, kept boxes in place.
 {
   const bytes = new Uint8Array(readFileSync(join(here, '..', 'import', '__fixtures__', 'demo_mp.YMW7')));
