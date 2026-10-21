@@ -189,7 +189,7 @@ export default function SendToClick({ profileId }: { profileId: string }) {
               {started && setUpDone && (
                 <section className="space-y-2" data-testid="click-verify">
                   <h3 className="font-semibold text-steel-900">5. Check what CLICK has</h3>
-                  <p className="text-xs text-steel-500">CLICK exports its nicknames and prints its ladder to a PDF; the app fills in the file names, you press Save in those two dialogs. Then each rung's addresses are compared with the project's, in order.</p>
+                  <p className="text-xs text-steel-500">CLICK exports its nicknames and prints its ladder to a PDF; the app fills in the file names, you press Save in those two dialogs. Then each rung's addresses are compared with the project's, in order. This checks addresses and their order, not the exact wiring: a contact moved to a parallel branch, or one instruction swapped for another on the same address, is not found here.</p>
                   <button onClick={() => void verify()} disabled={Boolean(busy)} data-testid="click-verify-button" className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-40">Check what CLICK has</button>
                   {checked && (
                     <div className="space-y-1 text-steel-700" data-testid="click-checked">
