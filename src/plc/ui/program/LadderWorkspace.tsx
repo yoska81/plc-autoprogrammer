@@ -315,10 +315,6 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     });
   };
 
-  /**
-   * Add comments: every blank rung comment, block description and tag comment in plain words (the AI's with a key,
-   * else from the I/O names and the cross-reference). Only comments change; it comes as a proposal to approve.
-   */
   /** Reorganize: the transforms found (each with its checkbox), then the chosen ones checked in the simulator. */
   const [reorg, setReorg] = useState<{ plan: ReorgPlan; chosen: Set<SectionId> } | null>(null);
   const openReorganize = () => {
