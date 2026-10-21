@@ -138,8 +138,33 @@ function rungLine(r: Rung, info: ProgramInfo, t: Targets): string {
 /** Characters of rung text in one request: about 100 000 (≈ 30 000 tokens), so a big program takes few calls. */
 export const PART_CHARS = 100_000;
 
+/**
+ * Comments asked in one request: an answer takes about 35 tokens a comment, so 200 is about 7 000 tokens, well under
+ * the task's cap (TASK_MAX_TOKENS.comments, 16 000) with room to think; a cut-off answer would be asked again at 64 000.
+ */
+export const PART_KEYS = 200;
+
 /** Tokens the answer of a part may take: about 70 per comment asked, plus room to think (low effort); never 64 000. */
 export const answerTokens = (keys: number) => Math.min(16_000, Math.max(2_000, 1_500 + 70 * keys));
+
+/** A part split again so none asks more than PART_KEYS comments (its rung, the blank tags it writes, its block). */
+function splitByKeys(rungs: Rung[], t: Targets): Rung[][] {
+  const out: Rung[][] = [];
+  let cur: Rung[] = [];
+  let seen = new Set<string>();
+  for (const r of rungs) {
+    const mine = [
+      ...(t.rungs.has(r.id) ? [`rung:${r.id}`] : []),
+      ...(r.block && t.blocks.has(r.block) ? [`block:${r.block}`] : []),
+      ...rungWrites(r).map((a) => a.toUpperCase()).filter((a) => t.tags.has(a)).map((a) => `tag:${a}`),
+    ];
+    if (cur.length && seen.size + mine.filter((k) => !seen.has(k)).length > PART_KEYS) { out.push(cur); cur = []; seen = new Set(); }
+    cur.push(r);
+    for (const k of mine) seen.add(k);
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
 
 /** One part's request: the rungs (logic in words and the listing), the blocks and tags to comment. */
 function partRequest(p: ProjectSnapshot, info: ProgramInfo, rungs: Rung[], t: Targets): { text: string; keys: Set<string> } {
@@ -177,11 +202,12 @@ export async function addComments(p: ProjectSnapshot, o: { ai?: AIConfig; rewrit
   const t = targetsOf(p.ladder, Boolean(o.rewrite));
   if (!o.ai?.apiKey || !p.ladder.rungs.length) return withComments(p, t, new Map(), [], 0);
   const info = programInfo(p);
-  // Parts measured in the request's own text (the rung lines), about PART_CHARS each, whole blocks together.
+  // Parts measured in the request's own text (the rung lines), about PART_CHARS each, whole blocks together, and at
+  // most PART_KEYS comments asked in each.
   // A rung brings its own line and the lines of the blank tags it writes (asked in its part).
   const tagLine = new Map(p.ladder.tags.filter((tg) => t.tags.has(tg.address.toUpperCase())).map((tg) => [tg.address.toUpperCase(), `tag:${tg.address.toUpperCase()}: ${tg.nickname} — ${tagComment(tg.address, info)}`.length + 1]));
   const cost = (r: Rung) => rungLine(r, info, t).length + 1 + [...new Set(rungWrites(r).map((a) => a.toUpperCase()))].reduce((n, a) => n + (tagLine.get(a) ?? 0), 0);
-  const parts = programParts(p.ladder, cost, PART_CHARS)
+  const parts = programParts(p.ladder, cost, PART_CHARS).flatMap((rs) => splitByKeys(rs, t))
     .filter((rs) => rs.some((r) => t.rungs.has(r.id) || (r.block && t.blocks.has(r.block)) || rungWrites(r).some((a) => t.tags.has(a.toUpperCase()))));
   const got = new Map<string, string>();
   const notes: string[] = [];
