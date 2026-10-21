@@ -6,7 +6,7 @@ import { callClaudeAccount } from '../../preview/claudeAccount';
 import { trackAi } from './busy';
 import { KIND_TEXT, totalLimitFor, withRetries, withWatchdog, type AiErrorInfo } from './errors';
 import { reportRetry } from './jobs';
-import { effectiveEffort, effectiveModel, type AiTask } from './tasks';
+import { effectiveEffort, effectiveModel, MAX_ANSWER_TOKENS, TASK_MAX_TOKENS, type AiTask } from './tasks';
 import { cachedAnswer } from './cache';
 import { aiNow, logAiCall } from './timing';
 
@@ -66,6 +66,8 @@ export type ClaudeOptions = {
   usage?: PromptUsage;
   /** May be answered from the answer cache (Update all). Without it the request is always made (a page's Generate); the answer is stored either way. */
   cache?: boolean;
+  /** Most tokens of the answer (thinking included); default the task's (TASK_MAX_TOKENS), else MAX_ANSWER_TOKENS. */
+  maxTokens?: number;
 };
 
 /**
@@ -90,7 +92,7 @@ export async function callClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   const onStarted = opts.onStarted && (() => { if (!started) { started = true; opts.onStarted!(); } });
   // prompt-cache tokens over every attempt and turn (the timing log shows whether the parts read the cache)
   const usage: PromptUsage = { cacheRead: 0, cacheWrite: 0 };
-  const o: ClaudeOptions = { ...opts, onStarted, usage, effort: effectiveEffort(opts.effort, opts.task, speed), model: effectiveModel(opts.model, opts.task, smallTaskModel) };
+  const o: ClaudeOptions = { ...opts, onStarted, usage, effort: effectiveEffort(opts.effort, opts.task, speed), model: effectiveModel(opts.model, opts.task, smallTaskModel), maxTokens: opts.maxTokens ?? (opts.task ? TASK_MAX_TOKENS[opts.task] : MAX_ANSWER_TOKENS) };
   const startedAt = aiNow();
   const promptChars = o.system.length + JSON.stringify(o.messages).length + (o.schema ? JSON.stringify(o.schema).length : 0);
   const log = (ok: boolean, outChars: number, cached: 'memory' | 'stored' | 'shared' | null) =>
@@ -164,7 +166,7 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
     message = await withWatchdog(async (signal, progress) => {
       const stream = client.beta.messages.stream({
         model: opts.model,
-        max_tokens: 64000,
+        max_tokens: opts.maxTokens ?? MAX_ANSWER_TOKENS,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
         thinking: { type: 'adaptive', display: 'summarized' },
@@ -191,6 +193,8 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
   if (message.stop_reason === 'refusal') {
     throw new Error('Claude declined this request. Try rephrasing it.');
   }
+  // Cut off at a task's smaller cap (a long think): asked again once with the full answer size.
+  if (message.stop_reason === 'max_tokens' && (opts.maxTokens ?? MAX_ANSWER_TOKENS) < MAX_ANSWER_TOKENS) return requestClaude({ ...opts, maxTokens: MAX_ANSWER_TOKENS });
   if (message.stop_reason === 'max_tokens') {
     throw new Error('The answer was cut off (output limit reached). Try splitting the machine into smaller parts.');
   }

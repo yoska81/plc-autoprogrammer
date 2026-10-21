@@ -7,6 +7,7 @@ import type { HmiModel } from '../../hmi/hmiCatalog';
 import { specToText, type SpecSections } from '../../spec/types';
 import { choosableProfiles, plcPreference, unsupportedBrands } from '../../spec/brand';
 import { callClaude } from './anthropic';
+import { specForAI } from './specForAI';
 
 export interface EquipmentRecommendation {
   summary: string;
@@ -109,7 +110,7 @@ export async function recommendEquipment(opts: { apiKey: string; model: string; 
   const { text, reasoning } = await callClaude({
     apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, cache: opts.cache, task: 'equipment',
     system: system(opts.spec),
-    messages: [{ role: 'user', content: `Machine specification:\n${specToText(opts.spec) || '(empty)'}\n\nRecommend the control equipment.` }],
+    messages: [{ role: 'user', content: `Machine specification:\n${specForAI(opts.spec, 'equipment') || '(empty)'}\n\nRecommend the control equipment.` }],
     schema: schema(opts.spec),
   });
   try {

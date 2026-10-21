@@ -35,7 +35,7 @@ import AssumptionsUsed from '../components/questions/AssumptionsUsed';
 import { useQuestions } from '../components/questions/useQuestionStore';
 import { useDrawingContext } from '../electrical/useDrawingContext';
 import DrawingSet from '../electrical/drawings/DrawingSet';
-import { generateElectricalDesign } from '../lib/ai/electricalAI';
+import { FULL_DESIGN_TOKENS, fullDesignTokens, generateElectricalDesign } from '../lib/ai/electricalAI';
 import PanelBrandOfferBanner from '../electrical/PanelBrandOfferBanner';
 import { psFeedVolts } from '../electrical/psFeed';
 import { generateRuleBasedDesign } from '../lib/ai/machineModelAI';
@@ -125,6 +125,8 @@ export default function ElectricalPage() {
     setInputs({ motors: inputs.motors.map((m, j) => (j === i ? { ...m, ...patch, fromDesign: undefined } : m)) });
 
   const warnings = useMemo(() => (ctx ? designWarnings(ctx) : []), [ctx]);
+  // The all-AI design is offered only while its request (the parts this machine can use) fits.
+  const fullFits = useMemo(() => showExperimental && fullDesignTokens({ profile, cpu, io, machineDescription: specText, inputs: el.inputs, hmiPartNumber }) <= FULL_DESIGN_TOKENS, [showExperimental, profile, cpu, io, specText, el.inputs, hmiPartNumber, pref]);
   const [pdfBusy, setPdfBusy] = useState<'print' | 'save' | 'autocad' | 'eplan' | null>(null);
   // The drawing set as a real PDF (one page per sheet, 1:1 on the project's paper): print it or save it.
   const drawingsPdf = async (mode: 'print' | 'save') => {
@@ -180,7 +182,7 @@ export default function ElectricalPage() {
           if (full) {
             return await generateElectricalDesign({
               apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal,
-              profile, cpu, io, addresses, machineDescription: specText, inputs, region,
+              profile, cpu, io, addresses, machineDescription: specText, inputs, region, hmiPartNumber,
             });
           }
           return await generateRuleBasedDesign({
@@ -375,7 +377,7 @@ export default function ElectricalPage() {
                 className="px-5 py-2.5 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
                 {el.isGenerating ? <><Spinner /> Designing the panel…</> : el.design ? 'Generate New Design' : 'Generate Electrical Design'}
               </button>
-              {showExperimental && <button onClick={() => generate(true)} disabled={el.isGenerating || !apiKey}
+              {showExperimental && fullFits && <button onClick={() => generate(true)} disabled={el.isGenerating || !apiKey}
                 title="The AI picks every part itself (slower; the standard design uses the AI only to read the specification)"
                 className="px-3 py-2 text-sm border border-steel-300 rounded hover:bg-steel-50 disabled:opacity-40">AI full design (experimental)</button>}
               {!apiKey && <span className="text-xs text-steel-500">Without an API key the design is made from the I/O list and motor list by the rules only. Add a key in <Link to="/settings" className="underline">Settings</Link> to let the AI read the specification.</span>}

@@ -10,6 +10,7 @@ import type { ProgramResult } from '../engine/program';
 import { checkSequence, programWithCycle, type CycleSequence, type CycleStep } from '../engine/sequence';
 import type { AIConfig, PlcContext } from './ladderAI';
 import { ANSWERED_RULE } from '../../components/questions/classify';
+import { specForAI } from '../../lib/ai/specForAI';
 
 /**
  * PLC program, rules first and AI second: the rule-based templates (src/plc/engine/program.ts) write
@@ -55,7 +56,7 @@ export interface CycleRequest {
 export async function cycleFromSpec(r: CycleRequest): Promise<{ sequence: CycleSequence; explanation: string; promptChars: number }> {
   const acts = [...new Map(r.base.autoBits.map((b) => [`${b.actuator}|${b.what}`, b])).values()];
   const content = `Machine specification:
-${r.spec || '(not given)'}
+${specForAI(r.spec, 'cycle') || '(not given)'}
 
 Actions (actuator, what, output):
 ${acts.map((b) => `${b.actuator}\t${b.what}\t${b.output}`).join('\n') || '(none)'}
