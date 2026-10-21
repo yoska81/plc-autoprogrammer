@@ -88,6 +88,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(/IB00000/.test(shown) && /OB00000/.test(shown), 'the I/O list keeps the original registers');
   await noClick('/program');
   check(await page.locator('[data-rung-id]').count() >= 10, 'the program opens read only');
+  check(await page.getByTestId('build-read-only').count() === 1 && !(await page.getByRole('button', { name: 'Build program from my project' }).count()), 'no "Build program" on the read-only PLC: choose the PLC first');
   await noClick('/simulate');
   await noClick('/hmi');
   // The Equipment page is a catalog of every brand: its panel table must not judge panels against a CLICK.

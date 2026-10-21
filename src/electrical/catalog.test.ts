@@ -36,7 +36,8 @@ const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
   { host: /(^|\.)pepperl-fuchs\.com$/, makers: /pepperl/i },
   { host: /(^|\.)bannerengineering\.com$/, makers: /banner/i },
   { host: /(^|\.)pilz\.com$/, makers: /pilz/i },
-  { host: /(^|\.)yaskawa\.(com|eu)$/, makers: /yaskawa/i },
+  // e-mechatronics.com is Yaskawa's own product and catalog site (dlc.e-mechatronics.com serves the catalog PDFs)
+  { host: /(^|\.)(yaskawa\.(com|eu)|e-mechatronics\.com)$/, makers: /yaskawa/i },
   { host: /(^|\.)(nvent\.com|hoffmanonline\.com)$/, makers: /hoffman|nvent/i },
   { host: /(^|\.)rittal\.(com|us)$/, makers: /rittal/i },
   { host: /(^|\.)phoenixcontact\.com$/, makers: /phoenix/i },
@@ -100,6 +101,7 @@ const ENCLOSURE_IN: [number, number] = [2, 100];
  * an entry for a part that is verified, or missing from the catalog, fails.
  */
 const UNVERIFIED_OK: Record<string, string> = {
+  'SGDV-280D21A': 'Yaskawa Sigma-V 11 kW (legacy, the user\'s machine): footprint 230 x 400 mm from the MECHATROLINK-II SGDV-280D drawing; Yaskawa\'s catalog has no MECHATROLINK-III (21A) drawing for this size.',
   'XCSPA993': 'contacts (2 NC + 1 NO slow break), 1/2in NPT entry and AC-15 rating from the Schneider XCS catalog; terminal numbers still to be checked on the product data sheet (se.com not reachable).',
   '3SE5112-0QV10': 'Siemens data sheet server refused the download (403): terminal numbers and AC-15 / DC-13 ratings still to be checked; contacts (1 NO + 2 NC), M20 entry and actuator from distributor listings.',
   'C2-14D1': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
@@ -124,7 +126,7 @@ const UNVERIFIED_OK: Record<string, string> = {
 };
 
 /** A maker's document (PDF catalog / datasheet or documentation portal) covering many parts. */
-const isMakerDocument = (u: URL) => /\.pdf$/i.test(u.pathname) || /\/dl\/files\//.test(u.pathname) || /\/library\/Download\.aspx$/i.test(u.pathname) || /^docs\.|^literature\./.test(u.host);
+const isMakerDocument = (u: URL) => /\.pdf$/i.test(u.pathname) || /\.pdf$/i.test(u.searchParams.get('documentName') ?? '') || /\/dl\/files\//.test(u.pathname) || /\/library\/Download\.aspx$/i.test(u.pathname) || /^docs\.|^literature\./.test(u.host);
 
 const isAdHost = (u: string) => /(^|\.)automationdirect\.com$/.test(new URL(u).host);
 const has = (p: CatalogPart, k: string) => (ALIASES[k] ?? [k]).some((a) => p.ratings[a] !== undefined && p.ratings[a] !== '');
@@ -224,10 +226,12 @@ test('ratings in the part number agree with the ratings (breakers, power supplie
 test('parts of other vendors give a datasheet footprint for back-panel parts', () => {
   // AutomationDirect parts may still use the category footprint estimate (shown as estimated on the layout);
   // new vendors' back-panel parts must state width x height from the datasheet.
-  const bad = CATALOG.filter((p) => !isAdHost(p.url) && p.mount === 'backplate' && !['enclosure', 'dinRail', 'wireDuct', 'terminalAccessory'].includes(p.category) && p.ratings.inCpu !== 'yes' && !(p.widthMm && p.heightMm)).map((p) => p.partNumber);
+  const bad = CATALOG.filter((p) => !isAdHost(p.url) && p.mount === 'backplate' && !['enclosure', 'dinRail', 'wireDuct', 'terminalAccessory'].includes(p.category) && p.ratings.inCpu !== 'yes' && p.ratings.inRack !== 'yes' && !(p.widthMm && p.heightMm)).map((p) => p.partNumber);
   assert.deepEqual(bad, []);
   // Option boards that plug into the CPU (FX5-232-BD, NX1W-CIF, CP1W-CIF) take no panel space of their own.
   for (const p of CATALOG.filter((x) => x.ratings.inCpu === 'yes')) assert.ok(p.category === 'commModule' && !p.widthMm, `${p.partNumber}: in-CPU board`);
+  // Rack modules that plug into a base unit's slot (Yaskawa MP3300 CPU and option modules): the base unit has the footprint.
+  for (const p of CATALOG.filter((x) => x.ratings.inRack === 'yes')) assert.ok(['plc', 'plcModule'].includes(p.category) && !p.widthMm, `${p.partNumber}: rack module`);
 });
 
 test('prices belong to catalog parts and come from the same site', () => {

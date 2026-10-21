@@ -265,6 +265,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
    * `full` = the older all-AI program (experimental).
    */
   const handleGenerate = (full = false) => {
+    // A program kept read only on the machine's own PLC is not rebuilt for it (it would get another PLC's memory).
+    if (ctx.profile.readOnly) return;
     if (full && !machineText.trim()) return;
     if (ladder.rungs.length && !programLeftOver.leftOver && !confirm(replaceProgramQuestion(useProgramStore.getState()))) return;
     setTab('describe');
@@ -287,10 +289,6 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     });
   };
 
-  /**
-   * Add comments: every blank rung comment, block description and tag comment in plain words (the AI's with a key,
-   * else from the I/O names and the cross-reference). Only comments change; it comes as a proposal to approve.
-   */
   /** Reorganize: the transforms found (each with its checkbox), then the chosen ones checked in the simulator. */
   const [reorg, setReorg] = useState<{ plan: ReorgPlan; chosen: Set<SectionId> } | null>(null);
   const openReorganize = () => {
@@ -318,6 +316,10 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     }, false);
   };
 
+  /**
+   * Add comments: every blank rung comment, block description and tag comment in plain words (the AI's with a key,
+   * else from the I/O names and the cross-reference). Only comments change; it comes as a proposal to approve.
+   */
   const handleComments = (rewrite: boolean) => {
     if (rewrite && !confirm('Rewrite every comment of the program, also the ones already there? You approve the result first, and the current program is kept in History.')) return;
     setTab('fix');
@@ -405,6 +407,11 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                   <b>The current program is from another machine</b> (it mentions {programLeftOver.terms.join(', ')}, which are not in your machine description). Build a new program from your project.
                 </div>
               )}
+              {ctx.profile.readOnly ? (
+                <p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded px-3 py-2" data-testid="build-read-only">
+                  This program is on the machine's own {ctx.profile.vendor} controller ({ctx.cpu.id}), read only: <Link to="/upgrade" className="underline">choose the PLC to move it to</Link> first, then the program can be built for it.
+                </p>
+              ) : (
               <button
                 onClick={() => handleGenerate()}
                 disabled={isGenerating}
@@ -412,6 +419,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               >
                 {isGenerating ? <><Spinner /> Building the program…</> : 'Build program from my project'}
               </button>
+              )}
               <div className="text-sm text-gray-700 bg-brand-50 border border-brand-200 rounded px-3 py-2" data-testid="program-sources">
                 <div className="font-medium text-gray-800 mb-1">The program is made directly from:</div>
                 <ul className="text-xs space-y-0.5">
@@ -594,7 +602,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             <button onClick={() => { const fromSpec = proposal?.specUpdate; store.applyProposal(); if (fromSpec) recordSource(); }} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700">Approve</button>
           </div>
         ) : (
-          ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} plcName={ctx.profile.name} onRebuild={() => handleGenerate(false)} />
+          ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} plcName={ctx.profile.name} onRebuild={ctx.profile.readOnly ? undefined : () => handleGenerate(false)} />
         )}
 
         {!review && ladder.rungs.length > 0 && (

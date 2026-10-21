@@ -39,6 +39,7 @@ import { ALL_PARTS } from './catalogs';
 import { coolingCover, dcFanAmps } from './cooling';
 import { coilMatchesRail, relayLadder, type Ladder } from './relayLogic';
 import { ioNames, renamePin, renameWire, type IoNames } from './ioNames';
+import { takesAc } from './inputVolts';
 import { ALLOWED_RISE_C, cabinetHeat } from './thermal';
 import { withIecStrips } from '../standards/designations';
 import { issuedForConstruction } from '../standards/issue';
@@ -2164,6 +2165,7 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     const order: CatalogCategory[] = ['disconnect', 'breaker', 'fuse', 'powerSupply', 'plc', 'plcModule', 'commModule', 'motorProtector', 'contactor', 'vfd', 'safetyRelay', 'relay', 'other'];
     // A communication module mounted on the CPU's left (S7-1200 CM, FX5 adapter) goes just before the CPU.
     if (c.category === 'commModule' && /left side/i.test(String(c.part?.ratings.forUse ?? ''))) return order.indexOf('plc') - 0.5;
+    if (c.part?.ratings.kind === 'plc-base-unit') return order.indexOf('plc');
     const i = order.indexOf(c.category);
     return i < 0 ? 99 : i;
   };
@@ -2174,10 +2176,12 @@ export function panelLayout(ctx: DrawingContext): PanelLayout {
     used.add(c);
     if (c.category === 'fan') { unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: 'Enclosure side/door mounted' }); continue; }
     if (c.category === 'commModule' && c.part?.ratings.inCpu === 'yes') { unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: 'Option board inside the PLC CPU' }); continue; }
+    // CPU and option modules that plug into a base unit (Yaskawa MP3300): the base unit takes the panel space.
+    if (c.part?.ratings.inRack === 'yes') { const bu = bp.find((x) => x.part?.ratings.kind === 'plc-base-unit'); unplaced.push({ tag: c.tag, partNumber: c.partNumber, reason: `In a slot of the base unit${bu ? ` ${bu.tag} ${bu.partNumber}` : ''}` }); continue; }
     if (c.category === 'overload' && bp.some((x) => x.category === 'contactor' && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag)) continue;
     if (c.category === 'groundBar') groundBars.push(...expand(c));
     else if (['disconnect', 'breaker', 'fuse'].includes(c.category)) rows[0].push(...expand(c));
-    else if (['powerSupply', 'plc', 'plcModule', 'commModule'].includes(c.category)) rows[1].push(...expand(c));
+    else if (['powerSupply', 'plc', 'plcModule', 'commModule'].includes(c.category) || c.part?.ratings.kind === 'plc-base-unit') rows[1].push(...expand(c));
     else if (c.category === 'contactor') {
       const it = mk(c);
       const ol = bp.find((x) => x.category === 'overload' && x.comp.motorTag && x.comp.motorTag === c.comp.motorTag);
@@ -3095,8 +3099,12 @@ export function designWarnings(ctx: DrawingContext): string[] {
     inCap += (i ?? 0) * qty; outCap += (o ?? 0) * qty;
   }
   const nIn = m.io.filter((p) => p.type === 'input').length, nOut = m.io.filter((p) => p.type === 'output').length;
-  if (capKnown && nIn > inCap) w.push(`PLC inputs over capacity: ${nIn} used, ${inCap} available — add an input module.`);
-  if (capKnown && nOut > outCap) w.push(`PLC outputs over capacity: ${nOut} used, ${outCap} available — add an output module.`);
+  // A rack CPU (Yaskawa MP3300) with no I/O module in its base unit: the machine's field I/O is remote I/O (MECHATROLINK
+  // or Ethernet stations) — said once, no I/O modules drawn or asked for until the stations are identified.
+  const remoteIo = !!m.plcPart?.ratings.baseUnit && inCap === 0 && outCap === 0 && nIn + nOut > 0;
+  if (remoteIo) w.push(`Field I/O (${nIn} inputs, ${nOut} outputs): existing remote I/O (not identified) — the ${m.plcPart?.partNumber ?? ctx.plc.cpuPartNumber} has no I/O modules in its base unit, so the points stay at their PLC registers and no rack I/O modules are drawn. Identify the remote I/O stations (e.g. MTD2310 on MECHATROLINK-III, or Ethernet remote I/O) to draw their wiring.`);
+  if (!remoteIo && capKnown && nIn > inCap) w.push(`PLC inputs over capacity: ${nIn} used, ${inCap} available — add an input module.`);
+  if (!remoteIo && capKnown && nOut > outCap) w.push(`PLC outputs over capacity: ${nOut} used, ${outCap} available — add an output module.`);
   for (const g of m.groups) {
     if (g.type === 'input' && g.points.some((p) => p.deviceType === 'sensor-npn') && g.points.some((p) => p.deviceType === 'sensor-pnp')) w.push(`${g.label}: mixed PNP and NPN sensors on one common — not possible; split commons or change sensors.`);
     // NPN sensors put the common on +24V: the group's dry contacts are wired to switch 0V (said, so the electrician
@@ -3121,14 +3129,18 @@ export function designWarnings(ctx: DrawingContext): string[] {
     for (const q of m.ladder?.questions ?? []) w.push(`Relay logic: ${q}`);
   }
 
+  // a PLC that names only part of its I/O (Micro800 2085 expansion modules, UniStream slot I/O): the rest keeps the
+  // app's addresses on the drawings and lists, so the mix is said
+  const kept = m.ioNames.native.size ? m.io.filter((p) => /^[XY]\d{3}$/.test(p.address) && !m.ioNames.native.has(p.address)).map((p) => p.address) : [];
+  if (kept.length) w.push(`PLC I/O ${kept.length > 3 ? `${kept[0]}…${kept[kept.length - 1]} (${kept.length} points)` : kept.join(', ')} keeps the app's addresses on the drawings and lists (sheet titles say APP ADDRESSES): the PLC's software names these module points only when the module is configured — map them there; the CPU's own I/O is drawn in the PLC's naming.`);
+
   // a 1-phase supply fed phase to phase above its input rating (a 120-240 V SITOP on a 480 V bus), and a branch
   // breaker rated below the system voltage (a 240 V 5SJ4 on 480 V): both fail at power-up
   const sys = SUPPLY_INFO[ctx.design.inputs.supply];
   for (const b of m.psBranches.filter((x) => !x.fromXfmr && m.phases === 3 && x.feedWires.length === 2)) {
-    // every input range it states ("100-120VAC L-N or 200-500VAC L-L"); one fed phase to phase must cover the bus
+    // every AC input it states (ranges, auto-range nominals, L-N ranges aside: inputVolts.ts) must take the bus
     const text = String(b.ps.part?.ratings.inputVolts ?? '');
-    const ranges = [...text.matchAll(/(\d+)\s*[-/]\s*(\d+)\s*VAC(\s*L-N)?/gi)].filter((r) => !r[3]).map((r) => [Number(r[1]), Number(r[2])]);
-    if (ranges.length && !ranges.some(([lo, hi]) => lo <= sys.volts && sys.volts <= hi)) w.push(`${b.ps.tag} ${b.ps.partNumber} takes ${text} but is fed L1-L2 at ${sys.volts} V: it would be destroyed at power-up — choose a supply for ${sys.volts} V (3-phase input) or feed it from a control transformer.`);
+    if (!takesAc(text, sys.volts)) w.push(`${b.ps.tag} ${b.ps.partNumber} takes ${text} but is fed L1-L2 at ${sys.volts} V: it would be destroyed at power-up — choose a supply for ${sys.volts} V (3-phase input) or feed it from a control transformer.`);
   }
   for (const b of [...m.psBranches, ...m.auxBranches]) {
     const p = b.protection?.part;
@@ -3283,7 +3295,7 @@ export function plcRack(ctx: DrawingContext): PlcRackSlot[] {
   const out: PlcRackSlot[] = [];
   const cpu = m.plcPart;
   out.push({
-    slot: 0, tag: m.plcTag, partNumber: ctx.plc.cpuPartNumber, part: cpu, description: cpu?.description ?? ctx.plc.cpuLabel,
+    slot: 0, tag: m.plcTag, partNumber: cpu?.partNumber ?? ctx.plc.cpuPartNumber, part: cpu, description: cpu?.description ?? ctx.plc.cpuLabel,
     inputs: ins(cpu) ?? 0, outputs: outs(cpu) ?? 0, outputStyle: outputStyleOf(ctx.plc.cpuPartNumber, cpu), known: ins(cpu) !== undefined || outs(cpu) !== undefined,
   });
   const modules = byCat(m.rc, 'plcModule');

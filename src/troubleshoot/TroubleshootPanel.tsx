@@ -18,6 +18,8 @@ import { useUi } from '../store/useUiStore';
 import { useProjectsStore } from '../store/useProjectsStore';
 import { oracleFor, verdictNames, type CircuitFault } from './oracle';
 import FaultLog from './FaultLog';
+import { nativeStepText } from './nativeText';
+import { renameWire } from '../electrical/ioNames';
 import { useFaultLogStore } from './useFaultLogStore';
 
 const big = 'min-h-14 flex-1 rounded-lg px-4 py-3 text-base font-semibold shadow-sm disabled:opacity-40';
@@ -53,6 +55,8 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
     try { if (ctx) { const prep = prepareWiring(ctx); p = wiringPaths(prep); cc = circuitOf(prep); pl = planDrawings(ctx); } } catch { /* no design */ }
     return { paths: p, plan: pl, circ: cc, nativeOf };
   });
+  // The steps in the PLC's own wire numbers and terminals (S7: wire I0.0 on terminal %I0.0), shown, spoken and logged.
+  const nt = (t: string) => (plan ? nativeStepText(plan.model.ioNames, t) : t);
   // Practice: the meter reads what the circuit gives with the fault that was set.
   const found = (_path: WiringPath, v: Parameters<typeof verdictNames>[1]) => Boolean(practice && circ && verdictNames(circ.circuit, v, practice.fault));
   const practiceReading = (path: WiringPath, st: NonNullable<ReturnType<typeof currentStep>>, sym: Symptom) => (practice && circ ? oracleFor(circ.model, circ.circuit, path, practice.fault, sym)?.answer(st, sym).shows ?? '' : '');
@@ -98,7 +102,7 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
     sessionRef.current = next;
     setSession(next);
     setReading(null);
-    if (canSpeak()) void speak(next.verdict ? `${next.verdict.text} ${next.verdict.fix}` : currentStep(next)?.say ?? '', 'troubleshoot');
+    if (canSpeak()) void speak(nt(next.verdict ? `${next.verdict.text} ${next.verdict.fix}` : currentStep(next)?.say ?? ''), 'troubleshoot');
   };
   const reply = (a: Answer, stepId?: string) => {
     const cur = sessionRef.current;
@@ -111,7 +115,7 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
     const v = next.verdict;
     if (v && v.text !== 'Stopped.') {
       logged.current = addLog(projectId, {
-        address: next.path.address, description: next.path.description, symptom: SYMPTOM_LABEL[next.symptom], found: v.text, fix: v.fix, wire: v.wire,
+        address: next.path.address, description: next.path.description, symptom: SYMPTOM_LABEL[next.symptom], found: nt(v.text), fix: nt(v.fix), wire: v.wire && plan ? renameWire(plan.model.ioNames, v.wire) : v.wire,
         readings: next.answers.filter((x, i) => x !== 'skip' && next.steps[i]?.part !== 'prepare').length,
         ...(practice ? { practice: true, note: found(next.path, v) ? 'Practice: found the fault that was set' : `Practice: the fault set was ${practice.fault.label}` } : {}),
       }).id;
@@ -128,7 +132,7 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
     setReading(null);
     logged.current = null;
     watch.current.reset();
-    if (canSpeak()) void speak(currentStep(s)?.say ?? '', 'troubleshoot');
+    if (canSpeak()) void speak(nt(currentStep(s)?.say ?? ''), 'troubleshoot');
   };
   const listen = async () => {
     if (listening) { dict.current?.cancel(); setListening(false); return; }
@@ -188,7 +192,7 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
           {step ? (
             <>
               <p className="text-xs text-steel-400">Step {session.at + 1} of {session.steps.length}</p>
-              <p className="text-lg leading-snug text-steel-900" aria-live="polite">{step.say}</p>
+              <p className="text-lg leading-snug text-steel-900" aria-live="polite">{nt(step.say)}</p>
               {step.hop?.measure?.otherwise && session.symptom !== 'always-on' && <p className="text-sm text-steel-600">Otherwise: {step.hop.measure.otherwise}.</p>}
               {step.hop?.note && <p className="text-sm text-amber-800">{step.hop.note}</p>}
               {practice && step.part !== 'prepare' && step.part !== 'wiggle' && (
@@ -223,21 +227,21 @@ export default function TroubleshootPanel({ practice }: { practice?: Practice } 
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" className="min-h-11 rounded border border-steel-300 px-3 py-2 text-sm disabled:opacity-40" disabled={!session.answers.length || watching !== null} onClick={() => goBack(session)}>Back</button>
                 <button type="button" className="min-h-11 rounded border border-steel-300 px-3 py-2 text-sm disabled:opacity-40" disabled={watching !== null} onClick={() => reply('skip')}>Didn't check</button>
-                <SpeakButton text={step.say} label="Read the step aloud" />
+                <SpeakButton text={nt(step.say)} label="Read the step aloud" />
                 {micOn && <button type="button" className="min-h-11 rounded border border-steel-300 px-3 py-2 text-sm" onClick={() => void listen()}>{listening ? 'Listening… say yes or no' : 'Answer by voice'}</button>}
                 <button type="button" className="ml-auto min-h-11 rounded border border-steel-300 px-3 py-2 text-sm" onClick={() => { sessionRef.current = null; setSession(null); }}>Stop</button>
               </div>
             </>
           ) : session.verdict && (
             <div className="space-y-2" role="status">
-              <p className="text-lg font-semibold text-steel-900">{session.verdict.text}</p>
+              <p className="text-lg font-semibold text-steel-900">{nt(session.verdict.text)}</p>
               {practice && session.verdict.text !== 'Stopped.' && (
                 <p className={`rounded px-3 py-2 text-sm font-semibold ${found(session.path, session.verdict) ? 'bg-green-100 text-green-900' : 'bg-amber-100 text-amber-900'}`}>
                   {found(session.path, session.verdict) ? `Found it: the fault set was ${practice.fault.label}.` : `Not quite: the fault set was ${practice.fault.label}. Repair it and try another.`}
                 </p>
               )}
               {session.verdict.text !== 'Stopped.' && <p className="text-xs text-steel-500">Saved in the fault log below.</p>}
-              <p className="text-base text-steel-700">{session.verdict.fix}</p>
+              <p className="text-base text-steel-700">{nt(session.verdict.fix)}</p>
               {plan && session.verdict.hops[0]?.where && (
                 <SheetThumb plan={plan} sheetNo={session.verdict.hops[0].where.sheet} marks={[session.verdict.wire ?? '', ...session.verdict.hops.map((h) => h.terminal ?? '')].filter(Boolean)} />
               )}

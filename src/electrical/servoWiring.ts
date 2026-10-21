@@ -23,6 +23,10 @@ export interface ServoAxisModel {
   control: 'ac' | '24V';
   drive: Rc;
   motor?: Rc;
+  /** Two-axis drive: both motors (A, B); motor is axis A's. */
+  motors?: Rc[];
+  /** Network-commanded drive: where its network input comes from and where its output goes (null: last in the chain). */
+  link?: { in: string; out: string | null; cable?: Rc };
   protection?: Rc;
   filter?: Rc;
   brakingResistor?: Rc;
@@ -52,11 +56,19 @@ export function servoAxes(rc: Rc[]): AxisBase[] {
       axis: ax.replace(/^AX/, '') || d.tag, drive: d, pins: servoPins(d.part),
       // 460 V SureServo2: control circuit on 24 VDC terminals "24V" / "0V" (manual ch. 3); 230 V: L1C/L2C from the AC supply.
       control: /24\s*V?DC/i.test(String(d.part?.ratings.controlCircuitVolts ?? '')) ? '24V' : 'ac',
-      motor: own.find((c) => isServoMotor(c.part)), protection: own.find((c) => c.category === 'breaker' || c.category === 'fuse'),
+      motor: own.find((c) => isServoMotor(c.part)), motors: own.filter((c) => isServoMotor(c.part)), protection: own.find((c) => c.category === 'breaker' || c.category === 'fuse'),
       filter: own.find((c) => k(c) === 'emc-filter'), brakingResistor: own.find((c) => k(c) === 'braking-resistor'),
       cables: own.filter((c) => servoCableKind(c.part) !== null),
     });
   }
+  // MECHATROLINK-III daisy chain: the CPU's PORT1 → first drive CN6A, its CN6B → the next drive's CN6A …, the network
+  // cables (kind 'network-cable') in the same order; the last CN6B stays open (no terminator on MECHATROLINK-III).
+  const net = out.filter((a) => a.pins?.network);
+  const cables = rc.filter((c) => String(c.part?.ratings.kind ?? '') === 'network-cable');
+  net.forEach((a, i) => {
+    const N = a.pins!.network!;
+    a.link = { in: i === 0 ? 'PLC:M-III PORT1' : `${net[i - 1].drive.tag}:${N.out}`, out: i < net.length - 1 ? `${net[i + 1].drive.tag}:${N.in}` : null, cable: cables[i] };
+  });
   return out;
 }
 
@@ -143,13 +155,24 @@ export function servoControls(
     }
     w('PE', `${t}:PE`, peTag, `${t} protective earth`, 'GN/YE', '14 AWG');
     if (a.motor) {
-      P.power.motor.forEach((U) => w(`${t}-${U}`, `${t}:${U}`, `${a.motor!.tag}:${U}`, `${a.motor!.tag} motor power ${U} (servo power cable)`, 'BK', '16 AWG'));
+      P.power.motor.forEach((U) => w(`${t}-${U}`, `${t}:${U}`, `${a.motor!.tag}:${U.replace(/A$/, '')}`, `${a.motor!.tag} motor power ${U} (servo power cable)`, 'BK', '16 AWG'));
       w('PE', `${t}:PE`, `${a.motor.tag}:PE`, `${a.motor.tag} motor ground (servo power cable)`, 'GN/YE', '16 AWG');
     }
-    if (a.brakingResistor) {
+    const motorB = a.motors?.[1];
+    if (motorB && P.motorB) {
+      P.motorB.forEach((U) => w(`${t}-${U}`, `${t}:${U}`, `${motorB.tag}:${U.replace(/B$/, '')}`, `${motorB.tag} motor power ${U} (axis B, servo power cable)`, 'BK', '16 AWG'));
+      w('PE', `${t}:PE`, `${motorB.tag}:PE`, `${motorB.tag} motor ground (servo power cable)`, 'GN/YE', '16 AWG');
+    }
+    const yaskawaRegen = !!P.network;
+    if (yaskawaRegen && !a.brakingResistor) {
+      notes.push(/^no/i.test(String(a.drive.part?.ratings.builtInRegen ?? ''))
+        ? `${t}: no built-in regenerative resistor — B2-B3 not connected; if the regenerative energy is too high, connect an external resistor between B1/+ and B2 (SERVOPACK manual 4.3.5).`
+        : `${t}: built-in regenerative resistor — keep the short bar between B2 and B3.`);
+    } else if (a.brakingResistor) {
       w(`${t}-P3`, `${t}:${P.power.regen.p}`, `${a.brakingResistor.tag}:1`, `${t} external regenerative resistor (P3-D jumper removed)`, 'BK', '14 AWG');
       w(`${t}-C`, `${t}:${P.power.regen.c}`, `${a.brakingResistor.tag}:2`, `${t} external regenerative resistor`, 'BK', '14 AWG');
     } else notes.push(`${t}: built-in regenerative resistor — keep the factory jumper ${P.power.regen.p}-${P.power.regen.d}.`);
+    if (a.link) notes.push(`${t}: MECHATROLINK-III in ${P.network!.in} from ${a.link.in.replace(/^PLC:/, 'the CPU ')}${a.link.cable ? ` (${a.link.cable.tag} ${a.link.cable.partNumber})` : ''}; ${a.link.out ? `out ${P.network!.out} to ${a.link.out}` : `${P.network!.out} left open — last station, MECHATROLINK-III needs no terminator`}. Set the station address on the SERVOPACK to match the axis.`);
 
     // Pulse / direction: open-collector PLC outputs with PULL HI to the external 24 V (max ${P.maxPulseKhzOC} kHz).
     const has = (r: ServoRole) => terminals.some((x) => x.role === r);
@@ -174,16 +197,26 @@ export function servoControls(
     // 3.11.7 "STO Feedback Behavior": "During an STO event when both channels A and B are open (AL500) the FDBK
     // signal is closed. … Once the STO circuit is reset to the running state, the FDBK output will open." So the
     // loop is closed while torque is off (reset allowed) and open while running; one failed channel keeps it open.
-    if (sto) {
+    const N = P.stoNames;
+    if (sto && N) {
+      w(sto.a.wire, sto.a.from, `${t}:${P.sto.aPlus}`, `${t} ${N.a}+ safe torque off (hard wire base block) channel 1 (safety relay output)`);
+      w('0V', `${t}:${P.sto.aMinus}`, 'TB1 0V', `${t} ${N.a}-`, 'WH/BU');
+      w(sto.b.wire, sto.b.from, `${t}:${P.sto.bPlus}`, `${t} ${N.b}+ safe torque off (hard wire base block) channel 2 (second safety relay output)`);
+      w('0V', `${t}:${P.sto.bMinus}`, 'TB1 0V', `${t} ${N.b}-`, 'WH/BU');
+      notes.push(`${t}: ${N.a} from ${sto.a.from.replace(/^TB1 /, '')}, ${N.b} from ${sto.b.from} (two safety-relay outputs)${a.motors && a.motors.length > 1 ? ', one CN8 for both axes' : ''}; ${N.fb}+ ${P.sto.fbPlus} / ${N.fb}- ${P.sto.fbMinus} in the safety relay's S33-S34 feedback loop, ${N.fb}+ on the S33 side (it is ON while both channels are off). ${N.fbNote}. Remove ${N.bypass}.`);
+    } else if (sto) {
       w(sto.a.wire, sto.a.from, `${t}:${P.sto.aPlus}`, `${t} STO_A+ Safe Torque Off channel A (safety relay output)`);
       w('0V', `${t}:${P.sto.aMinus}`, 'TB1 0V', `${t} /STO_A`, 'WH/BU');
       w(sto.b.wire, sto.b.from, `${t}:${P.sto.bPlus}`, `${t} STO_B+ Safe Torque Off channel B (second safety relay output)`);
       w('0V', `${t}:${P.sto.bMinus}`, 'TB1 0V', `${t} /STO_B`, 'WH/BU');
       notes.push(`${t}: STO_A from ${sto.a.from.replace(/^TB1 /, '')}, STO_B from ${sto.b.from} (two safety-relay outputs); FDBK+ ${P.sto.fbPlus} / FDBK- ${P.sto.fbMinus} in the safety relay's S33-S34 feedback loop, FDBK+ on the S33 side (manual 3.11.3: polarity matters). Remove the CN10 bypass plug.`);
-    } else notes.push(stoWhy === 'no-relay'
+    } else if (N) notes.push(stoWhy === 'no-relay'
+      ? `${t}: no safety relay in the design — safe torque off (${N.a} / ${N.b}) is not wired, so the SERVOPACK stays in base block. Add a safety relay with two safety outputs; never run it on ${N.bypass} in a machine that needs a safety stop.`
+      : `${t}: the safety relay has no free N.O. safety output for ${N.b} — safe torque off is not wired. Choose a safety relay with more N.O. safety outputs.`);
+    else notes.push(stoWhy === 'no-relay'
       ? `${t}: no safety relay in the design — STO is not wired, so the drive cannot run. Add a safety relay with two safety outputs for STO_A / STO_B; never run it on the CN10 bypass plug.`
       : `${t}: the safety relay has no free N.O. safety output for STO_B (13-14 feeds the safety-switched 24 V; 23-24, when there is one, the PLC status input) — STO is not wired, so the drive cannot run. Choose a safety relay with more N.O. safety outputs, or take the PLC status signal from the relay's N.C. auxiliary contact to free 23-24.`);
-    if (!a.motor) notes.push(`${t}: no servo motor chosen — U/V/W and the encoder (CN2) are not drawn.`);
+    if (!a.motor) notes.push(`${t}: no servo motor chosen — ${P.power.motor.join('/')} and the encoder (CN2) are not drawn.`);
     // One drive pin, one signal: a named DI / DO that lands on a pin another signal already uses is an error.
     const pinsOf = (x: ServoTerminal): string[] => {
       const pair = doNamed.get(x.address) ?? (x.type === 'input' ? P.do[x.role] : undefined);

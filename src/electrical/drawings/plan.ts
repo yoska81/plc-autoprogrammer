@@ -5,7 +5,7 @@
  *
  * Line references use the "sheet.line" notation ("5.04" = sheet 5, line 4).
  */
-import { ioLabel } from '../ioNames';
+import { ioLabel, renameAddressText } from '../ioNames';
 import {
   limitRelayPins,
   billOfMaterials, nativeModel, designWarnings, drawingPrefix, naturalCompare, panelLayout, plcRack, revisionState,
@@ -346,8 +346,10 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
 
   specs.push({ title: 'COVER SHEET, DRAWING INDEX & GENERAL NOTES', spec: { kind: 'cover' } });
   specs.push({ title: 'SYMBOLS, ABBREVIATIONS & DEVICE TAGS', spec: { kind: 'legend' } });
-  const warnings = designWarnings(ctx);
-  if (ctx.design.notes.length || warnings.length) specs.push({ title: 'DESIGN NOTES & ENGINEERING REVIEW ITEMS', spec: { kind: 'notes', notes: ctx.design.notes, warnings } });
+  // free text in the PLC's own naming too ("on Y003" → "on %Q0.2" on an S7)
+  const named = (t: string) => renameAddressText(model.ioNames, t);
+  const warnings = designWarnings(ctx).map(named);
+  if (ctx.design.notes.length || warnings.length) specs.push({ title: 'DESIGN NOTES & ENGINEERING REVIEW ITEMS', spec: { kind: 'notes', notes: ctx.design.notes.map(named), warnings } });
 
   // power distribution
   const branches: PowerBranchPlan[] = [];
@@ -425,7 +427,8 @@ export function planDrawings(ctx: DrawingContext): DrawingPlan {
       const nm = (a: string) => ioLabel(model.ioNames, a);
       const range = rows.length > 1 ? `${nm(rows[0].address)}–${nm(rows[rows.length - 1].address)}` : rows[0] ? nm(rows[0].address) : '';
       specs.push({
-        title: `PLC ${g.type === 'input' ? 'INPUTS' : 'OUTPUTS'} — ${g.devTag} ${g.label} (${range})`,
+        // a PLC that names only part of its I/O (Micro800 2085 modules, UniStream slots): these points keep the app's addresses
+        title: `PLC ${g.type === 'input' ? 'INPUTS' : 'OUTPUTS'} — ${g.devTag} ${g.label} (${range}${model.ioNames.native.size && rows.every((r) => !model.ioNames.native.has(r.address)) ? ', APP ADDRESSES' : ''})`,
         spec: { kind: 'io', group: g, rows, points: rows.flatMap((r) => (r.point ? [r.point] : [])), first: i === 0, last: i + IO_PER_SHEET >= blk.rows.length, rack: blk.rack, page: i / IO_PER_SHEET + 1, pages },
       });
     }

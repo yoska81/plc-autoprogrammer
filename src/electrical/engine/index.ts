@@ -8,7 +8,7 @@ import type { IOPoint } from '../../types/io';
 import type { AnalogSetupRow } from '../../plc/core/analog';
 import type { Region } from '../../standards/regions';
 import { enclosureText, isIec, powerText, SUPPLY_INFO } from '../../standards/regions';
-import { DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
+import { ALL_PARTS, DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
 import { enclosureFamily, enclosurePanelArea, enclosureRank, enclosureSize, enclosuresFor, panelLayout, SPARE_RULE, spareSpace, terminalCounts, motorFla, vendorTerminal, type DrawingContext } from '../derive';
 import { DC_LOAD_A } from '../../deliverables/docs/calcs';
 import { getHmi } from '../../hmi/hmiCatalog';
@@ -16,12 +16,15 @@ import { ALLOWED_RISE_C, cabinetHeat } from '../thermal';
 import { coolingWatts, dcFanAmps, pickAirConditioner, pickFanThermostat, pickFilterFan, pickHeatExchanger } from '../cooling';
 import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign, EnclosureChoice, MotorSpec } from '../types';
 import { defaultMachineModel, drivesFromIo, type MachineModel } from './machineModel';
+import { cpuFit, findCpu, modulesToFit } from '../../plc/core/fit';
+import { needFromIo } from '../../spec/equipmentRules';
 import { comp, controlPower, mainDisconnect, motorBranches, Tags } from './power';
 import { devicesAndWiring, motorFor, OVER_TEMP_RE } from './devices';
 import { processLoads } from './process';
 import { num, Picker } from './select';
 import { controlInputAmps, motionDesign, motionDeviceType } from '../motion';
 import { commModulesFor } from '../commModule';
+import { isNetworkServoText, yaskawaCpuPart, type NetworkAxisInput } from '../mechatrolink';
 
 export { defaultMachineModel, type MachineModel } from './machineModel';
 
@@ -45,6 +48,8 @@ export interface EngineInput {
   spec?: string;
   /** Motion parts not in the catalog yet (tests only; see src/electrical/motion.ts). */
   motionParts?: CatalogPart[];
+  /** Servo axes commanded over a network (Yaskawa MECHATROLINK-III): the project's axis list; else read from the spec. */
+  networkAxes?: NetworkAxisInput[];
   /** Timestamp for generatedAt (tests pass a fixed one). */
   now?: string;
 }
@@ -71,6 +76,9 @@ export function dcLoad(components: DesignComponent[], getPart: EngineInput['getP
     if (p.category === 'solenoidValve') a += ((num(p.ratings.watts) ?? 2) / 24) * c.quantity;
     else if (p.category === 'contactor' && !/24/.test(String(p.ratings.coilVoltage ?? ''))) continue;
     else if (p.category === 'servoDrive') a += controlInputAmps(p) * c.quantity; // 460 V drives: control circuit on 24 VDC
+    // the maker's 24 VDC input current (Yaskawa base units, MP2300); modules in a base unit's slots are powered by it
+    else if (num(p.ratings.inputAmps24V) !== undefined) a += num(p.ratings.inputAmps24V)! * c.quantity;
+    else if (p.ratings.inRack === 'yes') continue;
     else a += (DC_LOAD_A[p.category] ?? 0) * c.quantity;
   }
   const hmi = hmiPartNumber ? getHmi(hmiPartNumber) : undefined;
@@ -91,7 +99,10 @@ function enclosureCandidates(pk: Picker, rating: DesignInputs['enclosureRating']
 
 interface Trial { components: DesignComponent[]; spare: number; fits: boolean; ok: boolean; enc: CatalogPart; notes: string[]; score: number[] }
 
-export function generateDesign(input: EngineInput): EngineResult {
+export function generateDesign(input0: EngineInput): EngineResult {
+  // A Yaskawa CPU id from the PLC profile ("CPU-301") stands for its catalog part (JAPMC-CP3301-1-E).
+  const cpuPn = yaskawaCpuPart(input0.plc.cpuPartNumber);
+  const input = cpuPn === input0.plc.cpuPartNumber ? input0 : { ...input0, plc: { ...input0.plc, cpuPartNumber: cpuPn } };
   const { inputs, getPart } = input;
   const supply = inputs.supply;
   const pk = new Picker(input.pref ?? DEFAULT_PREFERENCE);
@@ -99,10 +110,20 @@ export function generateDesign(input: EngineInput): EngineResult {
   const relayDevices = inputs.relayLogic?.devices ?? [];
   const tags = new Tags(['PLC', 'ENC1', 'SP1', 'DS1', 'SR1', ...relayDevices.map((d) => d.tag)]);
   // Servo axes, encoders and ultrasonic sensors (src/electrical/motion.ts): wired there, left out of the rules below.
-  const motion = motionDesign({ io: input.io, addresses: input.addresses, supply, region: input.region, pref: input.pref, spec: input.spec, nextTag: (p) => tags.next(p), extraParts: input.motionParts });
+  const motion = motionDesign({ io: input.io, addresses: input.addresses, supply, region: input.region, pref: input.pref, spec: input.spec, nextTag: (p) => tags.next(p), extraParts: input.motionParts,
+    cpu: getPart(input.plc.cpuPartNumber), networkAxes: input.networkAxes });
   const io = input.io.filter((p) => !motion.claimed.has(p.id));
-  const model = drivesFromIo(input.model, io, input.spec ?? '');
+  // A MECHATROLINK-III servo machine: a motor in the motor list that is a servo axis ("Servo drive 1", "Axis 3",
+  // "Main drive" read from the program's I/O comments) is a SERVOPACK axis above, never an AC motor on a VFD.
+  // (a motor the motor list read from one of the servo signals, e.g. "Main" from "Main drive run", is one too)
+  const words = (t: string) => t.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !/^(motor|run|drive|the|and|ready|enable|fault|reset|alarm|output|input|servo|axis)$/.test(w));
+  const fromSignal = (m: { description: string }) => { const mw = words(m.description); return mw.length > 0 && [...(motion.networkSignals ?? []), ...(input.networkAxes ?? []).map((a) => a.name)].some((d) => mw.every((w) => words(d).includes(w))); };
+  const servoMotors = motion.networkServo ? input.model.motors.filter((m) => isNetworkServoText(m.description) || fromSignal(m)) : [];
+  const dropped = (t: string) => servoMotors.some((m) => t.startsWith(`${m.description.replace(/ motor$/i, '')}:`) || t.includes(`${m.tag} `));
+  const baseModel = servoMotors.length ? { ...input.model, motors: input.model.motors.filter((m) => !servoMotors.includes(m)), assumptions: input.model.assumptions.filter((t) => !dropped(t)) } : input.model;
+  const model = drivesFromIo(baseModel, io, input.spec ?? '');
   const notes: string[] = [...motion.notes];
+  if (servoMotors.length) notes.push(`${servoMotors.map((m) => `${m.tag} ${m.description}`).join(', ')}: a servo axis on MECHATROLINK-III, not an AC motor — left out of the motor circuits (no VFD or starter). Only AC induction motors get a VFD or starter.`);
   const askUser: string[] = [...model.assumptions, ...motion.askUser];
 
   // Discrete PLC points with addresses (analog channels are wired by electrical/analog.ts).
@@ -130,13 +151,40 @@ export function generateDesign(input: EngineInput): EngineResult {
   notes.push(...dev.notes);
   askUser.push(...dev.askUser);
 
-  const plc: DesignComponent[] = [comp('PLC', input.plc.cpuPartNumber, 1, 'PLC CPU')];
-  input.modules.forEach((pn, i) => {
+  const cpu0 = getPart(input.plc.cpuPartNumber);
+  const plc: DesignComponent[] = [comp('PLC', input.plc.cpuPartNumber, 1, cpu0?.ratings.builtInFunctions ? `PLC CPU ${cpu0.ratings.series ?? ''} — built in: ${cpu0.ratings.builtInFunctions} (no separate parts)` : 'PLC CPU')];
+  // The CPU and its modules must hold the I/O (plc/core/fit.ts, the same check the PLC page and Equipment use): the
+  // modules modulesToFit adds go after the chosen ones, in slot order (the addresses X101… already count on them).
+  // A rack CPU on a base unit (Yaskawa MP3300) holds no I/O itself: its field I/O is remote I/O (derive.ts says so).
+  const cpuModel = cpu0?.ratings.baseUnit ? undefined : findCpu(input.plc.cpuPartNumber);
+  const need = needFromIo(input.io, false, 0);
+  const fit = cpuModel ? cpuFit(cpuModel, input.modules, need) : null;
+  let modules = input.modules;
+  if (cpuModel && fit && !fit.ok) {
+    const mods = modulesToFit(cpuModel.id, input.modules, need);
+    const added = mods ? mods.slice(input.modules.length) : [];
+    if (mods && input.modules.every((m, i) => mods[i] === m) && added.length) {
+      modules = mods;
+      notes.push(`${added.join(', ')} added after ${input.modules.length ? input.modules.join(', ') : `the ${input.plc.cpuPartNumber} CPU`} to hold the I/O (${fit.reason}) — add ${added.length > 1 ? 'them' : 'it'} on the PLC page.`);
+    } else askUser.push(`The PLC does not hold the I/O: ${fit.reason} No module of this platform makes it fit — choose a larger CPU or another module on the PLC page.`);
+  }
+  modules.forEach((pn, i) => {
     const p = getPart(pn);
     const discrete = num(p?.ratings.inputs) || num(p?.ratings.outputs);
     const kind = /analog/i.test(p?.description ?? '') && !discrete ? 'Analog' : /snap-in/i.test(p?.description ?? '') ? 'Snap-in I/O' : 'I/O';
     plc.push(comp(`IO${i + 1}`, pn, 1, `${kind} module, slot ${i + 1}`));
   });
+  // A CPU that plugs into a base unit (Yaskawa MP3300): the base unit with the power supply, the smallest with enough
+  // option slots for the modules (CPU-302 also takes option slot 1); 24 VDC from the panel supply first.
+  const cpuRack = getPart(input.plc.cpuPartNumber);
+  if (cpuRack?.ratings.baseUnit) {
+    const need = input.modules.length + (num(cpuRack.ratings.slotsUsed) ?? 1) - 1;
+    const bus = ALL_PARTS.filter((p) => p.ratings.kind === 'plc-base-unit' && p.ratings.family === cpuRack.ratings.baseUnit && (num(p.ratings.optionSlots) ?? 0) >= need)
+      .sort((a, b) => Number(!/24\s*VDC/i.test(String(a.ratings.supplyVolts))) - Number(!/24\s*VDC/i.test(String(b.ratings.supplyVolts))) || (num(a.ratings.optionSlots) ?? 0) - (num(b.ratings.optionSlots) ?? 0));
+    const bu = bus[0];
+    if (bu) plc.unshift(comp(tags.next('PLCB'), bu.partNumber, 1, `${bu.ratings.family} base unit ${bu.ratings.series}: ${bu.ratings.supplyVolts} power supply, CPU slot + ${bu.ratings.optionSlots} option slots (${need} used)`));
+    else notes.push(`${input.plc.cpuPartNumber}: no ${cpuRack.ratings.baseUnit} base unit in the catalog with ${need} option slots — split the modules over an expansion rack.`);
+  }
   // The PLC-side module the touch panel needs to reach the PLC (src/electrical/commModule.ts): a part, never an I/O slot.
   const comm = commModulesFor(input.hmiPartNumber, input.plc.cpuPartNumber, getPart, (p) => tags.next(p));
   plc.push(...comm.components);
@@ -148,7 +196,7 @@ export function generateDesign(input: EngineInput): EngineResult {
     const npnIn = points.some(({ point }) => point.deviceType === 'sensor-npn');
     const r = cpuPart.ratings;
     // Inputs on the CPU, else on its snap-in / first module (V700 / V1040 / V1210 have none on board).
-    const inPart = num(r.discreteInputs) ? cpuPart : input.modules.map((m) => getPart(m)).find((m) => num(m?.ratings.inputs));
+    const inPart = num(r.discreteInputs) ? cpuPart : modules.map((m) => getPart(m)).find((m) => num(m?.ratings.inputs));
     if (inPart) notes.push(`${inPart.partNumber} inputs (${inPart.ratings.inputType ?? 'see the guide'}): wired ${npnIn ? 'sourcing for the npn sensors (common to 24+)' : 'sinking for the pnp sensors (common to 0V)'}${/jumper/i.test(String(inPart.ratings.inputType ?? '')) ? `; set the input jumper to ${npnIn ? 'npn' : 'pnp'}` : ''}.`);
     if (r.analogSharedWith) notes.push(`${input.plc.cpuPartNumber}: inputs ${r.analogSharedWith} are the analog inputs when used as analog (jumper per input); the I/O addressing leaves a used one out of the digital inputs.`);
     // Mostly-relay CPUs: the npn points are given out last; a used one switches 0V, not a relay contact.
@@ -166,7 +214,7 @@ export function generateDesign(input: EngineInput): EngineResult {
     // The CPU and the modules are the project's PLC selection: a CPU / module left in the required parts
     // from an earlier equipment choice is never a second PLC.
     if (p?.category === 'plc' || p?.category === 'plcModule') {
-      notes.push(`${r.partNumber} from the equipment list is not used: the project's PLC is ${input.plc.cpuPartNumber}${input.modules.length ? ` with ${input.modules.join(', ')}` : ''} (change it on the PLC page).`);
+      notes.push(`${r.partNumber} from the equipment list is not used: the project's PLC is ${input.plc.cpuPartNumber}${modules.length ? ` with ${modules.join(', ')}` : ''} (change it on the PLC page).`);
       continue;
     }
     required.push(comp(tags.next(TAG_PREFIX[p?.category ?? 'other'] ?? 'X'), r.partNumber, r.quantity, `Required by the designer${p ? `: ${p.description}` : ''}`));
