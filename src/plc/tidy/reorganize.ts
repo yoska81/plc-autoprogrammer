@@ -17,7 +17,10 @@ import { rungWrites, type LadderElement, type LadderProgram, type ProgramBlock, 
 import { reorder, rungDeps } from './deps';
 import { rulesComments } from './comments';
 
-export type SectionId = 'remove-internal' | 'remove-registers' | 'remove-never' | 'merge' | 'reorder' | 'rename' | 'comment';
+export type SectionId = 'remove-internal' | 'remove-registers' | 'remove-never' | 'remove-uncalled' | 'remove-jumped' | 'remove-tags' | 'merge' | 'reorder' | 'rename' | 'comment';
+
+/** Removals of code the original PLC never runs: the behaviour check compares against the program without it. */
+export const NEVER_RUN: SectionId[] = ['remove-uncalled', 'remove-jumped'];
 
 export interface PlanSection {
   id: SectionId;
@@ -39,6 +42,10 @@ export interface ReorgPlan {
   names: Map<string, string>;
   /** Rungs that only a block's order keeps (read-only import): no regrouping across blocks. */
   keepBlocks: boolean;
+  /** Tag entries (addresses) nothing in the project uses. */
+  unusedTags: Set<string>;
+  /** Found, nothing to change (e.g. a label no jump goes to), each with its reason. */
+  findings: string[];
 }
 
 const WORD = /^(DS|DD|DH|DF|TXT|SD|MW|DW|ML|MF|MB|D|DB|R|N|F)\d/i;
@@ -76,6 +83,43 @@ function stationOf(r: Rung, name: (a: string) => string): string {
 }
 
 const hasRaw = (r: Rung) => r.outputs.some((o) => o.type === 'RAW') || r.branches.some((b) => b.some((e) => e.type === 'RAW'));
+/** The kept-instruction texts of a rung. */
+const rawTexts = (r: Rung) => [...r.branches.flat(), ...r.outputs].flatMap((x) => (x.type === 'RAW' ? [x.text] : []));
+const JMP = /^\s*JMP\(\s*(\w+)\s*\)\s*;?\s*$/i;
+const LBL = /\bLBL\(\s*(\w+)\s*\)/i;
+
+/**
+ * Code the original PLC never runs: rungs of a routine no call names (block.called === false), and rungs an
+ * unconditional JMP skips (after the jump, before its label, in the same block). Labels no jump goes to are findings.
+ */
+function neverRun(l: LadderProgram, rungNo: (r: Rung) => number): { uncalled: Map<string, string>; jumped: Map<string, string>; findings: string[] } {
+  const uncalled = new Map<string, string>(), jumped = new Map<string, string>(), findings: string[] = [];
+  const blocks = new Map((l.blocks ?? []).map((b) => [b.id, b] as const));
+  for (const r of l.rungs) {
+    const b = r.block ? blocks.get(r.block) : undefined;
+    if (b?.called === false) uncalled.set(r.id, `routine "${b.name}" is never called (no JSR names it, and it is not the program's main routine)`);
+  }
+  const targets = new Set<string>();
+  l.rungs.forEach((r, i) => {
+    for (const t of rawTexts(r)) {
+      const m = /\bJMP\(\s*(\w+)/i.exec(t);
+      if (m) targets.add(`${r.block ?? ''}|${m[1].toUpperCase()}`);
+      // An unconditional jump: the rung holds only the JMP.
+      const j = JMP.exec(t);
+      if (!j || r.branches.some((br) => br.some((e) => e.type !== 'RAW')) || r.outputs.length !== 1) continue;
+      const label = j[1].toUpperCase();
+      const end = l.rungs.findIndex((x, k) => k > i && (x.block ?? '') === (r.block ?? '') && rawTexts(x).some((tx) => LBL.exec(tx)?.[1].toUpperCase() === label));
+      if (end < 0) continue;
+      for (let k = i + 1; k < end; k++) if ((l.rungs[k].block ?? '') === (r.block ?? '') && !jumped.has(l.rungs[k].id)) jumped.set(l.rungs[k].id, `skipped by the unconditional JMP ${label} in rung ${rungNo(r)} (its label is in rung ${rungNo(l.rungs[end])})`);
+    }
+  });
+  for (const r of l.rungs) for (const t of rawTexts(r)) {
+    const m = LBL.exec(t);
+    if (m && !targets.has(`${r.block ?? ''}|${m[1].toUpperCase()}`)) findings.push(`Rung ${rungNo(r)}: label ${m[1]} — no JMP goes to it (a label does nothing on its own; kept).`);
+  }
+  return { uncalled, jumped, findings };
+}
+
 const hasEdge = (r: Rung) => r.branches.some((b) => b.some((e) => e.type === 'RISE' || e.type === 'FALL'));
 
 /** Find what each transform would change. Nothing is changed here. */
@@ -132,6 +176,12 @@ export function planReorganize(p: ProjectSnapshot): ReorgPlan {
     if (r.branches.every((b) => b.some(dead))) never.add(r.id);
   }
 
+  // Code the original PLC never runs, and tag entries nothing uses (not I/O, not the HMI's; registers and retentive
+  // memory kept: another device may read them).
+  const nr = neverRun(l, (r) => num.get(r.id) ?? 0);
+  const usedAddr = new Set(l.rungs.flatMap((r) => [...rungDeps(r).reads, ...rungDeps(r).writes, ...rungWrites(r).map((a) => a.trim().toUpperCase())]));
+  const unusedTags = new Set(l.tags.map((t) => t.address.trim().toUpperCase()).filter((a) => !usedAddr.has(a) && !hmi.has(a) && !WORD.test(a) && !retentive(a)));
+
   // Merge: neighbours with the same conditions and only coils, the second not reading what the first writes.
   const merges: [string, string][] = [];
   const coilsOnly = (r: Rung) => r.outputs.every((o) => o.type === 'OUT' || o.type === 'SET' || o.type === 'RST');
@@ -166,27 +216,31 @@ export function planReorganize(p: ProjectSnapshot): ReorgPlan {
     { id: 'remove-internal', title: `Remove ${internal.size} rung(s) that write internal values nothing reads`, note: 'Internal bits and timers no rung, output or HMI tag reads. On by default.', items: list(internal), defaultOn: true },
     { id: 'remove-registers', title: `Remove ${registers.size} rung(s) that write registers or retentive memory nothing in the project reads`, note: 'Off by default: a SCADA, another PLC or Modbus master may read registers the project does not know about.', items: list(registers), defaultOn: false },
     { id: 'remove-never', title: `Remove ${never.size} rung(s) that can never be true`, note: 'Off by default: each needs a bit that nothing in the project sets (another device may set it).', items: list(never), defaultOn: false },
+    ...(nr.uncalled.size ? [{ id: 'remove-uncalled' as const, title: `Remove ${nr.uncalled.size} rung(s) of routines the original PLC never calls`, note: 'Off by default. The app runs every block; the PLC runs a routine only when a JSR calls it. Checked against the program without them (what the PLC really runs).', items: [...nr.uncalled].map(([id, why]) => `rung ${num.get(id)}: ${why}`), defaultOn: false }] : []),
+    ...(nr.jumped.size ? [{ id: 'remove-jumped' as const, title: `Remove ${nr.jumped.size} rung(s) an unconditional jump always skips`, note: 'Off by default. The PLC never runs them; the app runs them (it does not jump). Checked against the program without them.', items: [...nr.jumped].map(([id, why]) => `rung ${num.get(id)}: ${why}`), defaultOn: false }] : []),
+    ...(unusedTags.size ? [{ id: 'remove-tags' as const, title: `Remove ${unusedTags.size} tag entr${unusedTags.size === 1 ? 'y' : 'ies'} nothing uses`, note: 'Names and comments of bits, timers and counters no rung, I/O point or HMI tag uses. Registers and retentive memory are kept (another device may read them).', items: [...unusedTags].map((a) => `${a}${l.tags.find((t) => t.address.trim().toUpperCase() === a)?.nickname ? ` ${l.tags.find((t) => t.address.trim().toUpperCase() === a)!.nickname}` : ''}: no rung reads or writes it`), defaultOn: true }] : []),
     { id: 'merge', title: `Merge ${merges.length} pair(s) of neighbouring rungs with the same conditions`, note: 'One rung with all the outputs, where neither reads what the other writes.', items: merges.map(([a, b]) => `rungs ${num.get(a)} and ${num.get(b)}`), defaultOn: true },
     { id: 'reorder', title: keepBlocks ? 'Order the rungs by machine function inside each block' : 'Group the rungs by machine function (one block each)', note: `${keepBlocks ? 'The blocks (drawings) and their order stay: the program is read-only on its original PLC. ' : ''}Every rung that depends on another keeps its order; kept instructions of the original PLC do not move.`, items: [...FUNCS], defaultOn: true },
     { id: 'rename', title: `Name ${names.size} unnamed internal bit(s) and register(s)`, note: 'Only the names change, never the addresses.', items: [...names].map(([a, n]) => `${a} → ${n}`), defaultOn: true },
     { id: 'comment', title: `Fill ${blanks} blank comment(s)`, note: 'Rung comments, block descriptions and tag comments, as Add comments does.', items: [], defaultOn: true },
   ];
-  return { sections, removals: { 'remove-internal': internal, 'remove-registers': registers, 'remove-never': never }, merges, names, keepBlocks };
+  return { sections, removals: { 'remove-internal': internal, 'remove-registers': registers, 'remove-never': never, 'remove-uncalled': new Set(nr.uncalled.keys()), 'remove-jumped': new Set(nr.jumped.keys()) }, merges, names, keepBlocks, unusedTags, findings: nr.findings };
 }
 
 /** The program with the chosen transforms, in a fixed order: remove, merge, reorder, rename, comment. */
 export function applyReorganize(p: ProjectSnapshot, plan: ReorgPlan, chosen: Set<SectionId>): LadderProgram {
   let l: LadderProgram = structuredClone(p.ladder);
   const drop = new Set<string>();
-  for (const id of ['remove-internal', 'remove-registers', 'remove-never'] as const) if (chosen.has(id)) plan.removals[id]?.forEach((x) => drop.add(x));
+  for (const id of ['remove-internal', 'remove-registers', 'remove-never', ...NEVER_RUN] as const) if (chosen.has(id)) plan.removals[id]?.forEach((x) => drop.add(x));
   // Unread only once the rungs reading it go too: a rung a kept rung still reads stays (one group on, the other off).
-  const never = plan.removals['remove-never'] ?? new Set<string>();
+  // Code the PLC never runs (and never-true rungs) goes whatever reads it.
+  const never = new Set([...(plan.removals['remove-never'] ?? []), ...NEVER_RUN.flatMap((id) => (chosen.has(id) ? [...(plan.removals[id] ?? [])] : []))]);
   for (let changed = true; changed;) {
     changed = false;
     const reads = new Set(l.rungs.filter((r) => !drop.has(r.id)).flatMap(realReads));
     for (const r of l.rungs) if (drop.has(r.id) && !never.has(r.id) && touchedBy(r).some((a) => reads.has(a))) { drop.delete(r.id); changed = true; }
   }
-  l = { ...l, rungs: l.rungs.filter((r) => !drop.has(r.id)) };
+  l = { ...l, rungs: l.rungs.filter((r) => !drop.has(r.id)), ...(chosen.has('remove-tags') ? { tags: l.tags.filter((t) => !plan.unusedTags.has(t.address.trim().toUpperCase())) } : {}) };
   if (chosen.has('merge')) {
     for (const [a, b] of plan.merges) {
       const ra = l.rungs.find((r) => r.id === a), rb = l.rungs.find((r) => r.id === b);
@@ -231,4 +285,13 @@ export function applyReorganize(p: ProjectSnapshot, plan: ReorgPlan, chosen: Set
   }
   if (chosen.has('comment')) l = rulesComments({ ...p, ladder: l }).program;
   return l;
+}
+
+/**
+ * What the behaviour check compares against: the program as the original PLC runs it, i.e. without the code the
+ * chosen never-run removals take out (the app's simulator runs every block and does not jump).
+ */
+export function plcBaseline(p: ProjectSnapshot, plan: ReorgPlan, chosen: Set<SectionId>): LadderProgram {
+  const out = new Set(NEVER_RUN.flatMap((id) => (chosen.has(id) ? [...(plan.removals[id] ?? [])] : [])));
+  return out.size ? { ...p.ladder, rungs: p.ladder.rungs.filter((r) => !out.has(r.id)) } : p.ladder;
 }

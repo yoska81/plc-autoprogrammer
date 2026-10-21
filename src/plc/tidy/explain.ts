@@ -133,7 +133,7 @@ export function explainProgram(p: ProjectSnapshot, ai: AiSummaries = {}): Progra
   const info = programInfo(p);
   const l = p.ladder;
   const blockOf = (r: Rung) => (r.block && (l.blocks ?? []).some((b) => b.id === r.block) ? r.block : GENERAL);
-  const defs = [...(l.blocks ?? []).map((b) => ({ id: b.id, name: b.name, description: b.description })), ...(l.rungs.some((r) => blockOf(r) === GENERAL) ? [{ id: GENERAL, name: 'General', description: '' }] : [])];
+  const defs = [...(l.blocks ?? []).map((b) => ({ id: b.id, name: b.name, description: `${b.called === false ? 'Never runs on the original PLC (no call names this routine). ' : ''}${b.description}` })), ...(l.rungs.some((r) => blockOf(r) === GENERAL) ? [{ id: GENERAL, name: 'General', description: '' }] : [])];
   const nameOf = new Map(defs.map((b) => [b.id, b.name] as const));
   // Which blocks write and read each address.
   const writers = new Map<string, Set<string>>(), readers = new Map<string, Set<string>>();
