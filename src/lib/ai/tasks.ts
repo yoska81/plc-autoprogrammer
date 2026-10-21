@@ -5,12 +5,12 @@ import type { Effort, Speed } from '../../store/useSettingsStore';
  * thinking; Speed "fast" caps each task's effort at its own level so they answer in seconds, while
  * "thorough" uses the Settings effort for everything.
  */
-export type AiTask = 'hmi-names' | 'equipment' | 'cycle' | 'machine' | 'io' | 'spec' | 'review' | 'program' | 'design' | 'import' | 'troubleshoot' | 'comments';
+export type AiTask = 'hmi-names' | 'equipment' | 'cycle' | 'machine' | 'io' | 'spec' | 'review' | 'program' | 'design' | 'import' | 'troubleshoot' | 'comments' | 'simplify';
 
 export const TASK_EFFORT: Record<AiTask, Effort> = {
   'hmi-names': 'low', equipment: 'low', troubleshoot: 'low', comments: 'low',
   cycle: 'medium', machine: 'medium', io: 'medium', spec: 'medium',
-  review: 'high', program: 'high', design: 'high', import: 'high',
+  review: 'high', program: 'high', design: 'high', import: 'high', simplify: 'medium',
 };
 
 /**
@@ -22,7 +22,7 @@ export const MAX_ANSWER_TOKENS = 64000;
 export const TASK_MAX_TOKENS: Record<AiTask, number> = {
   'hmi-names': 8000, equipment: 8000, troubleshoot: 8000, machine: 8000, comments: 16000,
   cycle: 12000, io: 16000, spec: 16000, review: 16000,
-  design: 32000, program: MAX_ANSWER_TOKENS, import: MAX_ANSWER_TOKENS,
+  design: 32000, program: MAX_ANSWER_TOKENS, import: MAX_ANSWER_TOKENS, simplify: 32000,
 };
 
 /** Tasks a smaller, faster model may answer (Settings → "Model for small tasks"). */

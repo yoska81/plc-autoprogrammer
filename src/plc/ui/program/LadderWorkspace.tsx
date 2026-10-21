@@ -47,6 +47,7 @@ import { checkEquivalenceOffThread } from '../../tidy/equivalenceOffThread';
 import { explainWithAi } from '../../tidy/explain';
 import { explainSummaries, saveExplainSummaries } from '../../tidy/explainStore';
 import ExplainPanel from './ExplainPanel';
+import { rewriteCandidates, simplifyBlocks, type RewriteCandidate } from '../../tidy/rewrite';
 import SpeakButton from '../../../voice/SpeakButton';
 import { usePlcNames } from '../ladder/plcNames';
 import { useProjectStore } from '../../../store/useProjectStore';
@@ -345,6 +346,33 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     }, false);
   };
 
+  /** Simplify blocks with AI: the blocks it may rewrite (each with its checkbox); each rewrite checked before it is kept. */
+  const [simp, setSimp] = useState<{ cands: RewriteCandidate[]; chosen: Set<string> } | null>(null);
+  const openSimplify = () => {
+    const cands = rewriteCandidates(useProgramStore.getState().ladder);
+    setSimp({ cands, chosen: new Set(cands.filter((c) => c.ok).map((c) => c.id)) });
+  };
+  const runSimplify = () => {
+    if (!simp) return;
+    const chosen = simp.cands.filter((c) => simp.chosen.has(c.id)).map((c) => c.id);
+    setSimp(null);
+    return runAI('program-revise', 'Simplify blocks with AI', async (signal, stage) => {
+      let step = '';
+      const r = await simplifyBlocks(collectProject(), ctx, { ...ai, signal }, chosen,
+        (a, b, o) => checkEquivalenceOffThread(a, b, o, { signal, onProgress: (done, total) => stage(`${step}, sequence ${done + 1} of ${total}`) }),
+        { stage: (t) => { step = t; stage(t); } });
+      return { ...r, before: useProgramStore.getState().ladder.rungs.length };
+    }, (r) => {
+      const st = useProgramStore.getState();
+      st.addChat({ role: 'user', text: `Simplify blocks with AI: ${chosen.length} block(s).` });
+      const dropped = r.dropped.length ? `\nNot changed:\n${r.dropped.map((d) => `- ${d.name}: ${d.why}`).join('\n')}` : '';
+      if (!r.kept.length) { st.addChat({ role: 'assistant', text: `No block was rewritten.${dropped}`, outcome: 'no-change' }); return; }
+      const text = `Rewritten by the AI and checked in the simulator (${r.before} rungs → ${r.program.rungs.length}):\n${r.kept.map((k) => `- ${k.name}: ${k.rungsBefore} → ${k.rungsAfter} rungs, ${k.before} → ${k.after} parts. ${k.summary.split(' Not simulated')[0]} ${k.explanation.split('\n')[0]}`).join('\n')}${r.final ? `\nAll of them together: ${r.final.differences.length ? 'different' : r.final.sequences ? `same behaviour in ${r.final.sequences} test sequences (0 differences)` : ''}.` : ''}${dropped}\nAddresses, the I/O and what the HMI reads did not move. Approve to keep it; the current program stays in History.`;
+      st.addChat({ role: 'assistant', text });
+      st.setProposal({ program: r.program, explanation: text, reasoning: null });
+    });
+  };
+
   /** Explain with AI: a paragraph per block, saved with the project (kept while the block's logic stays the same). */
   const handleExplainAi = () => runAI('program-revise', 'Explain the program', (signal, stage) =>
     explainWithAi(collectProject(), { ...ai, signal }, (done, total) => stage(`part ${Math.min(done + 1, total)} of ${total}`)), (r) => {
@@ -579,9 +607,25 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                   title="Write every comment again, also the ones already there (you approve the result first)"
                   className="py-1.5 px-2 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Rewrite all comments</button>
                 <p className="w-full text-[11px] text-gray-500 -mt-1">Adds a plain-words note on every rung, then you can simplify.</p>
+                <button onClick={() => (simp ? setSimp(null) : openSimplify())} disabled={isGenerating || Boolean(proposal) || !ready} aria-expanded={Boolean(simp)}
+                  title={ready ? 'The AI rewrites the blocks you choose in a simpler shape; each one is kept only if the simulator finds the same behaviour' : 'Add your API key in Settings to use the AI'}
+                  className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Simplify blocks with AI…</button>
                 <button onClick={() => (reorg ? setReorg(null) : openReorganize())} disabled={isGenerating || Boolean(proposal)} aria-expanded={Boolean(reorg)}
                   title="Rebuild the same behaviour in a simpler shape: grouped by machine function, dead code out, names and comments; checked in the simulator before you approve"
                   className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Reorganize program…</button>
+              </div>
+            )}
+            {simp && !proposal && (
+              <div className="rounded border border-gray-200 bg-gray-50 p-2 text-xs space-y-1.5" role="group" aria-label="Simplify blocks">
+                <p className="text-gray-600">The AI rewrites each block you choose (one request per block, only that block sent). A rewrite is kept only if it is simpler, writes nothing new and behaves the same in the simulator; nothing changes until you approve.</p>
+                {simp.cands.map((c) => (
+                  <label key={c.id || 'general'} className="flex items-start gap-2">
+                    <input type="checkbox" className="mt-0.5" checked={simp.chosen.has(c.id)} disabled={!c.ok}
+                      onChange={(e) => { const s2 = new Set(simp.chosen); if (e.target.checked) s2.add(c.id); else s2.delete(c.id); setSimp({ ...simp, chosen: s2 }); }} />
+                    <span><span className="font-medium text-gray-800">{c.name}</span> <span className="text-gray-500">({c.rungs} rung{c.rungs === 1 ? '' : 's'}){c.why ? `: ${c.why}` : ''}</span></span>
+                  </label>
+                ))}
+                <button onClick={runSimplify} disabled={!simp.chosen.size || isGenerating} className="w-full py-1.5 bg-brand-600 text-white rounded font-medium hover:bg-brand-700 disabled:opacity-50">Rewrite and check {simp.chosen.size} block{simp.chosen.size === 1 ? '' : 's'}</button>
               </div>
             )}
             {reorg && !proposal && (
