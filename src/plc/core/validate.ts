@@ -159,7 +159,14 @@ export function validateProgram(
     };
     const timerRead = (a: string) => /^CT\d+$/.test(a) || reads.has(a) || hmiAddr.has(a.replace(/^T(\d+)$/, 'TD$1')) || reads.has(a.replace(/^T(\d+)$/, 'TD$1'));
     for (const [a, rung] of reads) if (!writes.has(a) && !skip(a) && !/^(T|CT)\d+$/.test(a)) issues.push({ rungId: rung, severity: 'warning', message: `${a} is read but never written: it is always 0 / OFF.` });
-    for (const [a, rung] of writes) if (!timerRead(a) && !skip(a)) issues.push({ rungId: rung, severity: 'warning', message: `${a} is written but never read: this logic does nothing.` });
+    // A touch panel the app does not see may read it: a program kept on the machine's own PLC (its panel project is
+    // not here, or only listed), or memory whose name or comment says it is for the panel.
+    const forPanel = new Set(program.tags.filter((t) => PANEL_WORDS.test(`${t.nickname} ${t.comment}`)).map((t) => t.address.trim().toUpperCase()));
+    const panelMayRead = (a: string) => profile.readOnly || forPanel.has(a);
+    for (const [a, rung] of writes) {
+      if (timerRead(a) || skip(a)) continue;
+      issues.push({ rungId: rung, severity: 'warning', message: panelMayRead(a) ? `${a} is written but never read by the program: it does nothing unless the touch panel reads it.` : `${a} is written but never read: this logic does nothing.` });
+    }
   }
 
   // A coil that can never turn on: every branch that could switch it on (its own seal-in aside) needs a contact on a
@@ -202,11 +209,19 @@ export function validateProgram(
   return issues;
 }
 
+/** Words in a name or comment that say a register is for the operator panel. */
+const PANEL_WORDS = /\b(hmi|panel|screen|touch|display|indicator|lamp on hmi|operator)\b/i;
+
 /** PLC families imported instructions come from (profile ids, plus brands the app reads but has no profile for). */
 const VENDOR_NAME: Record<string, string> = {
   logix: 'Logix', click: 'CLICK', micro800: 'Micro800', 'siemens-s7': 'Siemens S7', 'unitronics-unistream': 'UniStream', 'unitronics-vision': 'Vision',
   'mitsubishi-fx': 'Mitsubishi', codesys: 'CODESYS', 'siemens-stl': 'Siemens STL', 'siemens-lad': 'a TIA Portal LAD network', delta: 'Delta', inovance: 'Inovance', xinje: 'Xinje',
+  'yaskawa-mp': 'Yaskawa MPE720',
 };
+
+/** The PLC an imported instruction belongs to: its vendor tag, with older tags (projects saved before) mapped to today's profile id. */
+const RAW_FAMILY: Record<string, string> = { yaskawa: 'yaskawa-mp' };
+export const rawFamily = (vendor: string) => RAW_FAMILY[vendor] ?? vendor;
 
 /**
  * An imported instruction kept as written: on its own PLC a warning (it is not checked or simulated);
@@ -214,9 +229,9 @@ const VENDOR_NAME: Record<string, string> = {
  */
 function rawIssues(rungId: string, r: RawInstruction, profile: PlcProfile): ValidationIssue[] {
   const short = r.text.length > 80 ? `${r.text.slice(0, 77).replace(/\s+/g, ' ')}…` : r.text;
-  if (r.vendor !== profile.id) {
+  if (rawFamily(r.vendor) !== profile.id) {
     const what = /^\s*(?:FUNCTION_BLOCK|FUNCTION)\s+"?(\w+)/i.exec(r.text)?.[1] ?? /^(\w+)\(/.exec(r.text)?.[1] ?? short;
-    return [{ rungId, severity: 'error', message: `${what} from ${VENDOR_NAME[r.vendor] ?? r.vendor} cannot run on ${profile.name}: this rung will not work (${short}).` }];
+    return [{ rungId, severity: 'error', message: `${what} from ${VENDOR_NAME[rawFamily(r.vendor)] ?? r.vendor} cannot run on ${profile.name}: this rung will not work (${short}).` }];
   }
   return [{ rungId, severity: 'warning', message: `Not understood: check by hand (${short}).` }, ...rawRules(rungId, r)];
 }

@@ -84,6 +84,8 @@ export interface ForeignProgram {
   modules?: { slot: number; catalog: string }[];
   /** Network (MECHATROLINK) axes the project configures: not I/O points, each one its drive and motor. */
   axes?: NetworkAxisImport[];
+  /** The touch panel's project that came with the program (its maker, as a catalog vendor id, and its screens). */
+  panel?: { vendor: string; software: string; screens: string[] };
   projectName: string;
   tags: ForeignTag[];
   routines: ForeignRoutine[];
@@ -118,7 +120,7 @@ export interface ImportReport {
 }
 
 export interface ImportedProgram {
-  source: { format: SourceFormat; vendor: string; controller: string; projectName: string; fileName: string; modules?: { slot: number; catalog: string }[]; axes?: NetworkAxisImport[] };
+  source: { format: SourceFormat; vendor: string; controller: string; projectName: string; fileName: string; modules?: { slot: number; catalog: string }[]; axes?: NetworkAxisImport[]; panel?: { vendor: string; software: string; screens: string[] } };
   /** Program with neutral addresses; I/O points are written as "@IN:<n>" / "@OUT:<n>" until a PLC is chosen (materialize). */
   program: LadderProgram;
   io: ImportedIoPoint[];

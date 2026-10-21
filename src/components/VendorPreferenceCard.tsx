@@ -27,7 +27,9 @@ const nameOf = (id: VendorId, g?: VendorGroup) => {
  */
 function BrandSelect({ group, chosen, onChange }: { group: VendorGroup; chosen: VendorId[]; onChange: (ids: VendorId[]) => void }) {
   const title = GROUP_TITLE[group];
-  const offered = useMemo(() => VENDORS.filter((v) => groupsOf(v.id).includes(group)), [group]);
+  // A brand the project uses although the catalog has no parts of it in this group yet (a Yaskawa MP controller
+  // read from the machine's program) is listed too, so the row shows it instead of the first brand.
+  const offered = useMemo(() => VENDORS.filter((v) => groupsOf(v.id).includes(group) || chosen.includes(v.id)), [group, chosen]);
   return (
     <div className="flex flex-wrap items-center gap-2 min-w-0">
       <select aria-label={`Brand for ${title}`} value={chosen[0]} onChange={(e) => onChange([e.target.value as VendorId])}

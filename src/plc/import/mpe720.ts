@@ -26,7 +26,7 @@ import type { ForeignProgram, ForeignRoutine, ForeignTag, ForeignType, NetworkAx
 import { hmiNotes, type HmiProject } from './emtp';
 import { networkNotes, readEthernetConnections, readSvcStations, type EthernetConnection, type MechatrolinkAxis } from './mpe720Network';
 
-export const YASKAWA_VENDOR = 'yaskawa';
+export const YASKAWA_VENDOR = 'yaskawa-mp';
 
 /** Start of the box text of an instruction the reader could not read (it does nothing in the program). */
 export const UNREAD = 'Unknown instruction';
@@ -492,7 +492,7 @@ export function readYmw7(bytes: Uint8Array, fileName = 'project.YMW7', hmi?: Hmi
     ...(hmi ? hmiNotes(hmi, (a) => comments.get(a), (a) => used.has(a)) : []),
   );
   return {
-    format: 'yaskawa-mpe720', vendor: 'Yaskawa', controller: cpu, modules, ...(axisList.length ? { axes: axisList } : {}), projectName: fileName.replace(/\.[^.]+$/, ''),
+    format: 'yaskawa-mpe720', vendor: 'Yaskawa', controller: cpu, modules, ...(axisList.length ? { axes: axisList } : {}), ...(hmi ? { panel: { vendor: 'weintek', software: `EasyBuilder Pro ${hmi.version}`.trim(), screens: hmi.screens } } : {}), projectName: fileName.replace(/\.[^.]+$/, ''),
     tags, routines, notes, outside, summary,
   };
 }
