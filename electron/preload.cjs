@@ -41,6 +41,16 @@ contextBridge.exposeInMainWorld('isaDesktop', {
     clear: () => ipcRenderer.invoke('isa:dwg-clear'),
     read: (files) => ipcRenderer.invoke('isa:dwg-read', files),
   },
+  // Send to TIA Portal (electron/tiaBridge.cjs): a bridge command → its result; failures as plain Errors.
+  tia: {
+    call: async (cmd, args) => { const r = await ipcRenderer.invoke('isa:tia', cmd, args); if (!r.ok) throw new Error(r.error); return r.value; },
+    logPath: () => ipcRenderer.invoke('isa:tia-log'),
+    onProgress: (cb) => {
+      const h = (_e, p) => cb(p);
+      ipcRenderer.on('isa:tia-progress', h);
+      return () => ipcRenderer.removeListener('isa:tia-progress', h);
+    },
+  },
   modbus: {
     connect: async (o) => { const r = await ipcRenderer.invoke('isa:modbus', 'connect', [o]); return r.ok ? r.value : { ok: false, error: r.error }; },
     disconnect: () => mb('disconnect'),

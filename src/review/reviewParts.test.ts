@@ -1,7 +1,8 @@
 /// <reference types="node" />
 /**
- * A big imported program is reviewed by the AI in parts that each fit one request (each with the I/O it uses),
- * at most MAX_REVIEW_PARTS of them, and the summary says what was read; a small project is one request as before.
+ * A big imported program is reviewed by the AI in parts that each fit one request (each with the I/O it uses, after
+ * the rest of the project sent as one prompt-cached prefix), at most MAX_REVIEW_PARTS of them, and the summary says
+ * what was read; a small project is one request as before.
  * The engineer review gets the program's outline when the whole listing does not fit.
  * Run with:  npx tsx src/review/reviewParts.test.ts
  */
@@ -22,11 +23,13 @@ let passed = 0;
 const test = async (name: string, fn: () => Promise<void> | void) => { await fn(); passed++; console.log('  ok ', name); };
 const ai = { provider: 'anthropic' as const, apiKey: 'sk-test', model: 'm', effort: 'low' as const };
 
-const prompts: string[] = [];
+const prompts: string[] = [], parts: string[] = [];
 let n = 0;
 setClaudeInterceptor(async (o: ClaudeOptions) => {
-  const text = String(o.messages[0].content);
-  prompts.push(text);
+  const c = o.messages[0].content;
+  // a part of a big program: the shared project (cached) and the part's own text, as one prompt
+  prompts.push(typeof c === 'string' ? c : (c as { text: string }[]).map((b) => b.text).join('\n\n'));
+  parts.push(typeof c === 'string' ? c : (c as { text: string }[]).at(-1)!.text);
   o.onStarted?.();
   const k = ++n;
   return { text: JSON.stringify(o.system.includes('electrical engineer')
@@ -56,17 +59,18 @@ await test('a small project is one review request, as before', async () => {
 });
 
 await test('a big program: parts that each fit, at most MAX_REVIEW_PARTS, findings merged, the summary says what was read', async () => {
-  const { program, main } = importProgramFiles([{ name: 'big.L5X', text: l5x(600, 1024) }]);
+  const { program, main } = importProgramFiles([{ name: 'big.L5X', text: l5x(800, 1024) }]);
   applyUpgrade(program, main.text);
   const p = collectProject();
-  assert.ok(p.ladder.rungs.length >= 30000, `${p.ladder.rungs.length} rungs`);
-  prompts.length = 0;
+  assert.ok(p.ladder.rungs.length >= 40000, `${p.ladder.rungs.length} rungs`);
+  prompts.length = 0; parts.length = 0;
   const r = await runAiReview(ai, p as never, []);
   assert.equal(prompts.length, MAX_REVIEW_PARTS);
   for (const t of prompts) assert.ok(approxTokens(t) <= INPUT_TOKENS, `part of ${approxTokens(t)} tokens`);
-  assert.match(prompts[0], /^This is part 1 of \d+ of a big program \(rungs 1–\d+\)/);
-  assert.match(prompts[0], /only the \d+ points this part of the program uses \(2048 in all\)/);
-  assert.match(r.summary, /too big to review in one request: the AI read it in \d+ parts, the first 6 of them/);
+  assert.match(parts[0], /^This is part 1 of \d+ of a big program \(rungs 1–\d+\)/);
+  assert.match(parts[0], /only the \d+ points this part of the program uses \(2048 in all\)/);
+  assert.match(prompts[0], /^The PLC program of this project is too big for one request/);
+  assert.match(r.summary, new RegExp(`too big to review in one request: the AI read it in \\d+ parts, the first ${MAX_REVIEW_PARTS} of them`));
   assert.match(r.summary, /checked by the rule checks only/);
   assert.equal(r.findings.length, MAX_REVIEW_PARTS);
   assert.equal(new Set(r.findings.map((f) => f.id)).size, MAX_REVIEW_PARTS, 'ids stay unique across parts');

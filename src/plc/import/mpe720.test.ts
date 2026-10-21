@@ -151,8 +151,22 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   assert.match(d.motion ?? '', /^Servo axes on MECHATROLINK \(1\): [^\n]*\n- axis 1 \(line 1\): SGDEMO-AMP01 with motor SGMDEMO-MOT01/);
   assert.match(d.motion ?? '', /Motion programs \(1\), kept as written:\n- MPM001 "DEMO"; \(1 line: MOV \[A1\]1000;\)/);
   assert.match(d.motion ?? '', /each servo axis is a Yaskawa servo drive with its servo motor, not a VFD or an AC motor/);
-  assert.match(d.sequence ?? '', /^H01 Demo conveyor\nH01\.01 Demo sub/, 'the drawings in scan order, each once');
-  assert.doesNotMatch(d.sequence ?? '', /H01 Demo conveyor:\n {2}- H01 Demo conveyor/, 'not the drawing name twice');
+  assert.doesNotMatch(d.sequence ?? '', /H01 Demo conveyor/, 'a drawing whose rungs only repeat its name is not in the sequence');
+  // Drawings that say what they do: at most 3 comments each, the name never repeated, at most 40 drawings.
+  {
+    const blocks = Array.from({ length: 50 }, (_, k) => ({ id: `b${k}`, name: `A${String(k).padStart(2, '0')} Ax.${k}` }));
+    const rungs = blocks.flatMap((b, k) => [b.name, `Ax.${k}`, 'Home the axis', 'Jog forward', 'Jog back', 'Run the cycle'].map((comment, j) => ({ id: `${b.id}_${j}`, block: b.id, comment, branches: [], outputs: [] })));
+    const many = describeProgram({ ...program, program: { ...program.program, blocks, rungs } as never });
+    assert.match(many.sequence ?? '', /^A00 Ax\.0:\n {2}- Home the axis\n {2}- Jog forward\n {2}- Jog back\nA01 Ax\.1:/);
+    assert.equal((many.sequence?.match(/^A\d\d Ax\.\d+:$/gm) ?? []).length, 40);
+    assert.match(many.sequence ?? '', /… and 10 more drawings \(see the PLC program\)\./);
+    assert.match(many.overview ?? '', /- A29 Ax\.29 — Home the axis\n- … and 20 more drawings \(see the PLC program\)/, 'the drawing list is capped at 30');
+  }
+  // Drives besides the servo axes, from their fault inputs.
+  {
+    const io = [...program.io, { name: 'IB00010', description: 'Conveyor 3 driver fault', type: 'input' as const, original: 'IB00010', analog: false, confidence: 'high' as const }];
+    assert.match(describeProgram({ ...program, io }).motion ?? '', /Conveyor drives \(from fault inputs: check type, AC motor and drive\) \(1\):\n- Conveyor 3 driver \(fault input IB00010\)/);
+  }
   const qs = questionsFor(program);
   assert.ok(qs.includes('The original program has motion program MPM001 "DEMO", 1 line. It is kept as written (shown under Motion and on the Upgrade page); the simulator can\'t run it. What does it do on the machine?'), 'the motion program is named, not pasted');
   assert.ok(!qs.some((x) => /MOV \[A1\]/.test(x)), 'no raw motion code in a question');

@@ -13,6 +13,7 @@ import { resolveAddresses } from '../plc/core/profile';
 import { moduleSlots } from '../plc/core/modules';
 import { validateProgram } from '../plc/core/validate';
 import { fingerprint, specToText, changedSections } from './types';
+import { specForAI } from '../lib/ai/specForAI';
 import { ioFingerprint, hmiFingerprint } from './useStages';
 import { generateIOFromSpec, generatedToPoint, keptUpdate, planIOMerge } from '../lib/ai/ioAI';
 import { recommendEquipment } from '../lib/ai/equipmentAI';
@@ -162,6 +163,12 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
         const n = brandStepNote(specToText(spec), prof ? `${prof.vendor} ${prof.name} (${cpuId})` : cpuId);
         return n ? `${n} ` : '';
       };
+      // A program read from the machine keeps its own controller (read only): the hardware is known, nothing to ask.
+      if (plc().profile.readOnly) {
+        const { cpuId, modules } = useProjectStore.getState();
+        onStep({ step, status: 'done', message: `Kept the machine's own ${cpuId}${modules.length ? ` + ${modules.length} module(s)` : ''}, read from its program: the hardware is known, so the AI was not asked.` });
+        return true;
+      }
       if (stageMode('equipment') === 'quick') {
         // Rules from the I/O counts: needs the I/O list of this run.
         if (!(await ctx.after('io'))) return false;
@@ -380,11 +387,11 @@ async function runStepInner(step: UpdateStep, onStep: (r: StepResult) => void, c
       if (mode === 'quick') return rulesProposal(null);
       if (!aiCfg.apiKey) return rulesProposal('No API key — built from rules');
       const changed = changedSections(useStageStore.getState().sources.program?.spec ?? null, spec);
-      const request = `The machine specification, I/O list and/or HMI changed${changed.length ? ` (spec sections: ${changed.join(', ')})` : ''}. Update the program to match, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specToText(spec)}`;
+      const request = `The machine specification, I/O list and/or HMI changed${changed.length ? ` (spec sections: ${changed.join(', ')})` : ''}. Update the program to match, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specForAI(spec, 'program')}`;
       const ioSet = new Set([...addresses.values()].filter(Boolean));
       let r: Awaited<ReturnType<typeof reviseLadder>>;
       try {
-        r = await reviseLadder(aiCfg, ctxP, prog.ladder, validateProgram(prog.ladder, profile, ioSet, undefined, { noPanel: noTouchPanelNow() }), [{ role: 'user', content: `Machine specification:\n${specToText(spec)}` }], request);
+        r = await reviseLadder(aiCfg, ctxP, prog.ladder, validateProgram(prog.ladder, profile, ioSet, undefined, { noPanel: noTouchPanelNow() }), [{ role: 'user', content: `Machine specification (overview):\n${specForAI(spec, 'fix-it')}` }], request);
       } catch (err) {
         // Cancel stops the stage; any other AI failure falls back to the rules, as the electrical and HMI stages
         // do: the rules' program becomes a proposal (the program written by hand stays until it is approved).

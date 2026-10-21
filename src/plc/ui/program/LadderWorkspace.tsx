@@ -29,6 +29,7 @@ import { useNarrow } from '../../../components/useNarrow';
 import { useFingerprints, useStages } from '../../../spec/useStages';
 import { useStageStore } from '../../../store/useStageStore';
 import { changedSections, specToText } from '../../../spec/types';
+import { specForAI } from '../../../lib/ai/specForAI';
 import BlockTree from './BlockTree';
 import CrossRefPanel from './CrossRefPanel';
 import { useFullScreen, useLadderHistory } from './workspaceView';
@@ -38,6 +39,10 @@ import { useDraft } from '../../../store/useDraftStore';
 import { useUi } from '../../../store/useUiStore';
 import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
 import VoiceTextarea from '../../../voice/VoiceTextarea';
+import { collectProject } from '../../../deliverables/collect';
+import { addComments } from '../../tidy/comments';
+import { applyReorganize, externalAddresses, planReorganize, type ReorgPlan, type SectionId } from '../../tidy/reorganize';
+import { checkEquivalence, equivalenceSummary } from '../../tidy/equivalence';
 import SpeakButton from '../../../voice/SpeakButton';
 import { usePlcNames } from '../ladder/plcNames';
 import { useProjectStore } from '../../../store/useProjectStore';
@@ -123,7 +128,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const notesCheck = /^the machine specification and\/or i\/o list changed|^current specification:/i.test(userPrompt.trim()) || userPrompt.length > 600 && specText && userPrompt.includes(specText.slice(0, 80))
     ? { leftOver: true, terms: ['a copy of the update message / specification'] }
     : looksLeftOver(userPrompt, specText);
-  const machineText = [specText, userPrompt.trim() && `Additional notes for the program:\n${userPrompt}`].filter(Boolean).join('\n\n');
+  const machineText = [specText, userPrompt.trim() && `## Additional notes for the program\n${userPrompt}`].filter(Boolean).join('\n\n');
   const recordSource = () => markGenerated('program', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, hmiFp: fp.hmiFp });
 
   // A finding sent from the Design review page opens Fix & Ask with the request filled in.
@@ -215,7 +220,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     setTab('fix');
     return handleRevise(
       `The machine specification and/or I/O list changed${changed.length ? ` (spec sections: ${changed.join(', ')})` : ''}. ` +
-      `Update the program so it matches the current specification below, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specText}`,
+      `Update the program so it matches the current specification below, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specForAI(specText, 'program')}`,
       true,
     );
   };
@@ -261,6 +266,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
    * `full` = the older all-AI program (experimental).
    */
   const handleGenerate = (full = false) => {
+    // A program kept read only on the machine's own PLC is not rebuilt for it (it would get another PLC's memory).
+    if (ctx.profile.readOnly) return;
     if (full && !machineText.trim()) return;
     if (ladder.rungs.length && !programLeftOver.leftOver && !confirm(replaceProgramQuestion(useProgramStore.getState()))) return;
     setTab('describe');
@@ -283,13 +290,59 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     });
   };
 
+  /**
+   * Add comments: every blank rung comment, block description and tag comment in plain words (the AI's with a key,
+   * else from the I/O names and the cross-reference). Only comments change; it comes as a proposal to approve.
+   */
+  /** Reorganize: the transforms found (each with its checkbox), then the chosen ones checked in the simulator. */
+  const [reorg, setReorg] = useState<{ plan: ReorgPlan; chosen: Set<SectionId> } | null>(null);
+  const openReorganize = () => {
+    const plan = planReorganize(collectProject());
+    setReorg({ plan, chosen: new Set(plan.sections.filter((x) => x.defaultOn).map((x) => x.id)) });
+  };
+  const runReorganize = () => {
+    if (!reorg) return;
+    const { plan, chosen } = reorg;
+    setReorg(null);
+    return runAI('program-revise', 'Reorganize program', async () => {
+      const p = collectProject();
+      const program = applyReorganize(p, plan, chosen);
+      const plant = p.io.map((x) => ({ address: p.addresses.get(x.id) ?? '', description: x.description, type: x.type, category: x.category }));
+      const check = checkEquivalence(p.ladder, program, { observe: [...externalAddresses(p)], plant, budgetMs: 15_000 });
+      return { program, check, titles: plan.sections.filter((x) => chosen.has(x.id)).map((x) => x.title) };
+    }, (r) => {
+      const st = useProgramStore.getState();
+      st.addChat({ role: 'user', text: `Reorganize the program: ${r.titles.join('; ')}.` });
+      const said = equivalenceSummary(r.check);
+      if (r.check.differences.length) { st.addChat({ role: 'assistant', text: `${said}\nNothing is proposed: the reorganized program would not behave the same. Choose fewer changes and try again.`, outcome: 'no-change' }); return; }
+      const text = `Reorganized: ${r.titles.join('; ')}.\n${said}\nAddresses, the I/O and what the HMI reads did not move; kept instructions of the original PLC stay as they were.`;
+      st.addChat({ role: 'assistant', text });
+      st.setProposal({ program: r.program, explanation: text, reasoning: null });
+    }, false);
+  };
+
+  const handleComments = (rewrite: boolean) => {
+    if (rewrite && !confirm('Rewrite every comment of the program, also the ones already there? You approve the result first, and the current program is kept in History.')) return;
+    setTab('fix');
+    return runAI('program-revise', rewrite ? 'Rewrite all comments' : 'Add comments', (signal) => addComments(collectProject(), { ai: ready && ai.apiKey ? { ...ai, signal } : undefined, rewrite }), (r) => {
+      const st = useProgramStore.getState();
+      const n = r.rungs + r.blocks + r.tags;
+      st.addChat({ role: 'user', text: rewrite ? 'Rewrite all comments.' : 'Add comments.' });
+      if (!n) { st.addChat({ role: 'assistant', text: 'Every rung, block and tag already has a comment.', outcome: 'no-change' }); return; }
+      const parts = [`${r.rungs} rung comment${r.rungs === 1 ? '' : 's'}`, r.blocks ? `${r.blocks} block description${r.blocks === 1 ? '' : 's'}` : '', r.tags ? `${r.tags} tag comment${r.tags === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ');
+      const text = `Comments ${rewrite ? 'rewritten' : 'added'}: ${parts}${r.byAi ? ` (${r.byAi} written by the AI, the rest from the I/O names and the cross-reference)` : ' (from the I/O names and the cross-reference)'}. Only comments change: the logic and the addresses are the same${rewrite ? '' : ', and the comments already there are kept'}.${r.notes.length ? `\n${r.notes.join('\n')}` : ''}`;
+      st.addChat({ role: 'assistant', text });
+      st.setProposal({ program: r.program, explanation: text, reasoning: null });
+    }, false);
+  };
+
   const handleRevise = (text: string, specUpdate = false) => {
     const req = text.trim();
     if (!req || proposal) return;
     // Earlier turns as plain text; the current program is attached fresh by reviseLadder.
     // The conversation must open with a user turn, so lead with the original request.
     const history = [
-      { role: 'user' as const, content: `Machine specification:\n${machineText || '(program was drawn by hand)'}` },
+      { role: 'user' as const, content: `Machine specification (overview):\n${specForAI(machineText, 'fix-it') || '(program was drawn by hand)'}` },
       ...chat.map((m) => ({ role: m.role, content: m.text })),
     ];
     const scoped = activeBlock !== null && !specUpdate ? `[Block: ${blockName}${activeBlock ? ` (id "${activeBlock}")` : ''}] ${req}` : req;
@@ -355,6 +408,11 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                   <b>The current program is from another machine</b> (it mentions {programLeftOver.terms.join(', ')}, which are not in your machine description). Build a new program from your project.
                 </div>
               )}
+              {ctx.profile.readOnly ? (
+                <p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded px-3 py-2" data-testid="build-read-only">
+                  This program is on the machine's own {ctx.profile.vendor} controller ({ctx.cpu.id}), read only: <Link to="/upgrade" className="underline">choose the PLC to move it to</Link> first, then the program can be built for it.
+                </p>
+              ) : (
               <button
                 onClick={() => handleGenerate()}
                 disabled={isGenerating}
@@ -362,6 +420,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               >
                 {isGenerating ? <><Spinner /> Building the program…</> : 'Build program from my project'}
               </button>
+              )}
               <div className="text-sm text-gray-700 bg-brand-50 border border-brand-200 rounded px-3 py-2" data-testid="program-sources">
                 <div className="font-medium text-gray-800 mb-1">The program is made directly from:</div>
                 <ul className="text-xs space-y-0.5">
@@ -469,6 +528,33 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 Ask AI to fix the {issues.length} checker issue{issues.length !== 1 && 's'}
               </button>
             )}
+            {!proposal && ladder.rungs.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Tidy up">
+                <button onClick={() => handleComments(false)} disabled={isGenerating}
+                  title="Fill in every missing rung comment, block description and tag comment in plain words; the logic is not changed"
+                  className="flex-1 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Add comments</button>
+                <button onClick={() => handleComments(true)} disabled={isGenerating}
+                  title="Write every comment again, also the ones already there (you approve the result first)"
+                  className="py-1.5 px-2 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Rewrite all comments</button>
+                <button onClick={() => (reorg ? setReorg(null) : openReorganize())} disabled={isGenerating} aria-expanded={Boolean(reorg)}
+                  title="Rebuild the same behaviour in a simpler shape: grouped by machine function, dead code out, names and comments; checked in the simulator before you approve"
+                  className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Reorganize program…</button>
+              </div>
+            )}
+            {reorg && !proposal && (
+              <div className="rounded border border-gray-200 bg-gray-50 p-2 text-xs space-y-1.5" role="group" aria-label="Reorganize">
+                <p className="text-gray-600">Choose the changes. They are checked together in the simulator before they are proposed; nothing changes until you approve.</p>
+                {reorg.plan.sections.map((sec) => (
+                  <label key={sec.id} className="flex items-start gap-2">
+                    <input type="checkbox" className="mt-0.5" checked={reorg.chosen.has(sec.id)} disabled={!sec.items.length && sec.id !== 'comment' && sec.id !== 'reorder'}
+                      onChange={(e) => { const c = new Set(reorg.chosen); if (e.target.checked) c.add(sec.id); else c.delete(sec.id); setReorg({ ...reorg, chosen: c }); }} />
+                    <span><span className="font-medium text-gray-800">{sec.title}</span><br /><span className="text-gray-500">{sec.note}</span>
+                      {sec.items.length > 0 && sec.id !== 'reorder' && <span className="block text-gray-500">{sec.items.slice(0, 4).join(' · ')}{sec.items.length > 4 ? ` · and ${sec.items.length - 4} more` : ''}</span>}</span>
+                  </label>
+                ))}
+                <button onClick={runReorganize} disabled={!reorg.chosen.size || isGenerating} className="w-full py-1.5 bg-brand-600 text-white rounded font-medium hover:bg-brand-700 disabled:opacity-50">Check and propose</button>
+              </div>
+            )}
             <VoiceTextarea
               value={request}
               onValueChange={setRequest}
@@ -517,7 +603,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             <button onClick={() => { const fromSpec = proposal?.specUpdate; store.applyProposal(); if (fromSpec) recordSource(); }} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700">Approve</button>
           </div>
         ) : (
-          ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} plcName={ctx.profile.name} onRebuild={() => handleGenerate(false)} />
+          ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} plcName={ctx.profile.name} onRebuild={ctx.profile.readOnly ? undefined : () => handleGenerate(false)} />
         )}
 
         {!review && ladder.rungs.length > 0 && (
@@ -525,7 +611,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             <span className="font-semibold text-gray-700">{activeBlock === null ? 'Whole program' : blockName}</span>
             <span className="text-gray-400">{shown.rungs.length} rung{shown.rungs.length === 1 ? '' : 's'}</span>
             {activeBlock !== null && (
-              <button onClick={() => { setTab('fix'); handleRevise(`Review and rewrite this block so it fully matches the specification for this part of the machine. Keep its interface (the internal bits other blocks read or write) unless it is wrong, and explain any change to it.\n\nCurrent specification:\n${specText}`); }}
+              <button onClick={() => { setTab('fix'); handleRevise(`Review and rewrite this block so it fully matches the specification for this part of the machine. Keep its interface (the internal bits other blocks read or write) unless it is wrong, and explain any change to it.\n\nCurrent specification:\n${specForAI(specText, 'program')}`); }}
                 disabled={isGenerating || !ready || Boolean(proposal)}
                 className="px-2.5 py-1 rounded-sm border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 disabled:opacity-50">
                 Regenerate this block
