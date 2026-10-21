@@ -31,6 +31,8 @@ namespace ClickBridge
         /// <summary>Presses a button, ticks a box, picks a list or menu item (by its pattern, else by a click on it).</summary>
         void Invoke(string element);
         void SetText(string element, string text);
+        /// <summary>Sets a check box on or off (nothing when it already is).</summary>
+        void Check(string element, bool on);
         /// <summary>Double-clicks the control (an Instruction List entry opens its dialog that way).</summary>
         void DoubleClick(string element);
         /// <summary>Opens a combo box / list and picks the item whose name matches.</summary>
