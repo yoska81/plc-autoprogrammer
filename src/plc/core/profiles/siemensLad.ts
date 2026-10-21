@@ -18,6 +18,7 @@
  */
 import type { ExportContext } from '../profile';
 import type { LadderElement, LadderOutput, LadderProgram, Rung } from '../ladder';
+import { rungAddresses } from '../ladder';
 import { buildScl, unusedIoTags } from './siemens';
 import type { StVariable } from './iecSt';
 
@@ -97,13 +98,20 @@ function namesOf(variables: StVariable[], program: LadderProgram): Names {
 
 /** Why a rung goes to an SCL helper instead (null: it is LAD). */
 function notLad(r: Rung, n: Names): string | null {
+  // Every operand the rung names must have a name in LAD (a TMR / CNT preset or reset too).
+  for (const a of rungAddresses(r)) {
+    const t = a.trim();
+    if (!t || NUM.test(t) || /^SC[17]$/i.test(t)) continue;
+    if (!n.of(t)) return `operand ${t}`;
+  }
   for (const e of r.branches.flat()) {
     if (e.type === 'RAW') return 'an instruction kept from the original program';
     if (e.type === 'CMP') {
       const l = n.of(e.left), rt = n.of(e.right);
       if (!l || !rt) return `compare ${e.left} ${e.op} ${e.right}`;
       if ((l.type === 'Time') !== (rt.type === 'Time')) return `compare of a timer value with ${e.right}`;
-    } else if (!/^SC[17]$/i.test(e.address) && !n.of(e.address)) return `operand ${e.address}`;
+    } else if (/^SC1$/i.test(e.address) && e.type !== 'NO') return `${e.type} on the always-ON bit`;
+    else if (!/^SC[17]$/i.test(e.address) && !n.of(e.address)) return `operand ${e.address}`;
   }
   for (const o of r.outputs) {
     if (o.type === 'RAW') return 'an instruction kept from the original program';
