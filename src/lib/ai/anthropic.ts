@@ -66,6 +66,8 @@ export type ClaudeOptions = {
   usage?: PromptUsage;
   /** May be answered from the answer cache (Update all). Without it the request is always made (a page's Generate); the answer is stored either way. */
   cache?: boolean;
+  /** Most tokens the answer may take (thinking included); default 64 000. Small JSON answers ask for less. */
+  maxTokens?: number;
 };
 
 /**
@@ -164,7 +166,7 @@ async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
     message = await withWatchdog(async (signal, progress) => {
       const stream = client.beta.messages.stream({
         model: opts.model,
-        max_tokens: 64000,
+        max_tokens: opts.maxTokens ?? 64000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
         thinking: { type: 'adaptive', display: 'summarized' },

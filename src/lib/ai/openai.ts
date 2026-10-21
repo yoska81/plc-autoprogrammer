@@ -13,6 +13,8 @@ type OpenAIOptions = {
   messages: ChatTurn[];
   schema?: Record<string, unknown>;
   signal?: AbortSignal;
+  /** Most tokens the answer may take (default 16 000; reasoning models 32 000). */
+  maxTokens?: number;
 };
 
 /** One OpenAI request; transient failures are retried like callClaude. */
@@ -35,8 +37,8 @@ async function requestOpenAI(opts: OpenAIOptions): Promise<string> {
     model: opts.model,
     messages: [{ role: isReasoningModel ? 'developer' : 'system', content: opts.system }, ...opts.messages],
   };
-  if (isReasoningModel) body.max_completion_tokens = 32000;
-  else body.max_tokens = 16000;
+  if (isReasoningModel) body.max_completion_tokens = opts.maxTokens ?? 32000;
+  else body.max_tokens = opts.maxTokens ?? 16000;
   if (opts.schema) {
     body.response_format = { type: 'json_schema', json_schema: { name: 'ladder_response', strict: true, schema: opts.schema } };
   }

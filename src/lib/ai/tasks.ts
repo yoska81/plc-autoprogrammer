@@ -5,16 +5,16 @@ import type { Effort, Speed } from '../../store/useSettingsStore';
  * thinking; Speed "fast" caps each task's effort at its own level so they answer in seconds, while
  * "thorough" uses the Settings effort for everything.
  */
-export type AiTask = 'hmi-names' | 'equipment' | 'cycle' | 'machine' | 'io' | 'spec' | 'review' | 'program' | 'design' | 'import' | 'troubleshoot';
+export type AiTask = 'hmi-names' | 'equipment' | 'cycle' | 'machine' | 'io' | 'spec' | 'review' | 'program' | 'design' | 'import' | 'troubleshoot' | 'comments';
 
 export const TASK_EFFORT: Record<AiTask, Effort> = {
-  'hmi-names': 'low', equipment: 'low', troubleshoot: 'low',
+  'hmi-names': 'low', equipment: 'low', troubleshoot: 'low', comments: 'low',
   cycle: 'medium', machine: 'medium', io: 'medium', spec: 'medium',
   review: 'high', program: 'high', design: 'high', import: 'high',
 };
 
 /** Tasks a smaller, faster model may answer (Settings → "Model for small tasks"). */
-export const SMALL_TASKS: AiTask[] = ['hmi-names', 'equipment', 'troubleshoot'];
+export const SMALL_TASKS: AiTask[] = ['hmi-names', 'equipment', 'troubleshoot', 'comments'];
 
 const RANK: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
