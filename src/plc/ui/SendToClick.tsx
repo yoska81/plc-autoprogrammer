@@ -5,6 +5,7 @@ import { collectProject } from '../../deliverables/collect';
 import { hmiExtraTags } from '../../deliverables/exportContext';
 import { clickNicknameCsv } from '../core/clickExport';
 import { setupPlan } from '../click/clickPlan';
+import { DEFAULT_KEYMAP, rungsPlan } from '../click/clickRungs';
 
 interface Started { version: string; processId: number; windows: string[]; attached: boolean }
 
@@ -14,8 +15,9 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * "Send to CLICK": the Windows desktop app drives CLICK Programming Software while the user watches (AutomationDirect
  * publishes no API: the CLICK bridge works its windows, tools/click-bridge). Shown for a CLICK project in the desktop
  * app only. 1. Check this PC. 2. Open CLICK (the open one, else started). 3. Set up the project: a new project with
- * the CPU, the modules (the user adds them in System Configuration), the nicknames. Stop (or the Pause key) ends a
- * run at once; the app never saves. "Record CLICK's windows" writes their controls to the log for support.
+ * the CPU, the modules (the user adds them in System Configuration), the nicknames. 4. Enter the rungs, in order (a
+ * rung the app cannot enter is the user's turn: the run waits for Continue). Stop (or the Pause key) ends a run at
+ * once; the app never saves. "Record CLICK's windows" writes their controls to the log for support.
  */
 export default function SendToClick({ profileId }: { profileId: string }) {
   const click = desktopBridge()?.click;
@@ -30,6 +32,7 @@ export default function SendToClick({ profileId }: { profileId: string }) {
   const [recorded, setRecorded] = useState<string | null>(null);
   // Stop pressed before the run itself began (while the nickname file is written): the run does not start
   const stopAsked = useRef(false);
+  const [setUpDone, setSetUpDone] = useState(false);
 
   useEffect(() => (open && click ? click.onProgress((p) => setProgress(p.text)) : undefined), [open, click]);
 
@@ -58,8 +61,20 @@ export default function SendToClick({ profileId }: { profileId: string }) {
       if (stopAsked.current) throw new Error('Stopped before CLICK was touched, as you asked. Nothing was changed.');
       return click.call('run', { steps: setupPlan({ cpuId: p.cpu.id, modules: p.modules, nicknameCsvPath: file.path }) }) as Promise<{ steps: number }>;
     });
+    if (r) setSetUpDone(true);
     if (r) setDone(`The project is set up in CLICK: CPU ${p.cpu.id}${p.modules.length ? `, ${p.modules.length} module(s)` : ''}, nicknames imported (${r.steps} steps). Check it in CLICK and save it there (File › Save Project) when you are happy with it.`);
   };
+
+  const enterRungs = async () => {
+    setDone(null);
+    stopAsked.current = false;
+    const p = collectProject();
+    const plan = rungsPlan(p.ladder, p.labels);
+    const r = await step('run', () => click.call('run', { steps: plan.steps }) as Promise<{ steps: number }>);
+    if (r) setDone(`${plan.entered} rung${plan.entered === 1 ? '' : 's'} entered${plan.leftForYou.length ? `, ${plan.leftForYou.length} typed by you (${plan.leftForYou.map((x) => x.number).join(', ')})` : ''}. Check them in CLICK and save it there (File › Save Project) when you are happy with them.`);
+  };
+  const yourTurn = busy === 'run' && /^Your turn/.test(progress);
+  const goOn = () => { void click.call('resume').catch(() => undefined); setProgress('Going on…'); };
 
   const stop = () => { stopAsked.current = true; void click.call('stop').catch(() => undefined); setProgress('Stopping…'); };
   const record = async () => { const r = await step('record', () => click.call('dump') as Promise<{ file: string }>); if (r) setRecorded(r.file); };
@@ -84,6 +99,9 @@ export default function SendToClick({ profileId }: { profileId: string }) {
               {busy && (
                 <div className="flex items-center gap-3">
                   <p className="flex flex-1 items-center gap-2 text-steel-600" role="status"><ArrowPathIcon className="h-4 w-4 animate-spin" /> {progress || 'Working…'}</p>
+                  {yourTurn && (
+                    <button onClick={goOn} data-testid="click-continue" className="rounded bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">Continue</button>
+                  )}
                   {busy === 'run' && (
                     <button onClick={stop} data-testid="click-stop" className="inline-flex items-center gap-1 rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
                       <StopIcon className="h-4 w-4" /> Stop
@@ -119,11 +137,19 @@ export default function SendToClick({ profileId }: { profileId: string }) {
                     <button onClick={() => void record()} disabled={Boolean(busy)} data-testid="click-record" title="Writes the names of CLICK's windows and controls to a file, so we can fit the steps to your CLICK version"
                       className="rounded border border-steel-300 px-2.5 py-1 text-xs font-medium text-steel-800 hover:bg-steel-50 disabled:opacity-40">Record CLICK's windows for us</button>
                   </div>
-                  {done && <p className="rounded border border-green-200 bg-green-50 p-2 text-green-900" data-testid="click-done">{done}</p>}
-                  {recorded && <p className="text-xs text-steel-600">CLICK's windows recorded in <span className="select-all font-mono">{recorded}</span>: send it to us with the log.</p>}
                 </section>
               )}
 
+              {started && setUpDone && (
+                <section className="space-y-2" data-testid="click-rungs">
+                  <h3 className="font-semibold text-steel-900">4. Enter the rungs</h3>
+                  <p className="text-xs text-steel-500">The rungs go in one by one, in order. A rung the app cannot enter is your turn: type it in CLICK from the entry sheet (Load into PLC), then press Continue.{DEFAULT_KEYMAP.checkedOn ? '' : ' This is the first version of the rung entry and not yet checked on your CLICK: watch the first rungs closely and press Stop if anything goes wrong.'}</p>
+                  <button onClick={() => void enterRungs()} disabled={Boolean(busy)} data-testid="click-rungs-button" className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-40">Enter the rungs in CLICK</button>
+                </section>
+              )}
+
+              {done && <p className="rounded border border-green-200 bg-green-50 p-2 text-green-900" data-testid="click-done">{done}</p>}
+              {recorded && <p className="text-xs text-steel-600">CLICK's windows recorded in <span className="select-all font-mono">{recorded}</span>: send it to us with the log.</p>}
               {logPath && <p className="text-xs text-steel-500">Log for support: <span className="select-all font-mono">{logPath}</span></p>}
             </div>
           </div>

@@ -78,6 +78,16 @@ namespace ClickBridge
             Click(e);
         }
 
+        public void DoubleClick(string element)
+        {
+            var e = El(element);
+            Log.Write($"ui double-click {Describe(e)}");
+            Click(e);
+            Thread.Sleep(60);
+            mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+            mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+        }
+
         public void SetText(string element, string text)
         {
             var e = El(element);

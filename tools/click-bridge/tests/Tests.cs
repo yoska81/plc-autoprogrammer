@@ -56,6 +56,7 @@ static class Tests
         }
         public void Invoke(string el) => Did.Add($"press {el}");
         public void SetText(string el, string text) => Did.Add($"text {el}={text}");
+        public void DoubleClick(string el) => Did.Add($"double {el}");
         public void Select(string el, string item) => Did.Add($"select {el}={item}");
         public void Menu(string window, IList<string> path) => Did.Add($"menu {string.Join(">", path)}");
         public void Keys(string window, string keys) => Did.Add($"keys {keys}");
@@ -99,16 +100,16 @@ static class Tests
         Test("runner: does the steps in order with progress; never a save", () =>
         {
             var ui = Click(); var said = new List<string>();
-            int n = new Runner(ui, 42, CancellationToken.None, said.Add).Run(Plan("[{\"do\":\"window\",\"title\":\"^CLICK Programming\"},{\"do\":\"menu\",\"path\":[\"File\",\"New Project\"],\"say\":\"New project\"},{\"do\":\"window\",\"title\":\"^Select a CPU\"},{\"do\":\"select\",\"find\":{\"id\":\"cboCpu\"},\"item\":\"C0-10DD1E-D\"},{\"do\":\"click\",\"find\":{\"name\":\"^OK$\",\"type\":\"Button\"}}]"));
-            Eq(5, n);
-            Eq("menu File>New Project|select Select a CPU Module/CPU=C0-10DD1E-D|press Select a CPU Module/OK", string.Join("|", ui.Did));
-            True(said.Contains("2/5 New project"), string.Join("|", said));
+            int n = new Runner(ui, 42, CancellationToken.None, said.Add).Run(Plan("[{\"do\":\"window\",\"title\":\"^CLICK Programming\"},{\"do\":\"menu\",\"path\":[\"File\",\"New Project\"],\"say\":\"New project\"},{\"do\":\"window\",\"title\":\"^Select a CPU\"},{\"do\":\"select\",\"find\":{\"id\":\"cboCpu\"},\"item\":\"C0-10DD1E-D\"},{\"do\":\"click\",\"find\":{\"name\":\"^OK$\",\"type\":\"Button\"}},{\"do\":\"doubleClick\",\"find\":{\"name\":\"^Cancel$\"}}]"));
+            Eq(6, n);
+            Eq("menu File>New Project|select Select a CPU Module/CPU=C0-10DD1E-D|press Select a CPU Module/OK|double Select a CPU Module/Cancel", string.Join("|", ui.Did));
+            True(said.Contains("2/6 New project"), string.Join("|", said));
             foreach (var bad in new[] { "[{\"do\":\"keys\",\"keys\":\"^s\"}]", "[{\"do\":\"keys\",\"keys\":\"abc^{S}\"}]", "[{\"do\":\"menu\",\"path\":[\"File\",\"Save Project As\"]}]", "[{\"do\":\"click\",\"find\":{\"name\":\"^Save\"}}]" })
             {
                 var e = Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, said.Add).Run(Plan(bad)));
                 True(e.Message.Contains("never saves"), e.Message);
             }
-            Eq(3, ui.Did.Count);
+            Eq(4, ui.Did.Count);
         });
 
         Test("runner: another window in front pauses it (said), CLICK back in front goes on", () =>
@@ -171,6 +172,27 @@ static class Tests
             // a non-optional window that does not come fails, named
             var e = Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"window\",\"title\":\"^Nothing\",\"timeoutMs\":1}]")));
             True(e.Message.Contains("no CLICK window \"^Nothing\" came"), e.Message);
+        });
+
+        Test("runner: waitUser hands over until Continue (resume); Stop still ends it; without a way to resume it refuses", () =>
+        {
+            var ui = Click(); var said = new List<string>();
+            using (var resume = new AutoResetEvent(false))
+            {
+                var t = new Thread(() => { Thread.Sleep(250); resume.Set(); });
+                t.Start();
+                new Runner(ui, 42, CancellationToken.None, said.Add, resume).Run(Plan("[{\"do\":\"window\",\"title\":\"^CLICK\"},{\"do\":\"waitUser\",\"text\":\"Type rung 7 (a PID box).\"},{\"do\":\"keys\",\"keys\":\"z\"}]"));
+                t.Join();
+                True(said.Any(x => x.StartsWith("Your turn: Type rung 7 (a PID box). Then press Continue.")), string.Join("|", said));
+                Eq("keys z", ui.Did.Single());
+            }
+            using (var cts = new CancellationTokenSource())
+            using (var resume = new AutoResetEvent(false))
+            {
+                var r = new Runner(ui, 42, cts.Token, s => { if (s.StartsWith("Your turn")) cts.Cancel(); }, resume);
+                True(Throws<BridgeError>(() => r.Run(Plan("[{\"do\":\"waitUser\",\"text\":\"x\"}]"))).Message.StartsWith("Stopped at step 1"), "stop while waiting");
+            }
+            True(Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"waitUser\",\"text\":\"x\"}]"))).Message.Contains("cannot wait for you"), "no resume");
         });
 
         Test("commands: detect, start (attach to the running CLICK), writeFile, run; stop answered while a run goes", () =>

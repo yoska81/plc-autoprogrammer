@@ -5,7 +5,8 @@
 //   - it never saves: a step that would (Ctrl+S, a Save menu or button) is refused;
 //   - a step that fails names the step and writes the window's controls to the log (to correct the plan);
 //   - an optional step (a window that may not come, e.g. a confirmation) is skipped when it does not come;
-//   - waitGone hands over to the user (e.g. "add these modules, then close the window") until a window closes.
+//   - waitGone hands over to the user (e.g. "add these modules, then close the window") until a window closes;
+//   - waitUser hands over until the user presses Continue in the app (a rung the app cannot enter: they type it).
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,7 +18,7 @@ namespace ClickBridge
 {
     public sealed class Step
     {
-        /// <summary>window · menu · click · setText · select · keys · wait · note · waitGone</summary>
+        /// <summary>window · menu · click · doubleClick · setText · select · keys · wait · note · waitGone · waitUser</summary>
         public string Do;
         /// <summary>The step may not happen (its window or control does not come): then it, and the steps up to the next
         /// non-optional one, are skipped.</summary>
@@ -43,6 +44,7 @@ namespace ClickBridge
         {
             "window" => $"window \"{Title}\"",
             "waitGone" => $"until the window \"{Title}\" is closed",
+            "waitUser" => $"the user's turn: {Text}",
             "menu" => $"menu {string.Join(" › ", Path ?? new List<string>())}",
             "keys" => $"keys {Keys}",
             "wait" => $"wait {Ms} ms",
@@ -57,12 +59,13 @@ namespace ClickBridge
         readonly int _pid;
         readonly CancellationToken _stop;
         readonly Action<string> _progress;
+        readonly WaitHandle _resume;
         /// <summary>How long a run waits for the user to bring CLICK back to the front.</summary>
         public int PauseLimitMs = 10 * 60 * 1000;
         public int PollMs = 300;
         string _window;
 
-        public Runner(IUi ui, int pid, CancellationToken stop, Action<string> progress) { _ui = ui; _pid = pid; _stop = stop; _progress = progress; }
+        public Runner(IUi ui, int pid, CancellationToken stop, Action<string> progress, WaitHandle resume = null) { _ui = ui; _pid = pid; _stop = stop; _progress = progress; _resume = resume; }
 
         static readonly Regex SaveKeys = new Regex(@"\^\{?[sS]\}?|\{F12\}", RegexOptions.Compiled);
         static readonly Regex SaveName = new Regex(@"^\s*save\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -72,7 +75,7 @@ namespace ClickBridge
         {
             if (s.Do == "keys" && s.Keys != null && SaveKeys.IsMatch(s.Keys)) throw new BridgeError($"The plan has a step that would save the project ({s.Keys}); the app never saves for you.");
             if (s.Do == "menu" && s.Path != null && s.Path.Any(x => SaveName.IsMatch(x))) throw new BridgeError("The plan has a step that would save the project (a Save menu); the app never saves for you.");
-            if ((s.Do == "click" || s.Do == "select") && s.Find?.Name != null && SaveName.IsMatch(s.Find.Name.TrimStart('^'))) throw new BridgeError("The plan has a step that would press Save; the app never saves for you.");
+            if ((s.Do == "click" || s.Do == "doubleClick" || s.Do == "select") && s.Find?.Name != null && SaveName.IsMatch(s.Find.Name.TrimStart('^'))) throw new BridgeError("The plan has a step that would press Save; the app never saves for you.");
         }
 
         public int Run(IList<Step> steps)
@@ -134,6 +137,7 @@ namespace ClickBridge
                     _window = Need(_ui.Window(_pid, s.Title, s.TimeoutMs), s);
                     return;
                 case "waitGone": WaitGone(s, i); return;
+                case "waitUser": WaitUser(s, i); return;
             }
             if (_window == null) throw new BridgeError($"Step {i + 1} ({s}): the plan names no window first.");
             Front(i);
@@ -142,6 +146,7 @@ namespace ClickBridge
                 case "menu": _ui.Menu(_window, s.Path ?? new List<string>()); break;
                 case "keys": _ui.Keys(_window, s.Keys ?? ""); break;
                 case "click": _ui.Invoke(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s)); break;
+                case "doubleClick": _ui.DoubleClick(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s)); break;
                 case "setText": _ui.SetText(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s), s.Text ?? ""); break;
                 case "select": _ui.Select(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s), s.Item ?? ""); break;
                 default: throw new BridgeError($"Step {i + 1}: the bridge cannot do \"{s.Do}\" (update the app).");
@@ -159,6 +164,22 @@ namespace ClickBridge
                 Thread.Sleep(PollMs);
                 waited += PollMs;
             }
+        }
+
+        /// <summary>The user's turn until Continue (the app's "resume"); Stop still ends the run.</summary>
+        void WaitUser(Step s, int i)
+        {
+            if (_resume == null) throw new BridgeError($"Step {i + 1} needs you, but this run cannot wait for you (update the app).");
+            _progress($"Your turn: {s.Text ?? s.Say ?? "do this step in CLICK"} Then press Continue.");
+            Log.Write($"step {i + 1}: waiting for the user");
+            int waited = 0;
+            while (!_resume.WaitOne(100))
+            {
+                Stopped(i);
+                waited += 100;
+                if (waited >= PauseLimitMs) throw new BridgeError($"Nobody pressed Continue for {PauseLimitMs / 60000} minutes: stopped at step {i + 1}. Nothing was saved.");
+            }
+            Log.Write("the user pressed Continue");
         }
 
         void Sleep(int ms, int i)

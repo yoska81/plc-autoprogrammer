@@ -10,7 +10,9 @@ is reverse-engineered and no file of CLICK's is written by the app.
 
 - C#, .NET Framework 4.8, built by `node scripts/build-click-bridge.cjs` into `resources/click-bridge/`.
   It shares the protocol, JSON and log of the TIA bridge (`tools/tia-bridge/src`).
-- The **steps** are not in the exe: the app sends them (`src/plc/click/clickPlan.ts`). They name CLICK's windows,
+- The **steps** are not in the exe: the app sends them (`src/plc/click/clickPlan.ts` for the project set-up,
+  `src/plc/click/clickRungs.ts` for the rungs: the entry sheet's cells and dialog fields, entered through the
+  keymap: cursor keys, the Instruction List entry that opens each instruction, its dialog's fields). They name CLICK's windows,
   menus and controls; when a CLICK version names them differently, the plan is corrected in the app, from the
   controls the bridge records on the user's PC ("Record CLICK's windows for us").
 - Every step and every UI action is written to `<user data>\logs\click-bridge.log`.
@@ -35,8 +37,9 @@ while a run goes.
 | `detect` | `{ready, installs: [{name, version, exe}], running, steps}` from the Windows programs list. |
 | `start` | Uses the CLICK that is open, else starts it; `{version, processId, windows, attached}`. |
 | `writeFile` `{name, text}` | Writes a file the plan imports (the nickname CSV) into the bridge's folder; `{path}`. |
-| `run` `{steps}` | Runs a plan: `window`, `menu`, `click`, `setText`, `select`, `keys`, `wait`, `note`, `waitGone` (the user's turn: until a window is closed); `optional` steps are skipped when their window does not come. `{steps}`. |
+| `run` `{steps}` | Runs a plan: `window`, `menu`, `click`, `doubleClick`, `setText`, `select`, `keys`, `wait`, `note`, `waitGone` (the user's turn: until a window is closed), `waitUser` (the user's turn: until Continue); `optional` steps are skipped when their window does not come. `{steps}`. |
 | `stop` | Ends the run before its next step. |
+| `resume` | The user's turn is done (Continue): the run goes on. Urgent, like `stop`. |
 | `dump` | Writes the controls of CLICK's windows to a file (and the log); `{file, lines}`. |
 
 ## Build and test
@@ -70,7 +73,12 @@ Before you start: CLICK Programming Software installed; no unsaved project open 
    it goes on.
 6. **Stop**: run step 4 again and press **Stop** (then once more with the **Pause** key on the keyboard): it
    stops at once and says nothing was saved.
-7. If any step does not work: the dialog names the step. Press **Record CLICK's windows for us** with that
+7. **Rungs**: after the set-up, **Enter the rungs in CLICK**. Watch the first rungs closely: each instruction
+   should land in its row and column with its address, parallel rows joined, outputs at the right rail. A rung the
+   app cannot enter (a retentive timer's reset input, an instruction kept from an old program) is your turn: the
+   dialog says which rung; type it from the entry sheet (Load into PLC), then **Continue**. If a rung goes wrong,
+   **Stop** at once and send us the log.
+8. If any step does not work: the dialog names the step. Press **Record CLICK's windows for us** with that
    window still open, then send us the log and the recorded file (both paths are in the dialog). With them we fit
    the steps to your CLICK version.
 
