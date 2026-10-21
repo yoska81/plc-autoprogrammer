@@ -9,6 +9,7 @@ import type { AIConfig } from '../ai/ladderAI';
 import LadderWorkspace from '../ui/program/LadderWorkspace';
 import StProgramView from '../ui/program/StProgramView';
 import LoadIntoPlc from '../ui/LoadIntoPlc';
+import SendToTia from '../ui/SendToTia';
 import HeaderMore from '../../components/HeaderMore';
 import { useNarrow } from '../../components/useNarrow';
 import { useCollapseOnScroll } from '../../components/useCollapseOnScroll';
@@ -37,6 +38,7 @@ export default function ProgramPage() {
         </div>
         {folded ? <HeaderMore onClick={() => setFolded(false)} /> : <>
           <LoadIntoPlc />
+          <SendToTia profileId={profile.id} />
           <Link to="/plc" className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 text-gray-700" title="Change PLC">
             {profile.vendor} {profile.name} · {cpu.id}
           </Link>

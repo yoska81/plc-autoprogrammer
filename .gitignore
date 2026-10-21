@@ -67,3 +67,10 @@ e2e/out-ladder-edit/
 # GNU LibreDWG program and DLLs: downloaded by scripts/fetch-libredwg.cjs for the installer (COPYING and SOURCE.txt are kept)
 resources/libredwg/*.exe
 resources/libredwg/*.dll
+
+# TIA Portal bridge: built by scripts/build-tia-bridge.cjs into resources/tia-bridge for the installer
+tools/tia-bridge/bin/
+tools/tia-bridge/obj/
+tools/tia-bridge/tests/bin/
+tools/tia-bridge/tests/obj/
+resources/tia-bridge/
