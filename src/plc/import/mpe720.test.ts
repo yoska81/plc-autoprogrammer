@@ -241,11 +241,16 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   assert.ok(!issues.some((i) => /this logic does nothing/.test(i.message)));
   // On another PLC they are errors, named as Yaskawa MPE720.
   assert.ok(validateProgram(plan.program, getProfile('siemens-s7'), new Set()).some((i) => /from Yaskawa MPE720 cannot run on/.test(i.message)));
-  assert.equal(yaskawaCpuOf('CPU-301(16axes)').id, 'CPU-301');
-  assert.equal(yaskawaCpuOf('MP3300').id, 'MP3300');
+  // The CPU by Dev 4's catalog part numbers; a rack name alone does not say which CPU module it holds.
+  assert.equal(yaskawaCpuOf('CPU-301(16axes)').id, 'JAPMC-CP3301-1-E');
+  assert.equal(yaskawaCpuOf('CPU-301(32axes)').id, 'JAPMC-CP3301-2-E');
+  assert.equal(yaskawaCpuOf('MP3300').id, 'MP-CPU');
   assert.equal(profile.parseAddress('IB0001F')?.kind, 'input');
   assert.equal(profile.parseAddress('OW0010')?.kind, 'output');
-  assert.equal(profile.parseAddress('X001'), null, 'no CLICK terminals');
+  // One profile for imports and new programs: the app's X / Y terminals are valid too (shown as MP registers);
+  // an imported project's points stay on their MP registers (above) and new points get the next free one.
+  assert.equal(profile.parseAddress('X001')?.kind, 'input');
+  assert.equal(profile.ioTag?.('IB00002', [], plan.cpuId), 'IB00002', 'an MP register is its own name');
   assert.equal(profile.parseAddress('DS3')?.kind, 'register', 'the neutral memory of the program');
   console.log('read only on its own PLC: ok');
 }

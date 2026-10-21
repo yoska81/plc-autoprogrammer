@@ -170,7 +170,7 @@ export function programFiles(p: ProjectSnapshot): { name: string; content: strin
   if (p.profile.id !== 'click' && p.profile.exporters?.length) {
     const ctx = exportContext(p);
     return [
-      ...p.profile.exporters.map((e) => ({ name: e.fileName(p.fileBase), content: e.build(p.ladder, ctx) })),
+      ...p.profile.exporters.flatMap((e) => (e.files ? e.files(p.ladder, ctx, p.fileBase) : [{ name: e.fileName(p.fileBase), content: e.build(p.ladder, ctx) }])),
       { name: `${p.fileBase}_program.json`, content: JSON.stringify(p.ladder, null, 2) },
       ...analogFiles(p),
     ];
@@ -288,3 +288,25 @@ export async function buildEverythingZip(p: ProjectSnapshot, onProgress?: (step:
 }
 
 export { saveBlobResult, saveBlob } from './save';
+
+/** Program files as downloads: the files of one folder ("x_TIA_LAD/Main.xml" …) are one ZIP named after it. */
+export interface ProgramDownload { name: string; files: { name: string; content: string }[] }
+export function programDownloads(files: { name: string; content: string }[]): ProgramDownload[] {
+  const out: ProgramDownload[] = [];
+  for (const f of files) {
+    const dir = /^([^/]+)\//.exec(f.name)?.[1];
+    const name = dir ? `${dir}.zip` : f.name;
+    const have = out.find((d) => d.name === name);
+    if (have) have.files.push(f); else out.push({ name, files: [f] });
+  }
+  return out;
+}
+
+/** One download: the file itself, or its folder as a ZIP. */
+export async function downloadBlob(d: ProgramDownload): Promise<Blob> {
+  if (!d.name.endsWith('.zip') || (d.files.length === 1 && !d.files[0].name.includes('/'))) return new Blob([d.files[0].content], { type: 'text/plain' });
+  const { default: JSZip } = await import('jszip');
+  const zip = new JSZip();
+  for (const f of d.files) zip.file(f.name, f.content);
+  return zip.generateAsync({ type: 'blob' });
+}

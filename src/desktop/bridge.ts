@@ -116,6 +116,56 @@ export interface IsaDesktop {
   modbus?: ModbusBridge;
   /** DWG import (desktop app only; older builds don't have it). */
   dwg?: DwgReaderBridge;
+  /** Send to TIA Portal through TIA Openness (Windows desktop app only; older builds don't have it). */
+  tia?: TiaBridge;
+  /** Send to CLICK: drives CLICK Programming Software while the user watches (Windows desktop app only). */
+  click?: ClickBridge;
+}
+
+/** The CLICK bridge (electron/clickBridge.cjs → tools/click-bridge/ClickBridge.exe): the same shape as TiaBridge. */
+export interface ClickBridge {
+  call(cmd: 'detect', args?: Record<string, never>): Promise<ClickDetect>;
+  call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
+  logPath(): Promise<string>;
+  onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** CLICK Programming Software on this PC (tools/click-bridge/src/ClickDetect.cs), newest first. */
+export interface ClickDetect {
+  ready: boolean;
+  installs: { name: string; version: string; exe: string }[];
+  /** It is open now (the run uses the open one). */
+  running: boolean;
+  steps: string[];
+}
+
+/**
+ * The TIA Portal bridge (electron/tiaBridge.cjs → tools/tia-bridge/TiaBridge.exe). `call` runs one bridge command
+ * and resolves with its result; it rejects with the bridge's plain-English error. Progress lines of the running
+ * command arrive through onProgress.
+ */
+export interface TiaBridge {
+  call(cmd: 'detect', args?: Record<string, never>): Promise<TiaDetect>;
+  call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
+  /** Where the bridge's log is (to send it to support). */
+  logPath(): Promise<string>;
+  /** Returns an unsubscribe. */
+  onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** What this PC has for TIA Openness (tools/tia-bridge/src/Detect.cs). */
+export interface TiaDetect {
+  /** TIA Openness is installed and the user may use it. */
+  ready: boolean;
+  /** TIA Portal versions installed ("V19"). */
+  installed: string[];
+  /** The Openness API of each version, newest first. */
+  openness: { version: string; assemblyVersion: string; dll: string }[];
+  inOpennessGroup: boolean;
+  /** The Windows user ("PC1\\tech"). */
+  user: string;
+  /** What to do when something is missing, in order. */
+  steps: string[];
 }
 
 export type MicPermission = 'always' | 'session' | 'ask';

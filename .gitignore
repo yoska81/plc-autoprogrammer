@@ -33,6 +33,7 @@ e2e/out-ai-jobs/
 e2e/out-field/
 e2e/out-photos/
 e2e/out-journeys/
+e2e/out-click-online/
 e2e/out-troubleshoot/
 e2e/out-yaskawa/
 e2e/out-enclosure-fit/
@@ -67,3 +68,17 @@ e2e/out-ladder-edit/
 # GNU LibreDWG program and DLLs: downloaded by scripts/fetch-libredwg.cjs for the installer (COPYING and SOURCE.txt are kept)
 resources/libredwg/*.exe
 resources/libredwg/*.dll
+
+# TIA Portal bridge: built by scripts/build-tia-bridge.cjs into resources/tia-bridge for the installer
+tools/tia-bridge/bin/
+tools/tia-bridge/obj/
+tools/tia-bridge/tests/bin/
+tools/tia-bridge/tests/obj/
+resources/tia-bridge/
+
+# CLICK bridge: built by scripts/build-click-bridge.cjs into resources/click-bridge for the installer
+tools/click-bridge/bin/
+tools/click-bridge/obj/
+tools/click-bridge/tests/bin/
+tools/click-bridge/tests/obj/
+resources/click-bridge/
