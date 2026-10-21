@@ -79,6 +79,23 @@ const hasRaw = (r: Rung) => r.outputs.some((o) => o.type === 'RAW') || r.branche
 const hasEdge = (r: Rung) => r.branches.some((b) => b.some((e) => e.type === 'RISE' || e.type === 'FALL'));
 
 /** Find what each transform would change. Nothing is changed here. */
+/** What a rung really reads (rungDeps counts written operands as read too, for the order). */
+function realReads(r: Rung): string[] {
+  const reads: string[] = [];
+  for (const b of r.branches) for (const el of b) if (el.type !== 'CMP' && el.type !== 'RAW') reads.push(el.address.trim().toUpperCase()); else if (el.type === 'CMP') [el.left, el.right].forEach((x) => reads.push(x.trim().toUpperCase()));
+  for (const o of r.outputs) {
+    if (o.type === 'TMR' || o.type === 'CNT') { reads.push(o.preset.trim().toUpperCase()); if (o.resetAddress) reads.push(o.resetAddress.trim().toUpperCase()); }
+    if (o.type === 'COPY') reads.push(o.source.trim().toUpperCase());
+    if (o.type === 'MATH') for (const t of o.expression.match(/[A-Za-z]+\d+/g) ?? []) reads.push(t.toUpperCase());
+  }
+  return reads;
+}
+
+/** What a rung writes, a timer's or counter's value with it. */
+function touchedBy(r: Rung): string[] {
+  return rungWrites(r).map((a) => a.trim().toUpperCase()).flatMap((a) => { const t = /^(T|CT)(\d+)$/.exec(a); return t ? [a, `${t[1] === 'T' ? 'TD' : 'CTD'}${t[2]}`] : [a]; });
+}
+
 export function planReorganize(p: ProjectSnapshot): ReorgPlan {
   const info = programInfo(p);
   const name = (a: string) => info.name(a);
@@ -93,23 +110,11 @@ export function planReorganize(p: ProjectSnapshot): ReorgPlan {
   const alive = new Map(l.rungs.map((r) => [r.id, r]));
   for (let changed = true; changed;) {
     changed = false;
-    const reads = new Set<string>();
-    for (const r of alive.values()) {
-      const d = rungDeps(r);
-      // Only what is really read (rungDeps counts written operands as read too, for the order).
-      for (const b of r.branches) for (const el of b) if (el.type !== 'CMP' && el.type !== 'RAW') reads.add(el.address.trim().toUpperCase()); else if (el.type === 'CMP') [el.left, el.right].forEach((x) => reads.add(x.trim().toUpperCase()));
-      for (const o of r.outputs) {
-        if (o.type === 'TMR' || o.type === 'CNT') { reads.add(o.preset.trim().toUpperCase()); if (o.resetAddress) reads.add(o.resetAddress.trim().toUpperCase()); }
-        if (o.type === 'COPY') reads.add(o.source.trim().toUpperCase());
-        if (o.type === 'MATH') for (const t of o.expression.match(/[A-Za-z]+\d+/g) ?? []) reads.add(t.toUpperCase());
-      }
-      void d;
-    }
+    const reads = new Set([...alive.values()].flatMap(realReads));
     for (const r of [...alive.values()]) {
       if (hasRaw(r) || rungDeps(r).barrier) continue;
-      const w = rungWrites(r).map((a) => a.trim().toUpperCase());
-      if (!w.length) continue;
-      const touched = w.flatMap((a) => { const t = /^(T|CT)(\d+)$/.exec(a); return t ? [a, `${t[1] === 'T' ? 'TD' : 'CTD'}${t[2]}`] : [a]; });
+      const touched = touchedBy(r);
+      if (!touched.length) continue;
       if (touched.some((a) => /^Y/.test(a) || hmi.has(a) || reads.has(a))) continue;
       // Words (another device may read registers), retentive memory: their own group, off by default.
       (touched.some((a) => WORD.test(a) || retentive(a)) ? registers : internal).add(r.id);
@@ -174,6 +179,13 @@ export function applyReorganize(p: ProjectSnapshot, plan: ReorgPlan, chosen: Set
   let l: LadderProgram = structuredClone(p.ladder);
   const drop = new Set<string>();
   for (const id of ['remove-internal', 'remove-registers', 'remove-never'] as const) if (chosen.has(id)) plan.removals[id]?.forEach((x) => drop.add(x));
+  // Unread only once the rungs reading it go too: a rung a kept rung still reads stays (one group on, the other off).
+  const never = plan.removals['remove-never'] ?? new Set<string>();
+  for (let changed = true; changed;) {
+    changed = false;
+    const reads = new Set(l.rungs.filter((r) => !drop.has(r.id)).flatMap(realReads));
+    for (const r of l.rungs) if (drop.has(r.id) && !never.has(r.id) && touchedBy(r).some((a) => reads.has(a))) { drop.delete(r.id); changed = true; }
+  }
   l = { ...l, rungs: l.rungs.filter((r) => !drop.has(r.id)) };
   if (chosen.has('merge')) {
     for (const [a, b] of plan.merges) {
