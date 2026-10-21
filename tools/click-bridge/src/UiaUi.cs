@@ -78,6 +78,15 @@ namespace ClickBridge
             Click(e);
         }
 
+        public void Check(string element, bool on)
+        {
+            var e = El(element);
+            if (!e.TryGetCurrentPattern(TogglePattern.Pattern, out object p)) throw new BridgeError($"\"{e.Current.Name}\" is not a check box.");
+            var t = (TogglePattern)p;
+            for (int i = 0; i < 3 && (t.Current.ToggleState == ToggleState.On) != on; i++) t.Toggle();
+            Log.Write($"ui check {Describe(e)} = {(on ? "on" : "off")}");
+        }
+
         public void DoubleClick(string element)
         {
             var e = El(element);

@@ -57,6 +57,7 @@ static class Tests
         public void Invoke(string el) => Did.Add($"press {el}");
         public void SetText(string el, string text) => Did.Add($"text {el}={text}");
         public void DoubleClick(string el) => Did.Add($"double {el}");
+        public void Check(string el, bool on) => Did.Add($"check {el}={on}");
         public void Select(string el, string item) => Did.Add($"select {el}={item}");
         public void Menu(string window, IList<string> path) => Did.Add($"menu {string.Join(">", path)}");
         public void Keys(string window, string keys) => Did.Add($"keys {keys}");
@@ -193,6 +194,25 @@ static class Tests
                 True(Throws<BridgeError>(() => r.Run(Plan("[{\"do\":\"waitUser\",\"text\":\"x\"}]"))).Message.StartsWith("Stopped at step 1"), "stop while waiting");
             }
             True(Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"waitUser\",\"text\":\"x\"}]"))).Message.Contains("cannot wait for you"), "no resume");
+        });
+
+        Test("runner: check sets a box on; readFile reads only the bridge's folder", () =>
+        {
+            var ui = Click();
+            ui.Controls["Print"] = new List<(string, string, string)> { ("", "Ladder", "CheckBox") };
+            new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"window\",\"title\":\"^Print\"},{\"do\":\"check\",\"find\":{\"name\":\"^Ladder$\"}}]"));
+            Eq("check Print/Ladder=True", ui.Did.Last());
+            string folder = Path.Combine(Path.GetTempPath(), "click-read-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "nick.csv"), "X001,Start");
+            var output = new StringWriter();
+            var p = Commands.Register(new Protocol(output), new FakePc(), ui, null, folder);
+            p.Handle("{\"id\":1,\"cmd\":\"readFile\",\"args\":{\"name\":\"..\\\\..\\\\nick.csv\"}}");
+            p.Handle("{\"id\":2,\"cmd\":\"readFile\",\"args\":{\"name\":\"other.csv\"}}");
+            var m = output.ToString().Split('\n').Where(l => l.Trim().Length > 0).Select(l => (Dictionary<string, object>)Json.Parse(l)).Where(x => x.ContainsKey("ok")).ToList();
+            Eq("X001,Start", System.Text.Encoding.UTF8.GetString(Convert.FromBase64String((string)((Dictionary<string, object>)m[0]["result"])["base64"])));
+            True(((string)m[1]["error"]).Contains("There is no other.csv"), (string)m[1]["error"]);
+            Directory.Delete(folder, true);
         });
 
         Test("commands: detect, start (attach to the running CLICK), writeFile, run; stop answered while a run goes", () =>

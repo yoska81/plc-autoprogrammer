@@ -2,7 +2,8 @@
 //   ping · detect (CLICK Programming Software installed: version, program) · start (attach to the running CLICK
 //   or start it) · run (a step plan, while the user watches) · stop (urgent: ends a run before its next step)
 //   · resume (urgent: the user finished their turn, the run goes on)
-//   · dump (the controls of CLICK's windows, for the log) · writeFile (a file the plan imports, e.g. nicknames).
+//   · dump (the controls of CLICK's windows, for the log) · writeFile (a file the plan imports, e.g. nicknames)
+//   · folder (the bridge's folder) · readFile (a file the user saved there from CLICK: nicknames, the printed ladder).
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -74,6 +75,17 @@ namespace ClickBridge
                 string file = Path.Combine(folder, name);
                 File.WriteAllText(file, a.TryGetValue("text", out object t) ? t as string ?? "" : "", new System.Text.UTF8Encoding(false));
                 return new Dictionary<string, object> { ["path"] = file };
+            });
+            p.On("folder", (a, pr) => new Dictionary<string, object> { ["path"] = folder });
+            p.On("readFile", (a, pr) =>
+            {
+                // only a file in the bridge's own folder (where the user saved what CLICK exported)
+                string given = Str(a, "name") ?? throw new BridgeError("No file name.");
+                string name = given.Substring(given.LastIndexOfAny(new[] { '\\', '/' }) + 1);
+                string file = Path.Combine(folder, name);
+                if (name.Length == 0 || !File.Exists(file)) throw new BridgeError($"There is no {name} in {folder}: save it there from CLICK's dialog.");
+                var bytes = File.ReadAllBytes(file);
+                return new Dictionary<string, object> { ["name"] = name, ["base64"] = Convert.ToBase64String(bytes), ["bytes"] = bytes.Length };
             });
             p.On("run", (a, pr) =>
             {

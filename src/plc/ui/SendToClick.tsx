@@ -6,6 +6,22 @@ import { hmiExtraTags } from '../../deliverables/exportContext';
 import { clickNicknameCsv } from '../core/clickExport';
 import { setupPlan } from '../click/clickPlan';
 import { DEFAULT_KEYMAP, rungsPlan } from '../click/clickRungs';
+import { compareNicknames, compareRungs, exportNicknamesPlan, printLadderPlan, type NicknameCheck, type RungCheck } from '../click/clickVerify';
+import { loadPdfjs } from '../../lib/pdfjs';
+
+const fromBase64 = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+/** The text of a PDF, in reading order (the printed ladder: rung numbers, addresses, nicknames). */
+async function pdfText(bytes: Uint8Array): Promise<string> {
+  const pdfjs = await loadPdfjs();
+  const doc = await pdfjs.getDocument({ data: bytes }).promise;
+  const pages: string[] = [];
+  for (let n = 1; n <= doc.numPages; n++) {
+    const tc = await (await doc.getPage(n)).getTextContent();
+    pages.push(tc.items.map((it) => ('str' in it ? it.str : '')).join(' '));
+  }
+  return pages.join('\n');
+}
 
 interface Started { version: string; processId: number; windows: string[]; attached: boolean }
 
@@ -17,7 +33,9 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * app only. 1. Check this PC. 2. Open CLICK (the open one, else started). 3. Set up the project: a new project with
  * the CPU, the modules (the user adds them in System Configuration), the nicknames. 4. Enter the rungs, in order (a
  * rung the app cannot enter is the user's turn: the run waits for Continue). Stop (or the Pause key) ends a run at
- * once; the app never saves. "Record CLICK's windows" writes their controls to the log for support.
+ * once; the app never saves. 5. Check what CLICK has: its nickname export and its printed ladder (to PDF; the
+ * user presses Save in those dialogs) against the project, mismatches by rung number. "Record CLICK's windows"
+ * writes their controls to the log for support.
  */
 export default function SendToClick({ profileId }: { profileId: string }) {
   const click = desktopBridge()?.click;
@@ -33,6 +51,7 @@ export default function SendToClick({ profileId }: { profileId: string }) {
   // Stop pressed before the run itself began (while the nickname file is written): the run does not start
   const stopAsked = useRef(false);
   const [setUpDone, setSetUpDone] = useState(false);
+  const [checked, setChecked] = useState<{ nicknames: NicknameCheck; rungs: RungCheck } | null>(null);
 
   useEffect(() => (open && click ? click.onProgress((p) => setProgress(p.text)) : undefined), [open, click]);
 
@@ -73,6 +92,25 @@ export default function SendToClick({ profileId }: { profileId: string }) {
     const r = await step('run', () => click.call('run', { steps: plan.steps }) as Promise<{ steps: number }>);
     if (r) setDone(`${plan.entered} rung${plan.entered === 1 ? '' : 's'} entered${plan.leftForYou.length ? `, ${plan.leftForYou.length} typed by you (${plan.leftForYou.map((x) => x.number).join(', ')})` : ''}. Check them in CLICK and save it there (File › Save Project) when you are happy with them.`);
   };
+  const verify = async () => {
+    setDone(null); setChecked(null);
+    stopAsked.current = false;
+    const p = collectProject();
+    const r = await step('run', async () => {
+      const { path: folder } = await click.call('folder') as { path: string };
+      await click.call('run', { steps: exportNicknamesPlan(folder, 'click_nicknames.csv') });
+      const nick = await click.call('readFile', { name: 'click_nicknames.csv' }) as { base64: string };
+      if (stopAsked.current) throw new Error('Stopped, as you asked.');
+      await click.call('run', { steps: printLadderPlan(folder, 'click_ladder.pdf') });
+      const pdf = await click.call('readFile', { name: 'click_ladder.pdf' }) as { base64: string };
+      const nicknames = compareNicknames(clickNicknameCsv(p.ladder, p.io, p.addresses, hmiExtraTags(p)), new TextDecoder().decode(fromBase64(nick.base64)));
+      const text = await pdfText(fromBase64(pdf.base64));
+      if (!text.trim()) throw new Error('The printed ladder has no text the app can read (the PDF printer wrote pictures only). Use the "Microsoft Print to PDF" printer in CLICK\'s Print dialog.');
+      return { nicknames, rungs: compareRungs(p.ladder, text) };
+    });
+    if (r) setChecked(r);
+  };
+
   const yourTurn = busy === 'run' && /^Your turn/.test(progress);
   const goOn = () => { void click.call('resume').catch(() => undefined); setProgress('Going on…'); };
 
@@ -145,6 +183,26 @@ export default function SendToClick({ profileId }: { profileId: string }) {
                   <h3 className="font-semibold text-steel-900">4. Enter the rungs</h3>
                   <p className="text-xs text-steel-500">The rungs go in one by one, in order. A rung the app cannot enter is your turn: type it in CLICK from the entry sheet (Load into PLC), then press Continue.{DEFAULT_KEYMAP.checkedOn ? '' : ' This is the first version of the rung entry and not yet checked on your CLICK: watch the first rungs closely and press Stop if anything goes wrong.'}</p>
                   <button onClick={() => void enterRungs()} disabled={Boolean(busy)} data-testid="click-rungs-button" className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-40">Enter the rungs in CLICK</button>
+                </section>
+              )}
+
+              {started && setUpDone && (
+                <section className="space-y-2" data-testid="click-verify">
+                  <h3 className="font-semibold text-steel-900">5. Check what CLICK has</h3>
+                  <p className="text-xs text-steel-500">CLICK exports its nicknames and prints its ladder to a PDF; the app fills in the file names, you press Save in those two dialogs. Then each rung's addresses are compared with the project's, in order.</p>
+                  <button onClick={() => void verify()} disabled={Boolean(busy)} data-testid="click-verify-button" className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-40">Check what CLICK has</button>
+                  {checked && (
+                    <div className="space-y-1 text-steel-700" data-testid="click-checked">
+                      <p>{checked.rungs.ok === checked.rungs.rungs && !checked.rungs.extra.length
+                        ? <><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />All {checked.rungs.rungs} rungs match the project.</>
+                        : <><ExclamationTriangleIcon className="mr-1 inline h-4 w-4 text-amber-600" />{checked.rungs.ok} of {checked.rungs.rungs} rungs match the project.</>}</p>
+                      {checked.rungs.differences.length > 0 && <ul className="ml-5 list-disc text-amber-900">{checked.rungs.differences.slice(0, 30).map((d) => <li key={d.rung}>Rung {d.rung}: {d.missing.join(', ')} not where it should be</li>)}{checked.rungs.differences.length > 30 && <li>… and {checked.rungs.differences.length - 30} more rungs</li>}</ul>}
+                      {checked.rungs.extra.length > 0 && <p className="text-amber-900">In CLICK but not in the project: {checked.rungs.extra.slice(0, 20).join(', ')}{checked.rungs.extra.length > 20 ? ' …' : ''}</p>}
+                      <p>{!checked.nicknames.missing.length && !checked.nicknames.different.length
+                        ? <><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />All {checked.nicknames.checked} nicknames are in CLICK.</>
+                        : <><ExclamationTriangleIcon className="mr-1 inline h-4 w-4 text-amber-600" />Nicknames: {checked.nicknames.missing.length} missing{checked.nicknames.missing.length ? ` (${checked.nicknames.missing.slice(0, 10).join(', ')})` : ''}, {checked.nicknames.different.length} different{checked.nicknames.different.length ? ` (${checked.nicknames.different.slice(0, 5).map((d) => `${d.address}: "${d.click}" in CLICK, "${d.ours}" here`).join('; ')})` : ''}.</>}</p>
+                    </div>
+                  )}
                 </section>
               )}
 
