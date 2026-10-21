@@ -138,6 +138,19 @@ const main = ex.files.find((f) => f.name === 'Main.xml')!.content;
 assert.match(main, /<SW\.Blocks\.OB [\s\S]*<Name>Main<\/Name>[\s\S]*<SecondaryType>ProgramCycle<\/SecondaryType>/);
 assert.ok(main.indexOf('"Machine_Start"') < main.indexOf('"Safety_modes"') || /CallInfo Name="Machine_Start"[\s\S]*CallInfo Name="Safety_modes"/.test(main), 'the start helper before the blocks');
 
+// Rungs LAD cannot draw go to SCL instead of stopping the export: NC on the always-ON bit (the S7-1200 sealing head) and an operand with no name.
+{
+  const block = p.ladder.rungs[0].block;
+  const odd: Rung[] = [
+    { id: 'r_nc_on', block, comment: '', branches: [[{ type: 'NC', address: 'SC1' } as LadderElement]], outputs: [{ type: 'OUT', address: 'C1' } as LadderOutput] },
+    { id: 'r_unnamed', block, comment: '', branches: [[{ type: 'NO', address: 'ZZ7' } as LadderElement]], outputs: [{ type: 'OUT', address: 'C1' } as LadderOutput] },
+  ];
+  const x = buildTiaLad({ ...p.ladder, rungs: [...p.ladder.rungs, ...odd] }, exportContext(p));
+  const why = x.viaScl.map((v) => v.why);
+  assert.ok(why.includes('NC on the always-ON bit'), `NC SC1 via SCL: ${why.join('; ')}`);
+  assert.ok(why.some((w) => /^operand ZZ7$/.test(w)), `the unnamed operand via SCL: ${why.join('; ')}`);
+}
+
 // A synthetic S7-1500 + ET 200SP project (the example's I/O on modules, X101…).
 withIoRemap(() => useProjectStore.setState({ plcId: 'siemens-s7', cpuId: '6ES7511-1AL03-0AB0', modules: ['6ES7131-6BH01-0BA0', '6ES7132-6BH01-0BA0'] }));
 const q = collectProject();
