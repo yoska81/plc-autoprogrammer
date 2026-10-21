@@ -206,6 +206,18 @@ const capper = importProgramText('capper.L5X', fixture('capper.L5X'));
   assert.ok(outs(p.program).some((o) => o.type === 'CNT' && o.address === layers && o.preset === '6'), 'counter preset from the tag');
   assert.ok(p.report.notes.some((n) => /Layers\.PRE/.test(n)), 'the preset register write is pointed out');
 }
+// Routines that never run: a second routine no JSR names (L5K), then one a JSR calls; capper.L5X without one call.
+{
+  const extra = '\t\tROUTINE Spare\n\t\t\t\tN: XIC(Box_PE)OTE(Pallet_Full_Lt);\n\t\tEND_ROUTINE\n';
+  const base = fixture('palletizer.L5K');
+  const at = base.indexOf('\tEND_PROGRAM');
+  const never = importProgramText('p.L5K', base.slice(0, at) + extra + base.slice(at));
+  assert.deepEqual(never.program.blocks!.map((b) => [b.name, b.called]), [['MainRoutine', undefined], ['Spare', false]]);
+  const called = importProgramText('p.L5K', (base.slice(0, at) + extra + base.slice(at)).replace('N: XIC(Layers.DN)XIO(Pallet_PE)RES(Layers);', 'N: XIC(Layers.DN)XIO(Pallet_PE)RES(Layers);\n\t\t\t\tN: XIC(Box_PE)JSR(Spare,0);'));
+  assert.equal(called.program.blocks!.find((b) => b.name === 'Spare')!.called, undefined, 'a conditional JSR calls it');
+  const capper = importProgramText('c.L5X', fixture('capper.L5X').replace('JSR(Scaling,0)', 'NOP()'));
+  assert.deepEqual(capper.program.blocks!.filter((b) => b.called === false).map((b) => b.name), ['Scaling']);
+}
 
 // ── PLCopen XML: CODESYS filler (LD + ST) ──
 {

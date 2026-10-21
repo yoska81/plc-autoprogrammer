@@ -41,7 +41,7 @@ import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
 import VoiceTextarea from '../../../voice/VoiceTextarea';
 import { collectProject } from '../../../deliverables/collect';
 import { addComments } from '../../tidy/comments';
-import { applyReorganize, externalAddresses, planReorganize, type ReorgPlan, type SectionId } from '../../tidy/reorganize';
+import { applyReorganize, externalAddresses, planReorganize, plcBaseline, type ReorgPlan, type SectionId } from '../../tidy/reorganize';
 import { equivalenceSummary } from '../../tidy/equivalence';
 import { checkEquivalenceOffThread } from '../../tidy/equivalenceOffThread';
 import { explainWithAi } from '../../tidy/explain';
@@ -331,7 +331,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       const program = applyReorganize(p, plan, chosen);
       const plant = p.io.map((x) => ({ address: p.addresses.get(x.id) ?? '', description: x.description, type: x.type, category: x.category }));
       // In a worker: the page stays free, the job bar shows how far it got, Cancel stops it.
-      const check = await checkEquivalenceOffThread(p.ladder, program, { observe: [...externalAddresses(p)], plant }, {
+      // Against the program as the original PLC runs it (without the code it never runs, when that is removed).
+      const check = await checkEquivalenceOffThread(plcBaseline(p, plan, chosen), program, { observe: [...externalAddresses(p)], plant }, {
         signal, onProgress: (done, total) => stage(`checking in the simulator, sequence ${done + 1} of ${total}`),
       });
       return { program, check, before: p.ladder.rungs.length, titles: plan.sections.filter((x) => chosen.has(x.id)).map((x) => x.title) };
@@ -639,6 +640,11 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                       {sec.items.length > 0 && sec.id !== 'reorder' && <span className="block text-gray-500">{sec.items.slice(0, 4).join(' · ')}{sec.items.length > 4 ? ` · and ${sec.items.length - 4} more` : ''}</span>}</span>
                   </label>
                 ))}
+                {reorg.plan.findings.length > 0 && (
+                  <div className="text-gray-600" data-testid="reorg-findings"><span className="font-medium text-gray-800">Also found (nothing to change):</span>
+                    <ul className="list-disc ml-5">{reorg.plan.findings.slice(0, 6).map((f, i) => <li key={i}>{f}</li>)}{reorg.plan.findings.length > 6 && <li>… and {reorg.plan.findings.length - 6} more</li>}</ul>
+                  </div>
+                )}
                 <button onClick={runReorganize} disabled={!reorg.chosen.size || isGenerating} className="w-full py-1.5 bg-brand-600 text-white rounded font-medium hover:bg-brand-700 disabled:opacity-50">Check and propose</button>
               </div>
             )}
