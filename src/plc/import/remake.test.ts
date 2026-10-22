@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { readYmw7 } from './mpe720';
 import { convertForeign } from './convert';
 import { applyUpgrade } from './ui/applyUpgrade';
-import { remakeCoverage, remakeCoverageAll } from './remake';
+import { remakeCoverage, remakeCoverageAll, remakeCoverageText } from './remake';
 import { choosePlcBrand } from '../core/choosePlc';
 import { collectProject } from '../../deliverables/collect';
 import { useProjectStore } from '../../store/useProjectStore';
@@ -50,5 +50,27 @@ for (const c of all) {
 }
 load();
 assert.equal(remakeCoverage(project(), 'generic-st').errors.length, 0);
+
+// The text to share: counts and instruction kinds only. No tag, register, value or comment of the program, even
+// when a kept instruction starts with a tag name or the checker names operands.
+{
+  load();
+  const base = project();
+  const tag = base.program.tags.find((t) => t.nickname)!;
+  const odd = { ...base, program: { ...base.program, rungs: [...base.program.rungs,
+    { id: 'r_x1', comment: 'secret comment', branches: [], outputs: [{ type: 'RAW' as const, vendor: 'yaskawa-mp', text: `${tag.nickname.toUpperCase()} := 42` }] },
+    { id: 'r_x2', comment: '', branches: [], outputs: [{ type: 'RAW' as const, vendor: 'yaskawa-mp', text: 'MOVW MW00123, #77' }] },
+  ] } };
+  const text = remakeCoverageText(odd);
+  assert.match(text, /^ISA Auto Programmer: remake coverage \(counts only/);
+  assert.match(text, /Siemens S7-1200 \/ S7-1500: 10 of 13 rungs convert \(76%\); kept: unknown instruction \(codes 0xaf\) ×1; other instruction ×1; MOVW ×1\./);
+  const secrets = [
+    ...odd.program.tags.flatMap((t) => [t.address, t.nickname, t.comment]),
+    ...odd.io.flatMap((x) => [x.description, x.plcAddress ?? '']),
+    'secret comment', 'MW00123', '#77', '42',
+  ].filter((x) => x && x.length > 2);
+  for (const x of secrets) assert.ok(!text.toUpperCase().includes(x.toUpperCase()), `the shared text names "${x}"`);
+  assert.doesNotMatch(text, /\b[IOM][BWLF][0-9A-F]{4,}/, 'no MPE720 register');
+}
 
 console.log('remake coverage tests passed');

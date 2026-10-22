@@ -21,7 +21,7 @@ import { getProfile, PLC_PROFILES } from '../../core/profiles';
 import { choosePlcBrand } from '../../core/choosePlc';
 import { notify } from '../../../store/useNoticeStore';
 import { useHmiStore } from '../../../store/useHmiStore';
-import { remakeCoverageAll } from '../remake';
+import { remakeCoverageAll, remakeCoverageText } from '../remake';
 
 /** A kept instruction in plain words ("1 call to another drawing"). */
 function keptPhrase(what: string, n: number): string {
@@ -70,6 +70,13 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
   const hmi = useHmiStore((s) => s.design);
   // Per target PLC, how much of the program converts (worked out without moving anything).
   const coverage = useMemo(() => (readOnly && ladder.rungs.length ? remakeCoverageAll({ io, plcId: profile.id, cpuId: cpu.id, modules, program: ladder, hmi }) : []), [readOnly, io, profile.id, cpu.id, modules, ladder, hmi]);
+  // The coverage as text to share (counts and instruction kinds only): to the clipboard, and shown to select by hand.
+  const [coverageShown, setCoverageShown] = useState('');
+  const copyCoverage = async () => {
+    const text = remakeCoverageText({ io, plcId: profile.id, cpuId: cpu.id, modules, program: ladder, hmi }, coverage);
+    setCoverageShown(text);
+    try { await navigator.clipboard.writeText(text); notify('Coverage numbers copied: paste them in a message.'); } catch { notify('Select the coverage numbers below and copy them.'); }
+  };
   const fromReadOnly = Boolean(original && getProfile(original.plcId).readOnly && !readOnly);
   const moveTo = (plcId: string) => {
     const notes = choosePlcBrand(plcId);
@@ -163,6 +170,11 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                             </li>
                           ))}
                         </ul>
+                        <p className="text-xs text-gray-500">
+                          <button data-testid="upgrade-remake-copy" onClick={() => void copyCoverage()} className="underline hover:text-brand-700">Copy coverage numbers</button>
+                          {' '}(counts only, no names or values: paste them in a message to help improve the conversion)
+                        </p>
+                        {coverageShown && <textarea readOnly data-testid="upgrade-remake-text" value={coverageShown} onFocus={(e) => e.currentTarget.select()} className="w-full h-28 text-xs font-mono border border-gray-200 rounded p-2" />}
                       </>
                     );
                   })() : (
