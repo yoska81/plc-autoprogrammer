@@ -77,7 +77,9 @@ Run on each TIA Portal version we support (V16 … V20) before a release; note t
 4. **Log**: the path shown exists and has the `detect` request with the versions found.
 5. **Bridge missing**: rename `resources\tia-bridge\TiaBridge.exe` → the dialog says the bridge is not in this
    installation (no crash); rename it back.
-6. **Browser**: in the web version (preview), Send to PLC software says it works in the desktop app for Windows.
+6. **Browser**: on the web page (the claude.ai preview) in a browser tab, Send to PLC software says "To send from this
+   page, open it in the Claude desktop app, or install the ISA PLC Helper once."; in the Claude desktop app with the
+   helper connected, the same steps as below run through it (tools/plc-helper, its test card).
 7. **New project**: no TIA Portal running → Open TIA Portal → TIA Portal starts, asks to allow ISA Auto Programmer
    (answer Yes), and the project appears in Documents\ISA Auto Programmer\TIA\<project>. Answer No once: the
    dialog says TIA Portal did not allow it.
@@ -111,3 +113,7 @@ Run on each TIA Portal version we support (V16 … V20) before a release; note t
     named as not read. With no project open: it says to open one first.
 18. **Something goes wrong** (close TIA Portal while the program goes in, for example): the dialog says it in one
     sentence; **Open log folder** shows `tia-bridge.log` in Explorer: send it to us.
+
+**From the web page**: the same items on the web page opened in the Claude desktop app, with the ISA PLC Helper
+connected (Settings › Send from the web page): the steps run through the helper (tools/plc-helper, its test card);
+send us `plc-helper.log` with `tia-bridge.log`.

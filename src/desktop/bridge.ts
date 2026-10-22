@@ -108,9 +108,10 @@ export interface IsaDesktop {
   listPrinters?(): Promise<DesktopPrinter[]>;
   /** Native Save dialog, then write the file. */
   saveFile?(name: string, bytes: Uint8Array): Promise<DesktopSaveResult>;
-  /** A project file (.isap) opened from Explorer (double-click / "Open with"). */
+  /** A project file (.isap) opened from Explorer (double-click / "Open with"), or handed over from the web page
+   * (no path; then: 'program', the page to go to). */
   /** Returns an unsubscribe (older app builds return nothing). */
-  onOpenFile?(cb: (name: string, bytes: Uint8Array, filePath: string) => void): (() => void) | void;
+  onOpenFile?(cb: (name: string, bytes: Uint8Array, filePath: string, then?: 'program') => void): (() => void) | void;
   /** Closing the window waits for `flush` (the projects' last writes to IndexedDB), at most 10 s. */
   onFlushStorage?(flush: () => Promise<void>): void;
   /** Write again to a file chosen earlier in a Save dialog (or opened from Explorer). */

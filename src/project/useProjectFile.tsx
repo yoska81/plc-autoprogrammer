@@ -37,12 +37,13 @@ export function useProjectFile(): { save: () => void; saveAs: () => void; open: 
   const save = useCallback(() => write(false), [write]);
   const saveAs = useCallback(() => write(true), [write]);
 
-  const openBlob = useCallback((blob: Blob, fileName?: string, filePath?: string) => {
+  const openBlob = useCallback((blob: Blob, fileName?: string, filePath?: string, then?: 'program') => {
     void openProjectFile(blob)
       .then(({ id, name }) => {
-        useFileStore.getState().markSaved(id, { name: fileName, path: filePath });
-        notify(`Opened project “${name}”.`);
-        navigate('/spec');
+        useFileStore.getState().markSaved(id, { name: fileName, path: filePath || undefined });
+        // handed over from the web page to send: the Program page, where Send to PLC software is
+        notify(then === 'program' ? `Opened project “${name}”: press Send to PLC software to send it.` : `Opened project “${name}”.`);
+        navigate(then === 'program' ? '/program' : '/spec');
       })
       .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
   }, [navigate]);
@@ -72,7 +73,7 @@ export function useProjectFile(): { save: () => void; saveAs: () => void; open: 
   }, []);
 
   useEffect(() => {
-    const off = desktopBridge()?.onOpenFile?.((name, bytes, filePath) => openBlob(new Blob([bytes as BlobPart]), name, filePath));
+    const off = desktopBridge()?.onOpenFile?.((name, bytes, filePath, then) => openBlob(new Blob([bytes as BlobPart]), name, filePath, then));
     return () => { if (typeof off === 'function') off(); };
   }, [openBlob]);
 

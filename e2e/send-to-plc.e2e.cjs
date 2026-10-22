@@ -13,6 +13,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 const FAKE = () => {
   window.isaDesktop = {
     isDesktop: true, version: 'test', print: async () => ({ ok: true }),
+    onOpenFile: (cb) => { window.__openFile = cb; return () => { window.__openFile = null; }; },
     click: {
       call: async () => ({ ready: false, installs: [], running: false, steps: ['Install CLICK Programming Software from AutomationDirect.'] }),
       logPath: async () => 'C:\\logs\\click-bridge.log',
@@ -81,6 +82,17 @@ const FAKE = () => {
   await dialog.getByRole('button', { name: 'Close' }).click();
   check(await dialog.count() === 0, 'closes');
 
+  // A project handed over from the web page (electron/sendWatch.cjs): opened on the Program page, to send.
+  await page.goto(BASE + '/spec');
+  await page.evaluate(async () => {
+    const { buildProjectFile } = await appImport('/src/project/projectFile.ts');
+    const { blob } = await buildProjectFile();
+    for (let t0 = Date.now(); !window.__openFile && Date.now() - t0 < 5000;) await new Promise((r) => setTimeout(r, 50));
+    window.__openFile('Handed Over.isap', new Uint8Array(await blob.arrayBuffer()), '', 'program');
+  });
+  await page.waitForURL(/\/program$/, { timeout: 10000 });
+  check(await page.getByText(/press Send to PLC software to send it/).first().isVisible().catch(() => false), 'handed over from the web page: opened on the Program page, "press Send to PLC software"');
+
   // Help › Test card: every brand; the four the app sends to with their log.
   await page.getByRole('button', { name: 'Help' }).click();
   await page.getByText('Test card (Send to PLC software)…').click();
@@ -92,6 +104,8 @@ const FAKE = () => {
   const all = await card.innerText();
   check(['tia-bridge.log', 'click-bridge.log', 'codesys-bridge.log', 'studio5000-bridge.log'].every((l) => all.includes(l)) && /Open log folder/.test(all) && /ISA Auto Programmer\\logs/.test(all), 'each log to send, where the logs are, Open log folder');
   check(/Siemens TIA Openness/.test(all) && /hands off the mouse and keyboard/.test(all), 'what to install and what to do, in plain words');
+  const web = await card.getByTestId('test-card-web').innerText();
+  check(/Connect the Claude app/.test(web) && /Open the ISA Auto Programmer app on this PC; it picks up the file/.test(web) && /plc-helper\.log/.test(web), 'the web page: once, in the Claude app, in any browser, the helper\'s log');
 
   check(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await browser.close();

@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { firstLine, noSendAdvice, sendRoute, type SendRoute } from './sendRoutes';
-import { TEST_CARD } from './testCard';
+import { TEST_CARD, WEB_ROUTE } from './testCard';
 import { PLC_PROFILES } from '../core/profiles';
 
 const ALL = new Set<SendRoute>(['tia', 'click', 'codesys', 'studio5000']);
@@ -53,5 +53,10 @@ for (const c of TEST_CARD) {
   else assert.match(c.clicks.join(' '), /Load into PLC|Import › PLC program/, c.brand);
 }
 assert.ok(TEST_CARD.some((c) => /Micro800/.test(c.brand)) && TEST_CARD.some((c) => /Unitronics/.test(c.brand)) && TEST_CARD.some((c) => /Yaskawa/.test(c.brand)));
+
+// The web route: once (the app, Connect the Claude app), in the Claude app, in any browser; the helper's log.
+assert.ok(/Connect the Claude app/.test(WEB_ROUTE.once.join(' ')) && /Claude desktop app/.test(WEB_ROUTE.inClaude[0]) && /Send to the desktop app/.test(WEB_ROUTE.anyBrowser[0]));
+assert.match(WEB_ROUTE.anyBrowser[1], /^Open the ISA Auto Programmer app on this PC; it picks up the file/);
+assert.equal(WEB_ROUTE.log, 'plc-helper.log');
 
 console.log('sendRoutes tests passed');

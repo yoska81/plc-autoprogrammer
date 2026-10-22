@@ -99,6 +99,7 @@ jobs:
           node e2e/clickBridge.test.cjs
           node e2e/plcHelper.test.cjs
           node e2e/claudeConfig.test.cjs
+          node e2e/sendWatch.test.cjs
 
       # The TIA Portal bridge (tools/tia-bridge): its own tests (.NET 8), then the .NET Framework 4.8 exe the
       # installer ships, tried through the app's bridge client (no TIA Portal on the build server: detect says so).
