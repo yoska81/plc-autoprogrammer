@@ -7,6 +7,8 @@ import { buildModel, naturalCompare } from '../../electrical/derive';
 import { getPart } from '../../electrical/catalog';
 import { makeTable, specLines, pad, type DocRow, type DocTable } from './table';
 import { projectPlcNames } from '../plcTagNames';
+import { exportContext } from '../exportContext';
+import { layoutFor, yaskawaName } from '../../plc/core/profiles/yaskawa';
 
 /**
  * Program analysis for the documents: plain-word names for addresses, the
@@ -56,7 +58,9 @@ export function programInfo(p: ProjectSnapshot): ProgramInfo {
   const name = (a: string) => names.get(a.trim().toUpperCase()) ?? '';
   // Yaskawa: only MPE720 register names, never the app's DS / C operands (an imported program's names are its registers).
   const mp = p.profile.id === 'yaskawa-mp' ? projectPlcNames(p) : undefined;
-  const shown = (a: string) => (mp && !/^-?\d+(\.\d+)?$/.test(a.trim()) ? mp(a)?.name ?? a : a);
+  const at = mp ? { cpuId: p.cpu.id, modules: exportContext(p).modules, tags: p.ladder.tags, layout: layoutFor(p.ladder, p.yaskawaMemory) } : undefined;
+  // A bit a change is about to add (Split's new internal bits) is not in the program yet: its register from the layout.
+  const shown = (a: string) => (mp && at && !/^-?\d+(\.\d+)?$/.test(a.trim()) ? mp(a)?.name ?? yaskawaName(a, at) ?? a : a);
   const ref = (a: string) => { const s = shown(a), n = name(a); return n && n.toUpperCase() !== s.toUpperCase() ? `${n} (${s})` : s; };
   const kind = (a: string): Kind => (p.profile.parseAddress(a)?.kind as Kind | undefined) ?? (/^-?\d+(\.\d+)?$/.test(a.trim()) ? 'constant' : 'unknown');
   const device = (a: string) => wiring.get(a.toUpperCase())?.deviceTag ?? '';
@@ -167,7 +171,7 @@ export function interlockTable(p: ProjectSnapshot, info = programInfo(p)): DocTa
     for (const pt of m.io) {
       if (!pt.coilChain?.devices.length) continue;
       for (const d of pt.coilChain.devices) {
-        hw.push([`HW-${pad(++h, 2)}`, `${pt.deviceTag || pt.address} coil (${pt.address})`, 'Hardwired in series with the coil',
+        hw.push([`HW-${pad(++h, 2)}`, `${pt.deviceTag || info.shown(pt.address)} coil (${info.shown(pt.address)})`, 'Hardwired in series with the coil',
           `${d.tag} ${d.terminals} ${d.nc ? '(NC)' : ''} closed — ${d.kind === 'ol' ? 'motor overload not tripped' : 'opposite-direction contactor de-energized (electrical interlock)'}`, '—', 'Dwg']);
       }
     }

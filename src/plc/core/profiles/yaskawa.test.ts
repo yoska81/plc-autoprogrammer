@@ -133,6 +133,8 @@ assert.equal(named('C1')?.name, yaskawaMemory('C1', layout));
   assert.match(info.ref('X001'), /^.+ \(IB0000[0-9A-F]\)$|^IB0000[0-9A-F]$/, 'an input: its name and its register');
   const plan = planReorganize(snap);
   for (const sec of plan.sections) for (const it of sec.items) assert.doesNotMatch(it, APP, `Reorganize "${sec.title}": ${it}`);
+  const { explainProgram, explanationText } = await import('../../tidy/explain');
+  for (const line of explanationText(explainProgram(snap)).split('\n')) assert.doesNotMatch(line, APP, `Explain: ${line}`);
 }
 
 console.log('yaskawa profile tests passed');
