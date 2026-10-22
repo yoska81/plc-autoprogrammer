@@ -40,9 +40,10 @@ on (`BridgeError`), or "TIA Portal reported: …" with the innermost cause.
 | `tags` `{tags: [{name, dataType, logicalAddress, comment}]}` | Writes them into the app's own tag table "ISA Auto Programmer" (created when missing; the user's tables are not touched): new ones created, existing ones updated. `{table, created, updated, failed: [{name, error}]}`. Saves. |
 | `blocks` `{files: [{name, kind: "xml" \| "scl", text}]}` | Imports the program's files in the order sent (the app sends the global DB, the SCL helpers, the FCs, OB 1): a SimaticML block replaces the block of the same name; an SCL source replaces the external source of the same name and generates its blocks. `{imported, failed: [{name, error}]}`. Saves. |
 | `compile` | Compiles the PLC software. `{errors, warnings, messages: [{severity, path, text, block, network}]}`: `block` and `network` read from the message's place in TIA's tree (the app maps them to rungs). Saves. |
+| `downloadTargets` | `{plc, address, interfaces: [{name, number, targets}]}`: the PLC, its IP address in the project, and this PC's network cards (PN/IE) that reach it. |
+| `download` `{confirmed: true, pcInterface, number, target, stopAllowed, startAfter, password?}` | Downloads hardware and software. **Refused without `confirmed: true`** (the app sends it only from its confirm screen). TIA Portal's questions are answered by `src/DownloadPolicy.cs` from the user's choices: stop the PLC only when `stopAllowed`, start it only when `startAfter`, the password only when given (not kept, not logged); any question it does not know **stops the download** and names it. `{state: success \| warning \| error \| refused, errors, warnings, messages, answers}`. |
 
-Coming next (one pull request each): download to the PLC from a confirm screen only; read the program back
-for the Upgrade page.
+Coming next: read the program back for the Upgrade page.
 
 ## Build and test
 
@@ -96,3 +97,12 @@ Run on each TIA Portal version we support (V16 … V20) before a release; note t
 13. **Compile errors**: in TIA Portal, delete a PLC tag the program uses, then run step 12 again → the dialog counts
     the errors and names each with its rung (e.g. "Rung 7 (Conveyor, network 3): …"); the same as TIA Portal's Info
     › Compile tab.
+14. **Download, confirm**: after a compile without errors, **Download to the PLC…** shows the PLC, its address and
+    the network cards; **Download … now** stays off until "I am at the machine…" is ticked. Cancel: nothing happens
+    (the log has no `download` request).
+15. **Download, PLC in RUN**: leave "The PLC may be stopped" unticked → "Not downloaded" and why; tick it → the PLC
+    stops, the download runs, the PLC stays in STOP unless "Start the PLC after the download" was ticked. The log
+    lists each question TIA Portal asked and its answer (no password).
+16. **Download, password**: a PLC with an access password → without it: "protected by a password"; with it: the
+    download runs. **Something new**: when TIA Portal asks a question the app does not know, the dialog names it and
+    nothing is downloaded; download that one from TIA Portal itself and send us the log.

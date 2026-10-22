@@ -14,7 +14,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 
 /** The fake bridge: window.__tia.detect is what the PC has, window.__tia.fail an error to throw; calls are logged. */
 const FAKE = () => {
-  window.__tia = { calls: [], detect: null, fail: null, portals: [], plcInProject: null, compile: null };
+  window.__tia = { calls: [], detect: null, fail: null, portals: [], plcInProject: null, compile: null, download: null };
   const listeners = new Set();
   const answer = (cmd, args) => {
     const t = window.__tia;
@@ -27,6 +27,8 @@ const FAKE = () => {
     if (cmd === 'firmware') return { orderNumber: args.orderNumber, versions: ['V4.6', 'V4.5', 'V4.4'] };
     if (cmd === 'plc') return { plc: { name: args.name, orderNumber: '6ES7 214-1AG40-0XB0', firmware: args.firmware }, added: true, problems: [] };
     if (cmd === 'blocks') return { imported: args.files.length, failed: [] };
+    if (cmd === 'downloadTargets') return { plc: { name: 'PLC_1', orderNumber: '6ES7 214-1AG40-0XB0', firmware: 'V4.4' }, address: '192.168.0.1', interfaces: [{ name: 'Intel(R) Ethernet Connection I219-LM', number: 1, targets: ['1 X1'] }, { name: 'Realtek USB GbE', number: 1, targets: ['1 X1'] }] };
+    if (cmd === 'download') return t.download ?? { state: 'success', errors: 0, warnings: 0, messages: [], answers: ['StopModules: StopAll', 'StartModules: StartModule'] };
     if (cmd === 'compile') return t.compile ?? { errors: 0, warnings: 0, messages: [] };
     if (cmd === 'tags') return { table: 'ISA Auto Programmer', created: args.tags.length - 1, updated: 0, failed: [{ name: args.tags[0].name, error: 'The address is outside the CPU\'s range.' }] };
     return null;
@@ -132,6 +134,44 @@ const READY = { ...NOT_IN_GROUP, ready: true, inOpennessGroup: true, steps: [] }
   check(blocksCall.args.files.filter((f) => f.kind === 'xml').every((f) => /<Engineering version="V19"/.test(f.text)) && blocksCall.args.files.find((f) => f.kind === 'scl'), 'SimaticML for the open TIA Portal (V19), the helpers as SCL');
   const progText = await dialog.getByTestId('tia-program-done').innerText();
   check(new RegExp(`All ${fileNames.length} block files imported: \\d+ of \\d+ rungs as ladder networks`).test(progText) && /Compiled: no errors/.test(progText), 'imported and compiled, said');
+
+  // Download: only from the confirm screen, with the safety tick; nothing goes before "Download … now".
+  await dialog.getByTestId('tia-download-button').click();
+  const confirm = dialog.getByTestId('tia-confirm');
+  await confirm.waitFor({ timeout: 5000 });
+  const confirmText = await confirm.innerText();
+  check(/Download to PLC_1 \(6ES7 214-1AG40-0XB0, firmware V4\.4\) at 192\.168\.0\.1\?/.test(confirmText), 'confirm screen: which PLC, at which address');
+  check(!(await page.evaluate(() => window.__tia.calls)).some((c) => c.cmd === 'download'), 'nothing downloaded before the confirm');
+  check(await dialog.getByTestId('tia-download-now').isDisabled(), 'Download now stays off until the machine is said to be safe');
+  await dialog.getByLabel('Network card').selectOption({ label: 'Realtek USB GbE' });
+  await dialog.getByTestId('tia-safe').check();
+  await dialog.getByTestId('tia-stop-allowed').check();
+  await dialog.getByTestId('tia-start-after').check();
+  await dialog.getByLabel('PLC password').fill('s3cret');
+  await dialog.getByTestId('tia-download-now').click();
+  await dialog.getByTestId('tia-downloaded').waitFor({ timeout: 5000 });
+  const dl = (await page.evaluate(() => window.__tia.calls)).filter((c) => c.cmd === 'download');
+  log('download:', JSON.stringify({ ...dl[0].args, password: dl[0].args.password ? '***' : undefined }));
+  check(dl.length === 1 && dl[0].args.confirmed === true && dl[0].args.pcInterface === 'Realtek USB GbE' && dl[0].args.target === '1 X1' && dl[0].args.stopAllowed === true && dl[0].args.startAfter === true && dl[0].args.password === 's3cret', 'one download, with the confirm and the user\'s choices');
+  check(/Downloaded\./.test(await dialog.getByTestId('tia-downloaded').innerText()) && /StopModules: StopAll/.test(await dialog.getByTestId('tia-downloaded').innerText()), 'downloaded, with what TIA Portal asked');
+  check(await dialog.getByTestId('tia-confirm').count() === 0, 'the confirm screen closes after the download');
+  // TIA asks something the app does not answer: stopped, nothing changed, said
+  await page.evaluate(() => { window.__tia.download = { state: 'refused', errors: 0, warnings: 0, messages: ['TIA Portal asked something the app does not answer (CheckBeforeDownload: Differences in the hardware). Download from TIA Portal itself (Online › Download to device), where the question is shown in full.'], answers: [] }; });
+  await dialog.getByTestId('tia-download-button').click();
+  await dialog.getByTestId('tia-confirm').waitFor({ timeout: 5000 });
+  check(!(await dialog.getByTestId('tia-safe').isChecked()) && !(await dialog.getByTestId('tia-stop-allowed').isChecked()) && await dialog.getByLabel('PLC password').inputValue() === '', 'each confirm starts unticked, no password kept');
+  await dialog.getByTestId('tia-safe').check();
+  await dialog.getByTestId('tia-download-now').click();
+  await dialog.getByTestId('tia-downloaded').filter({ hasText: 'Not downloaded' }).waitFor({ timeout: 5000 });
+  check(/nothing was changed in the PLC/.test(await dialog.getByTestId('tia-downloaded').innerText()) && /Download from TIA Portal itself/.test(await dialog.getByTestId('tia-downloaded').innerText()), 'a question the app does not answer: not downloaded, said');
+  // Cancel: no download
+  const before = (await page.evaluate(() => window.__tia.calls)).filter((c) => c.cmd === 'download').length;
+  await dialog.getByTestId('tia-download-button').click();
+  await dialog.getByTestId('tia-confirm').waitFor({ timeout: 5000 });
+  await dialog.getByTestId('tia-safe').check();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  check(await dialog.getByTestId('tia-confirm').count() === 0 && (await page.evaluate(() => window.__tia.calls)).filter((c) => c.cmd === 'download').length === before, 'Cancel: nothing downloaded');
+
   const fc = fileNames.find((n) => !/^(Machine_DB|Main)\.xml$|\.scl$/.test(n)).replace(/\.xml$/, '');
   const rung2 = await page.evaluate(async (block) => {
     const { collectProject } = await appImport('/src/deliverables/collect.ts');
@@ -147,6 +187,7 @@ const READY = { ...NOT_IN_GROUP, ready: true, inOpennessGroup: true, steps: [] }
   const compiled = await dialog.getByTestId('tia-compiled').innerText();
   log('compiled:', compiled.replace(/\s+/g, ' ').slice(0, 200));
   check(/Compiled with 1 error and 1 warning: fix them before a download/.test(compiled), 'compile errors counted');
+  check(/Fix the compile errors first/.test(await dialog.getByTestId('tia-download').innerText()) && await dialog.getByTestId('tia-download-button').count() === 0, 'no download while the compile has errors');
   check(new RegExp(`Rung ${rung2} \\(${fc}, network 2\\): Tag "Spare_9" not defined`).test(compiled) && /Main: The block has no comment/.test(compiled), 'each message with its rung');
 
   // A running TIA Portal whose project has another PLC: offered, opened, and not touched.

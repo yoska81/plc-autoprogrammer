@@ -7,6 +7,7 @@
 // an urgent command (Stop) is answered at once on the reading thread, even while a long request runs.
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
@@ -77,6 +78,10 @@ namespace TiaBridge
         }
 
         /// <summary>Answers one request line; false after "quit".</summary>
+        /// <summary>A request's arguments as the log keeps them: a password never (shown as "***").</summary>
+        public static Dictionary<string, object> ForLog(Dictionary<string, object> args) =>
+            args.ToDictionary(kv => kv.Key, kv => kv.Key.IndexOf("password", StringComparison.OrdinalIgnoreCase) >= 0 && kv.Value != null ? "***" : kv.Value);
+
         public bool Handle(string line)
         {
             object id = null;
@@ -87,7 +92,7 @@ namespace TiaBridge
                 req.TryGetValue("id", out id);
                 cmd = req.TryGetValue("cmd", out object c) ? c as string : null;
                 var args = req.TryGetValue("args", out object a) && a is Dictionary<string, object> d ? d : new Dictionary<string, object>();
-                Log.Write($"→ {id} {cmd} {Json.Write(args)}");
+                Log.Write($"→ {id} {cmd} {Json.Write(ForLog(args))}");
                 if (cmd == "quit") { Send(new Dictionary<string, object> { ["id"] = id, ["ok"] = true, ["result"] = null }); return false; }
                 if (cmd == null || !_commands.TryGetValue(cmd, out Command run)) throw new BridgeError($"The bridge has no command \"{cmd}\" (update the app).");
                 object result = run(args, (text) => { Log.Write($"… {id} {text}"); Send(new Dictionary<string, object> { ["id"] = id, ["progress"] = text }); });
