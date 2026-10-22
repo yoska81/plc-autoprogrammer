@@ -132,7 +132,7 @@ const ai = { provider: 'anthropic' as const, apiKey: 'k', model: 'm', effort: 'l
 // A synthetic 4,000-rung program: fast, and the AI in few parts within the budget.
 {
   await clearAiCache();
-  applyUpgrade(importProgramFiles([{ name: 'big.L5X', text: bigL5x(80, 120) }]).program);
+  applyUpgrade(importProgramFiles([{ name: 'big.L5X', text: bigL5x(80, 128) }]).program);
   const p = collectProject();
   const t = Date.now();
   const x = explainProgram(p);

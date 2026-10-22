@@ -120,7 +120,7 @@ export async function simplifyBlocks(
     const next = splice(cur, id, rungs, r.program?.tags ?? []);
     if (errors(next) > errors(cur)) { dropped.push({ id, name, why: 'the checker finds a new error in the rewrite' }); continue; }
     o.stage?.(`block ${k + 1} of ${chosen.length} (${name}): checking in the simulator`);
-    const res = await check(cur, next, { observe, plant });
+    const res = await check(cur, next, { observe, plant, profileId: p.profile.id });
     if (res.differences.length) { dropped.push({ id, name, why: `behaves differently: ${equivalenceSummary(res).split('. ')[0].replace(/^Different behaviour: /, '')}` }); continue; }
     kept.push({ id, name, before, after, rungsBefore: mine.length, rungsAfter: rungs.length, summary: equivalenceSummary(res), explanation: r.explanation });
     cur = next;
@@ -128,7 +128,7 @@ export async function simplifyBlocks(
   let final: EquivalenceResult | null = null;
   if (kept.length > 1) {
     o.stage?.('all kept blocks together: checking in the simulator');
-    final = await check(p.ladder, cur, { observe, plant });
+    final = await check(p.ladder, cur, { observe, plant, profileId: p.profile.id });
     if (final.differences.length) return { program: p.ladder, kept: [], dropped: [...dropped, ...kept.map((x) => ({ id: x.id, name: x.name, why: 'each passed alone, but together they behave differently' }))], final };
   }
   return { program: cur, kept, dropped, final };

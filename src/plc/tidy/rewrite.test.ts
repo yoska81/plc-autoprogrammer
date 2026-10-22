@@ -19,7 +19,8 @@ const warn = console.warn;
 console.warn = (...a: unknown[]) => { if (!String(a[0]).includes('zustand persist')) warn(...a); };
 console.info = () => {};
 const ai = { provider: 'anthropic' as const, apiKey: 'k', model: 'm', effort: 'low' as const };
-const check = async (a: LadderProgram, b: LadderProgram) => checkEquivalence(a, b, { random: 40, steps: 30 });
+const profiles: (string | undefined)[] = [];
+const check = async (a: LadderProgram, b: LadderProgram, o: { profileId?: string }) => { profiles.push(o.profileId); return checkEquivalence(a, b, { random: 40, steps: 30, profileId: o.profileId }); };
 const NO = (address: string) => ({ type: 'NO' as const, address });
 const OUT = (address: string) => ({ type: 'OUT' as const, address });
 
@@ -124,5 +125,7 @@ function answer(by: Record<string, Rung[] | null>, seen: ClaudeOptions[] = []) {
   assert.ok(r.final && r.final.differences.length === 0);
   assert.equal(r.program.rungs.length, 4);
 }
+
+assert.ok(profiles.length && profiles.every((x) => x === 'click'), `the check runs with the project's PLC: ${[...new Set(profiles)].join()}`);
 
 console.log('tidy rewrite tests passed');
