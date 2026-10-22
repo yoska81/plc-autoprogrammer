@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "build:desktop": "tsc -b && vite build --outDir dist-desktop --emptyOutDir && node scripts/desktop-prepare.cjs",
     "desktop": "npm run build:desktop && electron .",
-    "dist:win": "npm run build:desktop && node scripts/fetch-libredwg.cjs && node scripts/build-tia-bridge.cjs && node scripts/build-click-bridge.cjs && electron-builder --win nsis --x64 --publish never"
+    "dist:win": "npm run build:desktop && node scripts/fetch-libredwg.cjs && node scripts/build-tia-bridge.cjs && node scripts/build-click-bridge.cjs && node scripts/build-codesys-bridge.cjs && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
@@ -96,6 +96,16 @@
         "filter": [
           "ClickBridge.exe",
           "ClickBridge.exe.config",
+          "README.md"
+        ]
+      },
+      {
+        "from": "resources/codesys-bridge",
+        "to": "codesys-bridge",
+        "filter": [
+          "CodesysBridge.exe",
+          "CodesysBridge.exe.config",
+          "isa_job.py",
           "README.md"
         ]
       }
