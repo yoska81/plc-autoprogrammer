@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ArrowPathIcon, CheckCircleIcon, ExclamationTriangleIcon, PaperAirplaneIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import BridgeFailed from './BridgeFailed';
-import { desktopBridge, type TiaDetect } from '../../desktop/bridge';
+import { plcBridges } from '../../desktop/plcHelper';
+import { type TiaDetect } from '../../desktop/bridge';
 import { collectProject } from '../../deliverables/collect';
 import { tiaBlocks, tiaBlockVersion, tiaPlcRequest, tiaProjectName, tiaTagRows } from '../tia/tiaSend';
 import { useProjectStore } from '../../store/useProjectStore';
@@ -35,7 +36,7 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * download without that confirm and stops at any question of TIA Portal's it does not know.
  */
 export default function SendToTia({ profileId }: { profileId: string }) {
-  const tia = desktopBridge()?.tia;
+  const tia = plcBridges()?.tia;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [progress, setProgress] = useState('');
