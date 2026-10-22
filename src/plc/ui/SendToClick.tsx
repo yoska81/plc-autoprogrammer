@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowPathIcon, CheckCircleIcon, ExclamationTriangleIcon, PaperAirplaneIcon, StopIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import BridgeFailed from './BridgeFailed';
-import { desktopBridge, type ClickDetect } from '../../desktop/bridge';
+import { plcBridges } from '../../desktop/plcHelper';
+import { type ClickDetect } from '../../desktop/bridge';
 import { collectProject } from '../../deliverables/collect';
 import { hmiExtraTags } from '../../deliverables/exportContext';
 import { clickNicknameCsv } from '../core/clickExport';
@@ -44,7 +45,7 @@ interface Sent { version: string; cpu: string; nicknames: boolean; entered: numb
  * recording of the windows open now.
  */
 export default function SendToClick({ profileId }: { profileId: string }) {
-  const click = desktopBridge()?.click;
+  const click = plcBridges()?.click;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [progress, setProgress] = useState('');
