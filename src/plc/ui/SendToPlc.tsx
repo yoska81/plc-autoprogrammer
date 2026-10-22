@@ -61,7 +61,7 @@ export default function SendToPlc({ profile }: { profile: PlcProfile }) {
       const { name, blob } = await buildProjectFile();
       const file = `${name.replace(/\.isap$/i, '')}.isa-send.zip`;
       const r = await saveViaAccount(file, blob);
-      setHandover(r === 'saved' ? `Saved to your Downloads as ${file}. ISA Auto Programmer, open on this PC, asks to open it: then press Send to PLC software there.`
+      setHandover(r === 'saved' ? `Saved to your Downloads as ${file}. Open the ISA Auto Programmer app on this PC; it picks up the file from Downloads. Then press Send to PLC software there.`
         : r === 'declined' ? 'Not saved.' : 'This page cannot save files here.');
     } catch (e) {
       setHandover(e instanceof Error ? e.message : String(e));
@@ -85,7 +85,7 @@ export default function SendToPlc({ profile }: { profile: PlcProfile }) {
               {viaHelper && <p><a href={HELPER_DOWNLOAD_URL} target="_blank" rel="noreferrer" data-testid="send-to-plc-helper-download" className="inline-flex rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">Install the ISA PLC Helper</a></p>}
               {viaHelper && (
                 <div className="space-y-1 border-t border-steel-200 pt-3 text-xs text-steel-600">
-                  <p>Or, in any browser, with ISA Auto Programmer open on this PC: <button type="button" onClick={() => void handOver()} disabled={handover === 'Saving…'} data-testid="send-to-plc-handover-button" className="ml-1 rounded border border-steel-300 bg-white px-2 py-0.5 font-medium text-steel-800 hover:bg-steel-50 disabled:opacity-40">Send to the desktop app</button></p>
+                  <p>Or, in any browser, with the ISA Auto Programmer app on this PC: <button type="button" onClick={() => void handOver()} disabled={handover === 'Saving…'} data-testid="send-to-plc-handover-button" className="ml-1 rounded border border-steel-300 bg-white px-2 py-0.5 font-medium text-steel-800 hover:bg-steel-50 disabled:opacity-40">Send to the desktop app</button></p>
                   {handover && <p className="text-steel-800" data-testid="send-to-plc-handover">{handover}</p>}
                 </div>
               )}

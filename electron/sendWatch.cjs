@@ -1,7 +1,9 @@
 // A project handed over from the web page, in any browser: "Send to the desktop app" there saves the project as
 // <name>.isa-send.zip into Downloads (a .zip is a type the page may save; it is the .isap file as it is). While the
-// app is open it watches Downloads for such a file, new since it started, and asks in its own window before it
-// opens it (main.cjs); nothing is sent to the PLC software until the user presses Send there. Main process only.
+// app is open it watches Downloads for such a file, and when it starts it looks for one saved shortly before (the
+// page says: open the app, it picks up the file); it asks in its own window before it opens one (main.cjs), each
+// file once, also across restarts; nothing is sent to the PLC software until the user presses Send there.
+// Main process only.
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -14,12 +16,15 @@ const handedOver = (name) => PATTERN.test(name) || /\.isa-send \(\d+\)\.zip$/i.t
 /** The project's name for the app: "Line 1.isa-send.zip" → "Line 1.isap". */
 const projectName = (name) => name.replace(/\.isa-send( \(\d+\))?\.zip$/i, '.isap');
 
+/** How long before the app started a handed-over file is still offered (the user opened the app after saving it). */
+const RECENT_MS = 30 * 60000;
+
 /**
- * Watches `dir`; calls `onFile(file)` once per handed-over file that is complete and newer than `since`
- * (a file already there when the app started is never offered). Returns a function that stops watching.
+ * Watches `dir`, and looks at what is there now; calls `onFile(file)` once per handed-over file that is complete and
+ * newer than `since`. `seen` remembers the files offered (its keys can be kept across restarts). Returns a function
+ * that stops watching.
  */
-function watchSends({ dir, since = Date.now(), onFile, settleMs = SETTLE_MS, log = () => undefined }) {
-  const seen = new Set();
+function watchSends({ dir, since = Date.now() - RECENT_MS, onFile, settleMs = SETTLE_MS, log = () => undefined, seen = new Set() }) {
   const timers = new Map();
   let watcher;
   const consider = (name) => {
@@ -42,10 +47,26 @@ function watchSends({ dir, since = Date.now(), onFile, settleMs = SETTLE_MS, log
   try {
     watcher = fs.watch(dir, (_event, name) => consider(typeof name === 'string' ? name : name?.toString()));
     watcher.on('error', (e) => log(`watching ${dir} stopped: ${e.message}`));
+    // saved before the app started (the page says: open the app)
+    for (const name of fs.readdirSync(dir)) consider(name);
   } catch (e) {
     log(`cannot watch ${dir}: ${e.message}`);
   }
   return () => { try { watcher?.close(); } catch { /* closed */ } for (const t of timers.values()) clearTimeout(t); timers.clear(); };
 }
 
-module.exports = { watchSends, handedOver, projectName };
+/** The files offered, kept in `file` (the app's own data) so a restart does not ask again; the last 100. */
+function seenStore(file) {
+  let keys = [];
+  try { keys = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* none yet */ }
+  const set = new Set(Array.isArray(keys) ? keys : []);
+  return {
+    has: (k) => set.has(k),
+    add: (k) => {
+      set.add(k);
+      try { fs.writeFileSync(file, JSON.stringify([...set].slice(-100))); } catch { /* not kept: asked again after a restart */ }
+    },
+  };
+}
+
+module.exports = { watchSends, seenStore, handedOver, projectName, RECENT_MS };

@@ -13,7 +13,7 @@ const { registerTiaBridgeIpc } = require('./tiaBridge.cjs');
 const { registerClickBridgeIpc } = require('./clickBridge.cjs');
 const { registerCodesysBridgeIpc } = require('./codesysBridge.cjs');
 const { registerStudio5000BridgeIpc } = require('./studio5000Bridge.cjs');
-const { watchSends, projectName } = require('./sendWatch.cjs');
+const { watchSends, seenStore, projectName } = require('./sendWatch.cjs');
 
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://isa`;
@@ -385,7 +385,7 @@ app.whenReady().then(() => {
   createWindow();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
   // Projects handed over from the web page while the app is open
-  const stopWatching = watchSends({ dir: app.getPath('downloads'), since: Date.now(), onFile: (f) => void offerHandedOver(f), log: helperLog });
+  const stopWatching = watchSends({ dir: app.getPath('downloads'), onFile: (f) => void offerHandedOver(f), log: helperLog, seen: seenStore(path.join(app.getPath('userData'), 'handed-over.json')) });
   app.on('will-quit', stopWatching);
 });
 

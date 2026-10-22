@@ -79,7 +79,7 @@ const FAKE = () => {
   await dialog.getByTestId('send-to-plc-handover').filter({ hasText: 'Saved' }).waitFor({ timeout: 10000 });
   const saved = await page.evaluate(() => window.__saved);
   check(/\.isa-send\.zip$/.test(saved.filename) && saved.head === 'PK' && saved.size > 500, `Send to the desktop app: the project file (a zip) as ${saved.filename}`);
-  check(/^Saved to your Downloads as .*\.isa-send\.zip\. ISA Auto Programmer, open on this PC, asks to open it: then press Send to PLC software there\.$/.test(await dialog.getByTestId('send-to-plc-handover').innerText()), 'then: the desktop app asks to open it');
+  check(/^Saved to your Downloads as .*\.isa-send\.zip\. Open the ISA Auto Programmer app on this PC; it picks up the file from Downloads\. Then press Send to PLC software there\.$/.test(await dialog.getByTestId('send-to-plc-handover').innerText()), 'then: open the app, it picks up the file');
   await dialog.getByRole('button', { name: 'Close' }).click();
 
   // The helper answers: the same press opens the CLICK flow, which runs on the helper.
