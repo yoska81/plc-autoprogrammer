@@ -1,5 +1,5 @@
 import type { CpuModel, PlcProfile } from '../profile';
-import { clickProfile } from './click';
+import { clickProfile, parseAddress as parseNeutral } from './click';
 import { logixProfile } from './logix';
 import { micro800Profile } from './micro800';
 import { siemensProfile } from './siemens';
@@ -17,7 +17,8 @@ const genericStProfile: PlcProfile = {
   cpuModels: [{ id: 'generic', label: 'Any IEC 61131-3 controller', builtInInputs: 0, builtInOutputs: 0 }],
   defaultCpuId: 'generic',
   autoAddresses: (io) => new Map(io.map((p) => [p.id, p.id])),
-  parseAddress: () => ({ kind: 'bit', isBit: true }),
+  // The program's internal memory is the app's neutral memory (T1, CT1, DS1 …, as on CLICK); I/O are the project's ids.
+  parseAddress: (a) => parseNeutral(a) ?? { kind: 'bit', isBit: true },
   promptKnowledge: () => '',
 };
 
