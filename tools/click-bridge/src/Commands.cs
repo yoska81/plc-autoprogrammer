@@ -18,6 +18,7 @@ namespace ClickBridge
         public static Protocol Register(Protocol p, IPc pc, IUi ui, Func<Action, bool> watchStopKey = null, string folder = null)
         {
             int pid = 0;
+            string version = "";
             CancellationTokenSource current = null;
             var resume = new AutoResetEvent(false);
             bool keyWatched = false, keyOk = false;
@@ -52,12 +53,16 @@ namespace ClickBridge
                 if (running.Count > 0) { pid = running[0].Key; pr("Using the CLICK Programming Software that is open."); }
                 else { pr($"Starting CLICK Programming Software {inst.Version}…"); pid = ui.Start(inst.Exe); }
                 var main = ui.Window(pid, "CLICK", 60000) ?? throw new BridgeError("CLICK Programming Software started but its window did not appear within a minute. Close it and try again.");
+                version = inst.Version;
+                ui.Show(main);
                 Log.Write($"click pid {pid}, windows: {string.Join(" | ", ui.Windows(pid))}");
                 return new Dictionary<string, object> { ["version"] = inst.Version, ["processId"] = pid, ["windows"] = ui.Windows(pid).Cast<object>().ToList(), ["attached"] = running.Count > 0 };
             });
             p.On("dump", (a, pr) =>
             {
                 if (pid == 0) throw new BridgeError("Open CLICK first.");
+                var front = ui.Window(pid, "CLICK", 2000);
+                if (front != null && a.TryGetValue("show", out object sh) && sh is bool show && show) ui.Show(front);
                 var text = string.Join("\n\n", ui.Windows(pid).Select(t => { var w = ui.Window(pid, "^" + System.Text.RegularExpressions.Regex.Escape(t) + "$", 2000); return w == null ? $"(window \"{t}\" closed)" : ui.Dump(w); }));
                 Directory.CreateDirectory(folder);
                 string file = Path.Combine(folder, $"click-controls-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
@@ -100,7 +105,10 @@ namespace ClickBridge
                     {
                         pr(keyOk ? "Starting. Watch CLICK; press Stop or the Pause key to end at any time." : "Starting. Watch CLICK; press Stop to end at any time.");
                         resume.Reset();
-                        int n = new Runner(ui, pid, cts.Token, pr, resume).Run(steps);
+                        // a minimized CLICK has no place on the screen: restore and maximize it first
+                        var main = ui.Window(pid, "CLICK", 5000);
+                        if (main != null) ui.Show(main);
+                        int n = new Runner(ui, pid, cts.Token, pr, resume) { Version = version }.Run(steps);
                         return new Dictionary<string, object> { ["steps"] = n };
                     }
                     finally { current = null; }

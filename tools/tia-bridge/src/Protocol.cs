@@ -18,7 +18,7 @@ namespace TiaBridge
     public delegate object Command(Dictionary<string, object> args, Action<string> progress);
 
     /// <summary>A failure the user can act on: its message goes to the app as it is.</summary>
-    public sealed class BridgeError : Exception
+    public class BridgeError : Exception
     {
         public BridgeError(string message) : base(message) { }
     }

@@ -45,7 +45,9 @@ namespace ClickBridge
         int ForegroundProcess();
         /// <summary>The window's controls as text, one per line, indented (for the log: how to name them in a plan).</summary>
         string Dump(string window);
-        /// <summary>The titles of the process's top-level windows (to say what is open when a step fails).</summary>
+        /// <summary>The titles of the process's windows: top-level ones and the dialogs inside them (to say what is open, to record them).</summary>
         IList<string> Windows(int pid);
+        /// <summary>Restores the window (a minimized CLICK has no place on the screen to click), maximizes it, brings it to the front.</summary>
+        void Show(string window);
     }
 }
