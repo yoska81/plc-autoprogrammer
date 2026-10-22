@@ -152,7 +152,8 @@ export function planReorganize(p: ProjectSnapshot): ReorgPlan {
     const from = r.comment.trim() ? r.comment.split(/[.:;(]/)[0] : [...rungDeps(r).reads].filter((x) => x !== a).map(name).find(Boolean) ?? '';
     const kind = /^T\d/.test(a) ? 'Timer' : /^CT\d/.test(a) ? 'Counter' : WORD.test(a) ? 'Value' : 'Flag';
     const words = from.replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !/^(the|and|when|with|turns|sets|latches|resets|used|rung|rungs)$/i.test(w)).slice(0, 3).join('_');
-    names.set(a, logixName(words ? `${words}_${kind}` : `${kind}_${a}`, used, `${kind}_${a}`).slice(0, 24));
+    const at = info.shown(a);
+    names.set(a, logixName(words ? `${words}_${kind}` : `${kind}_${at}`, used, `${kind}_${at}`).slice(0, 24));
   }
 
   const list = (ids: Set<string>) => [...ids].map((id) => `rung ${num.get(id)}: ${rungWrites(l.rungs.find((r) => r.id === id)!).map((a) => info.ref(a)).join(', ')}`);
@@ -163,7 +164,7 @@ export function planReorganize(p: ProjectSnapshot): ReorgPlan {
     { id: 'remove-never', title: `Remove ${never.size} rung(s) that can never be true`, note: 'Off by default: each needs a bit that nothing in the project sets (another device may set it).', items: list(never), defaultOn: false },
     { id: 'merge', title: `Merge ${merges.length} pair(s) of neighbouring rungs with the same conditions`, note: 'One rung with all the outputs, where neither reads what the other writes.', items: merges.map(([a, b]) => `rungs ${num.get(a)} and ${num.get(b)}`), defaultOn: true },
     { id: 'reorder', title: keepBlocks ? 'Order the rungs by machine function inside each block' : 'Group the rungs by machine function (one block each)', note: `${keepBlocks ? 'The blocks (drawings) and their order stay: the program is read-only on its original PLC. ' : ''}Every rung that depends on another keeps its order; kept instructions of the original PLC do not move.`, items: [...FUNCS], defaultOn: true },
-    { id: 'rename', title: `Name ${names.size} unnamed internal bit(s) and register(s)`, note: 'Only the names change, never the addresses.', items: [...names].map(([a, n]) => `${a} → ${n}`), defaultOn: true },
+    { id: 'rename', title: `Name ${names.size} unnamed internal bit(s) and register(s)`, note: 'Only the names change, never the addresses.', items: [...names].map(([a, n]) => `${info.shown(a)} → ${n}`), defaultOn: true },
     { id: 'comment', title: `Fill ${blanks} blank comment(s)`, note: 'Rung comments, block descriptions and tag comments, as Add comments does.', items: [], defaultOn: true },
   ];
   return { sections, removals: { 'remove-internal': internal, 'remove-registers': registers, 'remove-never': never }, merges, names, keepBlocks };

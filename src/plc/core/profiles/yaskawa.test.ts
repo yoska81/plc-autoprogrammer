@@ -11,7 +11,7 @@ import {
   DEFAULT_MEMORY, YASKAWA_CPUS, allocateMemory, layoutFor, memoryNeed, memoryOverlaps, mpRegister, mWords, nativeWords, yaskawaFamily, yaskawaIo, yaskawaMemory, yaskawaName, yaskawaProfile,
 } from './yaskawa';
 import type { ModuleSlot } from '../profile';
-import type { LadderProgram } from '../ladder';
+import { rungAddresses, type LadderProgram } from '../ladder';
 import { plcNameLookup } from '../plcNames';
 import { validateProgram } from '../validate';
 
@@ -120,6 +120,19 @@ assert.equal(named('C1')?.name, yaskawaMemory('C1', layout));
   assert.deepEqual([...mp.p.addresses.values()], [...click.p.addresses.values()], 'the same neutral addresses');
   assert.deepEqual(mp.program.rungs, click.program.rungs, 'the same program as on CLICK');
   assert.deepEqual(validateProgram(mp.program, mp.p.profile, new Set([...mp.p.addresses.values()]), mp.p.hmi ?? undefined).filter((i) => i.severity === 'error').map((i) => i.message), [], 'no checker errors on Yaskawa');
+
+  // What the user reads (Reorganize, Add comments, the documents) names the MPE720 registers only: "Start PB (IB00001)",
+  // MB000010, never the app's X001 / C1 / DS2, and no "MW00011 (DS2)" mixes.
+  const { programInfo } = await import('../../../deliverables/docs/program');
+  const { planReorganize } = await import('../../tidy/reorganize');
+  const snap = { ...mp.p, ladder: { ...mp.program, tags: mp.program.tags.map((t, i) => (i === 0 ? { ...t, nickname: '' } : t)) } };
+  const info = programInfo(snap);
+  const APP = /\b(X|Y|C|CT|T|TD|CTD|DS|DD|DF|DH|SC|SD)\d+\b/;
+  const ops = [...new Set(snap.ladder.rungs.flatMap((r) => [...rungAddresses(r)]))].filter((a) => a && !/^-?\d/.test(a));
+  for (const a of ops) assert.doesNotMatch(info.ref(a), APP, `${a} shown as ${info.ref(a)}`);
+  assert.match(info.ref('X001'), /^.+ \(IB0000[0-9A-F]\)$|^IB0000[0-9A-F]$/, 'an input: its name and its register');
+  const plan = planReorganize(snap);
+  for (const sec of plan.sections) for (const it of sec.items) assert.doesNotMatch(it, APP, `Reorganize "${sec.title}": ${it}`);
 }
 
 console.log('yaskawa profile tests passed');

@@ -25,7 +25,9 @@ const KIND_TEXT: Record<Kind, string> = {
 export interface ProgramInfo {
   /** Plain name of an address, e.g. "Start PB". Empty when unknown. */
   name: (a: string) => string;
-  /** "Start PB (X002)" */
+  /** How the address is shown: the app operand, or on Yaskawa its MPE720 register (DS2 → MW00011). */
+  shown: (a: string) => string;
+  /** "Start PB (X002)"; on Yaskawa "Start PB (IB00002)", and just the register when it has no other name. */
   ref: (a: string) => string;
   kind: (a: string) => Kind;
   /** Device tag driving / read by an I/O address (from the electrical design). */
@@ -52,7 +54,10 @@ export function programInfo(p: ProjectSnapshot): ProgramInfo {
   }
   const wiring = new Map((p.electrical?.ioWiring ?? []).map((w) => [w.address.toUpperCase(), w] as const));
   const name = (a: string) => names.get(a.trim().toUpperCase()) ?? '';
-  const ref = (a: string) => (name(a) ? `${name(a)} (${a})` : a);
+  // Yaskawa: only MPE720 register names, never the app's DS / C operands (an imported program's names are its registers).
+  const mp = p.profile.id === 'yaskawa-mp' ? projectPlcNames(p) : undefined;
+  const shown = (a: string) => (mp && !/^-?\d+(\.\d+)?$/.test(a.trim()) ? mp(a)?.name ?? a : a);
+  const ref = (a: string) => { const s = shown(a), n = name(a); return n && n.toUpperCase() !== s.toUpperCase() ? `${n} (${s})` : s; };
   const kind = (a: string): Kind => (p.profile.parseAddress(a)?.kind as Kind | undefined) ?? (/^-?\d+(\.\d+)?$/.test(a.trim()) ? 'constant' : 'unknown');
   const device = (a: string) => wiring.get(a.toUpperCase())?.deviceTag ?? '';
   const idx = new Map(p.ladder.rungs.map((r, i) => [r.id, i + 1] as const));
@@ -128,7 +133,7 @@ export function programInfo(p: ProjectSnapshot): ProgramInfo {
     if (permissives.length) parts.push(permissives.join(' AND '));
     return parts.join(', with ');
   };
-  return { name, ref, kind, device, rungNo, reads, writes, element, logic, conditionText };
+  return { name, shown, ref, kind, device, rungNo, reads, writes, element, logic, conditionText };
 }
 
 const ACTION: Record<'OUT' | 'SET' | 'RST', string> = { OUT: 'Energized while', SET: 'Latched ON (SET) when', RST: 'Unlatched (RST) when' };
