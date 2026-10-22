@@ -1,3 +1,4 @@
+import { recordConversion } from '../tidy/changeLog';
 import { Link } from 'react-router-dom';
 import { PLC_PROFILES } from '../core/profiles';
 import { useProjectStore } from '../../store/useProjectStore';
@@ -19,8 +20,9 @@ export default function PlcSetupPage() {
   const short = hardwareShortfall(cpu.id, modules, io);
 
   // Nothing fits: the CPU is still set and the shortfall is shown below (never applied silently).
-  const choose = (plcId: string, cpuId: string) => remapped(choosePlc(plcId, cpuId));
-  const chooseBrand = (plcId: string) => remapped(choosePlcBrand(plcId));
+  // A move to another brand is in the session's Change report.
+  const choose = (plcId: string, cpuId: string) => remapped(recordConversion(plcId, () => choosePlc(plcId, cpuId)));
+  const chooseBrand = (plcId: string) => remapped(recordConversion(plcId, () => choosePlcBrand(plcId)));
 
   return (
     <>

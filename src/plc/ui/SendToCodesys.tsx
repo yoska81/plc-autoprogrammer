@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ArrowPathIcon, CheckCircleIcon, ExclamationTriangleIcon, PaperAirplaneIcon, StopIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import BridgeFailed from './BridgeFailed';
-import { desktopBridge, type CodesysDetect } from '../../desktop/bridge';
+import { plcBridges } from '../../desktop/plcHelper';
+import { type CodesysDetect } from '../../desktop/bridge';
 import { codesysProgram } from '../codesys/codesysObjects';
 import { useProgramStore } from '../../store/useProgramStore';
 import { tiaProjectName } from '../tia/tiaSend';
@@ -32,7 +33,7 @@ const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
  * refuses a download without that confirm.
  */
 export default function SendToCodesys({ profileId }: { profileId: string }) {
-  const codesys = desktopBridge()?.codesys;
+  const codesys = plcBridges()?.codesys;
   const stCode = useProgramStore((st) => st.generatedCode);
   const projectName = useProgramStore((st) => st.projectName);
   const [open, setOpen] = useState(false);

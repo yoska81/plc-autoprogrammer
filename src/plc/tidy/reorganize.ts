@@ -487,3 +487,26 @@ export function describeChanges(plan: ReorgPlan, chosen: Set<SectionId>, preview
     return [`${REMOVAL_LABEL[x.id]}: ${c.removed.toLocaleString('en-US')} removed${c.keptBack ? `, ${c.keptBack.toLocaleString('en-US')} kept (a rung that stays still uses what they set)` : ''}`];
   });
 }
+
+/** For each rung kept back: a rung that stays and still reads what it sets (the reason it stays). */
+export function keptBackReasons(l: LadderProgram, plan: ReorgPlan, chosen: Set<SectionId>): Map<string, string> {
+  const { drop, keptBack } = removalPreview(l, plan, chosen);
+  const out = new Map<string, string>();
+  for (const id of keptBack) {
+    const r = l.rungs.find((x) => x.id === id);
+    if (!r) continue;
+    const t = new Set(touchedBy(r));
+    const reader = l.rungs.find((x) => x.id !== id && !drop.has(x.id) && realReads(x).some((a) => t.has(a)));
+    if (reader) out.set(id, reader.id);
+  }
+  return out;
+}
+
+/** The plain reason a removal section gives for each rung it takes out. */
+export const REMOVAL_REASON: Partial<Record<SectionId, string>> = {
+  'remove-internal': 'nothing in the program, the outputs or the screen uses what it sets',
+  'remove-registers': 'it only fills a data register nothing in the project reads',
+  'remove-never': 'it can never switch on (it waits for a signal nothing sets)',
+  'remove-uncalled': 'the old PLC never runs it (no routine calls it)',
+  'remove-jumped': 'the old PLC always jumps over it',
+};

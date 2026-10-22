@@ -47,6 +47,8 @@ import { checkEquivalenceOffThread } from '../../tidy/equivalenceOffThread';
 import { explainWithAi } from '../../tidy/explain';
 import { explainSummaries, saveExplainSummaries } from '../../tidy/explainStore';
 import ExplainPanel from './ExplainPanel';
+import { commentsEntry, projectChanges, reorganizeEntry, simplifyEntry, stageChange, useChangeLog } from '../../tidy/changeLog';
+import { downloadChangeReport } from '../../tidy/changeReportDownload';
 import { rewriteCandidates, simplifyBlocks, type RewriteCandidate } from '../../tidy/rewrite';
 import SpeakButton from '../../../voice/SpeakButton';
 import { usePlcNames } from '../ladder/plcNames';
@@ -115,6 +117,16 @@ function IssueList({ issues, rungNumber, plcName, onRebuild, names, users }: { i
         </ul>
       )}
     </div>
+  );
+}
+
+/** "Also make a change report": after the change is approved, the report of the session so far is downloaded. */
+function ReportBox({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-2 text-gray-700">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      Also make a change report (PDF and Word) once it is approved
+    </label>
   );
 }
 
@@ -318,7 +330,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   };
 
   /** Reorganize: the transforms found (each with its checkbox), then the chosen ones checked in the simulator. */
-  const [reorg, setReorg] = useState<{ plan: ReorgPlan; chosen: Set<SectionId> } | null>(null);
+  const [reorg, setReorg] = useState<{ plan: ReorgPlan; chosen: Set<SectionId>; report?: boolean } | null>(null);
+  const changeCount = projectChanges(useChangeLog((st) => st.entries)).length;
   const reorgPreview = useMemo(() => (reorg ? removalPreview(useProgramStore.getState().ladder, reorg.plan, reorg.chosen) : null), [reorg]);
   const openReorganize = () => {
     const plan = planReorganize(collectProject());
@@ -327,6 +340,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const runReorganize = () => {
     if (!reorg) return;
     const { plan, chosen } = reorg;
+    const report = Boolean(reorg.report);
     setReorg(null);
     return runAI('program-revise', 'Reorganize program', async (signal, stage) => {
       const p = collectProject();
@@ -337,7 +351,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       const check = await checkEquivalenceOffThread(plcBaseline(p, plan, chosen), program, { observe: [...externalAddresses(p)], plant, profileId: p.profile.id }, {
         signal, onProgress: (done, total) => stage(`checking in the simulator, sequence ${done + 1} of ${total}`),
       });
-      return { program, check, before: p.ladder.rungs.length, changes: describeChanges(plan, chosen, removalPreview(p.ladder, plan, chosen)) };
+      return { p, program, check, before: p.ladder.rungs.length, changes: describeChanges(plan, chosen, removalPreview(p.ladder, plan, chosen)) };
     }, (r) => {
       const st = useProgramStore.getState();
       st.addChat({ role: 'user', text: 'Reorganize the program.' });
@@ -346,11 +360,12 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       const text = `Reorganized (${r.before.toLocaleString('en-US')} rungs → ${r.program.rungs.length.toLocaleString('en-US')}):\n${r.changes.map((c) => `- ${c}`).join('\n')}\n\nChecked in the simulator: ${said}\n\nThe wiring, the I/O addresses and what the screen shows did not move; instructions kept from the old PLC stay as they were. Approve to keep it; the program before it stays in History.`;
       st.addChat({ role: 'assistant', text });
       st.setProposal({ program: r.program, explanation: text, reasoning: null });
+      stageChange(reorganizeEntry(r.p, plan, chosen, r.program, r.check), report);
     }, false);
   };
 
   /** Simplify blocks with AI: the blocks it may rewrite (each with its checkbox); each rewrite checked before it is kept. */
-  const [simp, setSimp] = useState<{ cands: RewriteCandidate[]; chosen: Set<string> } | null>(null);
+  const [simp, setSimp] = useState<{ cands: RewriteCandidate[]; chosen: Set<string>; report?: boolean } | null>(null);
   const openSimplify = () => {
     const cands = rewriteCandidates(useProgramStore.getState().ladder);
     setSimp({ cands, chosen: new Set(cands.filter((c) => c.ok).map((c) => c.id)) });
@@ -358,6 +373,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const runSimplify = () => {
     if (!simp) return;
     const chosen = simp.cands.filter((c) => simp.chosen.has(c.id)).map((c) => c.id);
+    const report = Boolean(simp.report);
     setSimp(null);
     return runAI('program-revise', 'Simplify blocks with AI', async (signal, stage) => {
       let step = '';
@@ -373,6 +389,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       const text = `Rewritten by the AI and checked in the simulator (${r.before} rungs → ${r.program.rungs.length}):\n${r.kept.map((k) => `- ${k.name}: ${k.rungsBefore} → ${k.rungsAfter} rungs, ${k.before} → ${k.after} parts. ${k.summary.split(' Not simulated')[0]} ${k.explanation.split('\n')[0]}`).join('\n')}${r.final ? `\nAll of them together: ${r.final.differences.length ? 'different' : r.final.sequences ? `same behaviour in ${r.final.sequences} test sequences (0 differences)` : ''}.` : ''}${dropped}\nAddresses, the I/O and what the HMI reads did not move. Approve to keep it; the current program stays in History.`;
       st.addChat({ role: 'assistant', text });
       st.setProposal({ program: r.program, explanation: text, reasoning: null });
+      stageChange(simplifyEntry(r), report);
     });
   };
 
@@ -399,6 +416,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       const text = `Comments ${rewrite ? 'rewritten' : 'added'}: ${parts}${r.byAi ? ` (${r.byAi} written by the AI, the rest from the I/O names and the cross-reference)` : ' (from the I/O names and the cross-reference)'}. Only comments change: the logic and the addresses are the same${rewrite ? '' : ', and the comments already there are kept'}.${r.notes.length ? `\n${r.notes.join('\n')}` : ''}`;
       st.addChat({ role: 'assistant', text });
       st.setProposal({ program: r.program, explanation: text, reasoning: null });
+      stageChange(commentsEntry(st.ladder, r.program, n, r.byAi));
     }, false);
   };
 
@@ -616,6 +634,11 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 <button onClick={() => (reorg ? setReorg(null) : openReorganize())} disabled={isGenerating || Boolean(proposal)} aria-expanded={Boolean(reorg)}
                   title="Rebuild the same behaviour in a simpler shape: grouped by machine function, dead code out, names and comments; checked in the simulator before you approve"
                   className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Reorganize program…</button>
+                {changeCount > 0 && (
+                  <button onClick={() => void downloadChangeReport()} data-testid="change-report"
+                    title="A PDF and a Word file of what changed in this session: what was converted, deleted and changed, and how each change was checked"
+                    className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50">Change report ({changeCount} change{changeCount === 1 ? '' : 's'}): PDF and Word</button>
+                )}
               </div>
             )}
             {simp && !proposal && (
@@ -628,6 +651,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                     <span><span className="font-medium text-gray-800">{c.name}</span> <span className="text-gray-500">({c.rungs} rung{c.rungs === 1 ? '' : 's'}){c.why ? `: ${c.why}` : ''}</span></span>
                   </label>
                 ))}
+                <ReportBox checked={Boolean(simp.report)} onChange={(v) => setSimp({ ...simp, report: v })} />
                 <button onClick={runSimplify} disabled={!simp.chosen.size || isGenerating} className="w-full py-1.5 bg-brand-600 text-white rounded font-medium hover:bg-brand-700 disabled:opacity-50">Rewrite and check {simp.chosen.size} block{simp.chosen.size === 1 ? '' : 's'}</button>
               </div>
             )}
@@ -648,6 +672,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                     <ul className="list-disc ml-5">{reorg.plan.findings.slice(0, 6).map((f, i) => <li key={i}>{f}</li>)}{reorg.plan.findings.length > 6 && <li>… and {reorg.plan.findings.length - 6} more</li>}</ul>
                   </div>
                 )}
+                <ReportBox checked={Boolean(reorg.report)} onChange={(v) => setReorg({ ...reorg, report: v })} />
                 <button onClick={runReorganize} disabled={!reorg.chosen.size || isGenerating} className="w-full py-1.5 bg-brand-600 text-white rounded font-medium hover:bg-brand-700 disabled:opacity-50">Check and propose</button>
               </div>
             )}

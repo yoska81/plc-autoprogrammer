@@ -47,17 +47,26 @@ const para = (t: string, style?: string, indent = false) =>
   `<w:p>${style || indent ? `<w:pPr>${style ? `<w:pStyle w:val="${style}"/>` : ''}${indent ? '<w:ind w:left="360" w:hanging="200"/>' : ''}</w:pPr>` : ''}<w:r><w:t xml:space="preserve">${esc(t)}</w:t></w:r></w:p>`;
 
 export async function buildExplanationDocx(x: ProgramExplanation): Promise<Blob> {
-  const { default: JSZip } = await import('jszip');
-  const body: string[] = [para(x.title, 'Title'), ...x.overview.map((t) => para(t))];
+  const parts: DocPart[] = [{ title: x.title }, ...x.overview.map((t) => ({ p: t }))];
   for (const b of x.blocks) {
-    body.push(para(`${b.name} (${b.rungs})`, 'Heading1'));
-    if (b.aiSummary) body.push(para(b.aiSummary));
-    body.push(para(b.what));
+    parts.push({ h1: `${b.name} (${b.rungs})` });
+    if (b.aiSummary) parts.push({ p: b.aiSummary });
+    parts.push({ p: b.what });
     for (const [title, items] of blockSections(b)) {
-      body.push(para(title, 'Heading2'));
-      for (const i of items) body.push(para(`• ${i}`, undefined, true));
+      parts.push({ h2: title });
+      for (const i of items) parts.push({ li: i });
     }
   }
+  return docxFrom(parts);
+}
+
+/** One piece of a Word document: the title, a heading (two levels), a paragraph or a bulleted line. */
+export type DocPart = { title: string } | { h1: string } | { h2: string } | { p: string } | { li: string };
+
+/** A Word .docx from its pieces (a minimal WordprocessingML package: styles for the title and two heading levels). */
+export async function docxFrom(parts: DocPart[]): Promise<Blob> {
+  const { default: JSZip } = await import('jszip');
+  const body = parts.map((x) => ('title' in x ? para(x.title, 'Title') : 'h1' in x ? para(x.h1, 'Heading1') : 'h2' in x ? para(x.h2, 'Heading2') : 'li' in x ? para(`• ${x.li}`, undefined, true) : para(x.p)));
   const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
   const zip = new JSZip();
   zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>');

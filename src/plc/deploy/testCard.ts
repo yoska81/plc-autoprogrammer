@@ -18,6 +18,27 @@ export interface TestCardBrand {
 /** Where the desktop app keeps the logs (Open log folder opens it). */
 export const LOGS_FOLDER = '%APPDATA%\\ISA Auto Programmer\\logs';
 
+/**
+ * From the web page (tools/plc-helper): the same flows, run by the ISA PLC Helper that comes with the desktop app.
+ * In the Claude desktop app; or, in any browser, the project handed over to the desktop app through Downloads.
+ */
+export const WEB_ROUTE = {
+  once: [
+    'Install the ISA Auto Programmer app (the ISA PLC Helper comes with it) and the PLC software of your card below.',
+    'In the app: Settings › Send from the web page › Connect the Claude app. Then close the Claude app and open it again.',
+  ],
+  inClaude: [
+    'Open the web page in the Claude desktop app, open a project and press Send to PLC software on the PLC program page.',
+    'The first time, the Claude app asks whether the page may use the ISA PLC Helper: allow it.',
+    'Then follow the clicks of your card below, the same as in the app.',
+  ],
+  anyBrowser: [
+    'In any browser, press Send to PLC software, then Send to the desktop app: the project goes into your Downloads.',
+    'Open the ISA Auto Programmer app on this PC; it picks up the file and asks to open it. Then press Send to PLC software there.',
+  ],
+  log: 'plc-helper.log',
+};
+
 const START = 'Open a project with this PLC, go to the PLC program page and press Send to PLC software.';
 const AT_MACHINE = 'Only at the machine, and only if you want to: Download… shows a confirm screen; tick the boxes, then Download now.';
 

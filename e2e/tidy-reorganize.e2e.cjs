@@ -30,7 +30,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByRole('button', { name: 'Reorganize program…' }).click();
   const panel = page.getByRole('group', { name: 'Reorganize' });
   await panel.waitFor({ timeout: 10000 });
-  check(await panel.getByRole('checkbox').count() === 2, 'only what has something to do is listed, each with its checkbox (the example: one long rung to split, and grouping)');
+  check(await panel.getByRole('checkbox').count() - await panel.getByLabel(/Also make a change report/).count() === 2, 'only what has something to do is listed, each with its checkbox (the example: one long rung to split, and grouping)');
   check(!(await panel.getByLabel(/Split 1 long rung/).isChecked().catch(() => true)), 'splitting long rungs is off by default');
   check(await panel.getByLabel(/Group the rungs by machine part/).isChecked(), 'grouping is on by default');
   await panel.getByRole('button', { name: 'Check and propose' }).click();

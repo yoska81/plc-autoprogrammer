@@ -73,7 +73,7 @@ const REWRITE = {
   await page.getByRole('button', { name: 'Simplify blocks with AI…' }).click();
   const panel = page.getByRole('group', { name: 'Simplify blocks' });
   await panel.waitFor({ timeout: 10000 });
-  check(await panel.getByRole('checkbox').count() === 3, 'a checkbox per block');
+  check(await panel.getByRole('checkbox').count() - await panel.getByLabel(/Also make a change report/).count() === 3, 'a checkbox per block');
   check(await panel.getByRole('checkbox').nth(2).isDisabled() && await panel.getByText(/original PLC/).count() === 1, 'the block with a kept instruction is not offered, with the reason');
   await panel.getByRole('button', { name: 'Rewrite and check 2 blocks' }).click();
   const approve = page.getByRole('button', { name: 'Approve', exact: true });

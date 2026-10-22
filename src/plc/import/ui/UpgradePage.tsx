@@ -22,6 +22,7 @@ import { choosePlcBrand } from '../../core/choosePlc';
 import { notify } from '../../../store/useNoticeStore';
 import { useHmiStore } from '../../../store/useHmiStore';
 import { remakeCoverageAll, remakeCoverageText, withServoPlaceholders } from '../remake';
+import { recordConversion } from '../../tidy/changeLog';
 
 /** A kept instruction in plain words ("1 call to another drawing"). */
 function keptPhrase(what: string, n: number): string {
@@ -79,16 +80,22 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
     try { await navigator.clipboard.writeText(text); notify('Coverage numbers copied: paste them in a message.'); } catch { notify('Select the coverage numbers below and copy them.'); }
   };
   const fromReadOnly = Boolean(original && getProfile(original.plcId).readOnly && !readOnly);
+  // "Also make a change report": with the move, the report of the session so far (the move included) is downloaded.
+  const [moveReport, setMoveReport] = useState(false);
   // Servo axes the program drives through motion registers: a placeholder block each on the new PLC (no logic).
   const [servoBlocks, setServoBlocks] = useState(true);
   const moveTo = (plcId: string) => {
-    const notes = choosePlcBrand(plcId);
-    if (servoBlocks) {
-      const axes = useProjectStore.getState().networkAxes ?? [];
-      const { ladder: now, editLadder } = useProgramStore.getState();
-      const next = withServoPlaceholders(now, plcId, (c, a) => axes.find((x) => x.circuit === c && x.axis === a)?.name || undefined);
-      if (next.rungs.length !== now.rungs.length) { editLadder(next); notes.push(`${next.rungs.length - now.rungs.length} servo axis placeholder block${next.rungs.length - now.rungs.length === 1 ? '' : 's'} added: set the axes up on the new PLC.`); }
-    }
+    const notes = recordConversion(plcId, () => {
+      const n = choosePlcBrand(plcId);
+      if (servoBlocks) {
+        const axes = useProjectStore.getState().networkAxes ?? [];
+        const { ladder: now, editLadder } = useProgramStore.getState();
+        const next = withServoPlaceholders(now, plcId, (c, a) => axes.find((x) => x.circuit === c && x.axis === a)?.name || undefined);
+        const added = next.rungs.length - now.rungs.length;
+        if (added) { editLadder(next); n.push(`${added} servo axis placeholder block${added === 1 ? '' : 's'} added: set the axes up on the new PLC.`); }
+      }
+      return n;
+    }, moveReport);
     if (notes.length) notify(`The I/O was renumbered for the new PLC; the program and the HMI followed. ${notes.join(' ')}`);
   };
 
@@ -185,6 +192,10 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                             Add a placeholder block per servo axis (no logic: what to set up on the new PLC, with the axis's tags)
                           </label>
                         )}
+                        <label className="flex items-center gap-2 text-xs text-gray-700">
+                          <input type="checkbox" data-testid="upgrade-remake-report" checked={moveReport} onChange={(e) => setMoveReport(e.target.checked)} />
+                          Also make a change report (PDF and Word) with the move
+                        </label>
                         <p className="text-xs text-gray-500">
                           <button data-testid="upgrade-remake-copy" onClick={() => void copyCoverage()} className="underline hover:text-brand-700">Copy coverage numbers</button>
                           {' '}(counts only, no names or values: paste them in a message to help improve the conversion)

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowPathIcon, CheckCircleIcon, ExclamationTriangleIcon, PaperAirplaneIcon, StopIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import BridgeFailed from './BridgeFailed';
-import { desktopBridge, type Studio5000Detect } from '../../desktop/bridge';
+import { plcBridges } from '../../desktop/plcHelper';
+import { type Studio5000Detect } from '../../desktop/bridge';
 import { collectProject } from '../../deliverables/collect';
 import { studioImport } from '../studio5000/studioSend';
 
@@ -25,7 +26,7 @@ const part = (xpath: string) => /@Name='([^']+)'/.exec(xpath)?.[1] ?? xpath.repl
  * ticked; Run mode afterwards only when ticked. The bridge refuses a download without that confirm.
  */
 export default function SendToStudio5000({ profileId }: { profileId: string }) {
-  const s5k = desktopBridge()?.studio5000;
+  const s5k = plcBridges()?.studio5000;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [progress, setProgress] = useState('');
