@@ -43,9 +43,9 @@ for (const c of all) {
   const bad = new Set(s.issues.filter((i) => i.severity === 'error' && i.rungId && !/cannot run on|not run, rewrite by hand|not converted/i.test(i.message)).map((i) => i.rungId));
   const raw = s.ladder.rungs.filter((r) => [...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW'));
   assert.equal(c.converted, s.ladder.rungs.filter((r) => !raw.includes(r) && !bad.has(r.id)).length, `${c.plcId}: as many rungs convert as after the move`);
-  // The demo: 11 rungs, one with the drawing call (SEE) and an instruction the reader does not know.
+  // The demo: 11 rungs, one with an instruction the reader does not know (its drawing call is the drawing itself, mpe720.ts).
   assert.deepEqual([c.rungs, c.converted, c.percent], [11, 10, 90], `${c.plcId}: ${JSON.stringify(c)}`);
-  assert.deepEqual(c.kept.map((k) => k.what).sort(), ['SEE', 'unknown instruction']);
+  assert.deepEqual(c.kept.map((k) => k.what).sort(), ['unknown instruction']);
   assert.deepEqual(c.errors, [], `${c.plcId}: no checker errors (generic ST reads the program's timers as timers)`);
 }
 load();
