@@ -1,0 +1,159 @@
+import { useEffect, useRef, useState } from 'react';
+import { ArrowPathIcon, CheckCircleIcon, ExclamationTriangleIcon, PaperAirplaneIcon, StopIcon, XMarkIcon } from '@heroicons/react/20/solid';
+import { desktopBridge, type Studio5000Detect } from '../../desktop/bridge';
+import { collectProject } from '../../deliverables/collect';
+import { studioImport } from '../studio5000/studioSend';
+
+interface Imported { project: string; imported: string[] }
+
+const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+/** "Controller/Programs/Program[@Name='MainProgram']" → "MainProgram". */
+const part = (xpath: string) => /@Name='([^']+)'/.exec(xpath)?.[1] ?? xpath.replace(/^Controller\//, '').replace('AddOnInstructionDefinitions', 'Add-On Instructions').replace('DataTypes', 'data types').replace('Tags', 'controller tags');
+
+/**
+ * "Send to Studio 5000": the Windows desktop app puts the program into the user's Studio 5000 Logix Designer project
+ * through Rockwell's Logix Designer SDK (the user's licence; the Studio 5000 bridge runs the SDK's Python client,
+ * tools/studio5000-bridge). Shown for a Logix project in the desktop app only. 1. Check this PC (Logix Designer, the
+ * SDK, its Python); where the SDK is missing: what to install, and meanwhile the .L5X opened in Studio 5000 (it makes
+ * a new project from it). 2. The user's project (.ACD): the app works on its copy next to it (<name>_ISA.ACD),
+ * theirs is only read. 3. The program in: the data types, the controller tags and MainProgram imported over what is
+ * there (the controller, its I/O configuration and its tasks stay the user's); then Open in Studio 5000.
+ */
+export default function SendToStudio5000({ profileId }: { profileId: string }) {
+  const s5k = desktopBridge()?.studio5000;
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [progress, setProgress] = useState('');
+  const [found, setFound] = useState<Studio5000Detect | null>(null);
+  const [acd, setAcd] = useState<string | null>(null);
+  const [imported, setImported] = useState<Imported | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [logPath, setLogPath] = useState('');
+  // Stop pressed between the bridge calls (while the L5X is written): the import does not start
+  const stopAsked = useRef(false);
+
+  useEffect(() => (open && s5k ? s5k.onProgress((p) => setProgress(p.text)) : undefined), [open, s5k]);
+
+  if (!s5k || profileId !== 'logix') return null;
+
+  const step = async <T,>(name: string, run: () => Promise<T>): Promise<T | null> => {
+    setBusy(name); setError(null); setProgress('');
+    try { return await run(); }
+    catch (err) { setError(message(err)); return null; }
+    finally { setBusy(null); setProgress(''); s5k.logPath().then(setLogPath, () => undefined); }
+  };
+  const check = async () => { setFound(null); setImported(null); setFound(await step('check', () => s5k.call('detect'))); };
+  const show = () => { setOpen(true); void check(); };
+  const pick = async () => { const p = await s5k.pickProject(); if (p) { setAcd(p); setImported(null); } };
+  /** The L5X written for the import (and for opening in Studio 5000 by hand). */
+  const writeL5x = async () => {
+    const p = collectProject();
+    const s = studioImport(p);
+    const { path } = await s5k.call('writeL5x', { name: p.fileBase, text: s.l5x }) as { path: string };
+    return { path, xpaths: s.xpaths };
+  };
+  const openL5x = () => void step('open', async () => { const { path } = await writeL5x(); return s5k.call('open', { file: path }); });
+  const send = async () => {
+    setImported(null);
+    stopAsked.current = false;
+    const r = await step('import', async () => {
+      const { path, xpaths } = await writeL5x();
+      if (stopAsked.current) throw new Error('Stopped, as you asked. Your own Studio 5000 project was not changed.');
+      return s5k.call('import', { acd, l5x: path, xpaths }) as Promise<Imported>;
+    });
+    if (r) setImported(r);
+  };
+  const stop = () => { stopAsked.current = true; void s5k.call('stop').catch(() => undefined); setProgress('Stopping…'); };
+
+  const sub = 'rounded border border-steel-300 px-2.5 py-1 text-xs font-medium text-steel-800 hover:bg-steel-50 disabled:opacity-40';
+  return (
+    <>
+      <button onClick={show} data-testid="send-to-studio5000" title="Put the program into your Studio 5000 project on this PC"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded border border-brand-300 bg-white text-brand-800 hover:bg-brand-50">
+        <PaperAirplaneIcon className="h-4 w-4" /> Send to Studio 5000
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/40 p-6" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setOpen(false); }}>
+          <div role="dialog" aria-label="Send to Studio 5000" className="w-full max-w-2xl rounded bg-white shadow-xl">
+            <div className="flex items-start gap-3 border-b border-steel-200 px-5 py-3">
+              <div className="flex-1">
+                <h2 className="text-base font-semibold text-steel-900">Send to Studio 5000</h2>
+                <p className="text-xs text-steel-500">The app puts the program into your Studio 5000 project with Rockwell's Logix Designer SDK. Your own project is never changed: the app works on its copy next to it.</p>
+              </div>
+              <button onClick={() => setOpen(false)} disabled={Boolean(busy)} aria-label="Close" className="rounded p-1 text-steel-400 hover:bg-steel-100 hover:text-steel-700 disabled:opacity-40"><XMarkIcon className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-4 px-5 py-4 text-sm">
+              {busy && (
+                <div className="flex items-center gap-3">
+                  <p className="flex flex-1 items-center gap-2 text-steel-600" role="status"><ArrowPathIcon className="h-4 w-4 animate-spin" /> {progress || 'Working…'}</p>
+                  {busy === 'import' && <button onClick={stop} data-testid="studio5000-stop" className="inline-flex items-center gap-1 rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"><StopIcon className="h-4 w-4" /> Stop</button>}
+                </div>
+              )}
+
+              <section className="space-y-2" data-testid="studio5000-check">
+                <h3 className="font-semibold text-steel-900">1. Check this PC</h3>
+                {found && (
+                  <>
+                    <ul className="space-y-1 text-steel-700">
+                      <Line ok={found.logix.length > 0}>{found.logix.length ? `${found.logix[0].name} (${found.logix[0].version})` : 'Studio 5000 Logix Designer not found'}</Line>
+                      <Line ok={Boolean(found.sdk)}>{found.sdk ? 'Logix Designer SDK' : 'Logix Designer SDK not installed'}</Line>
+                      {found.sdk && <Line ok={Boolean(found.python)}>{found.python ? `Its Python client (${found.python})` : 'Its Python client not installed'}</Line>}
+                    </ul>
+                    {!found.ready && (
+                      <div className="space-y-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-900" data-testid="studio5000-steps">
+                        <ol className="ml-5 list-decimal space-y-1">{found.steps.map((x, i) => <li key={i}>{x}</li>)}</ol>
+                        {found.logix.length > 0 && <button onClick={openL5x} disabled={Boolean(busy)} data-testid="studio5000-open-l5x" className={sub}>Open the .L5X in Studio 5000</button>}
+                      </div>
+                    )}
+                  </>
+                )}
+                <button onClick={() => void check()} disabled={Boolean(busy)} className={sub}>Check again</button>
+              </section>
+
+              {found?.ready && (
+                <section className="space-y-2" data-testid="studio5000-project">
+                  <h3 className="font-semibold text-steel-900">2. Your project</h3>
+                  <p className="text-xs text-steel-500">Your Studio 5000 project (.ACD) with your controller and its I/O. The app copies it next to it ({acd ? <span className="font-mono">{acd.replace(/\.ACD$/i, '_ISA.ACD')}</span> : '<name>_ISA.ACD'}) and works on the copy. Close it in Studio 5000 first.</p>
+                  <button onClick={() => void pick()} disabled={Boolean(busy)} data-testid="studio5000-pick" className={sub}>Choose my project…</button>
+                  {acd && <p className="font-mono text-xs text-steel-700" data-testid="studio5000-acd">{acd}</p>}
+                </section>
+              )}
+
+              {found?.ready && (
+                <section className="space-y-2" data-testid="studio5000-send">
+                  <h3 className="font-semibold text-steel-900">3. Put the program in</h3>
+                  <p className="text-xs text-steel-500">The program's data types, controller tags and MainProgram go in over what is there; the controller, its I/O configuration and its tasks stay yours.</p>
+                  <button onClick={() => void send()} disabled={Boolean(busy) || !acd} data-testid="studio5000-send-button"
+                    className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-40">Put the program in</button>
+                  {imported && (
+                    <div className="space-y-1 text-steel-700" data-testid="studio5000-imported">
+                      <p><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />In <span className="font-mono text-xs">{imported.project}</span>: {imported.imported.map(part).join(', ')}.</p>
+                      <p className="text-xs text-steel-500">Studio 5000 checks the program when you open it (Logic › Verify Controller).</p>
+                      <button onClick={() => void step('open', () => s5k.call('open', { file: imported.project }))} disabled={Boolean(busy)} data-testid="studio5000-open" className={sub}>Open in Studio 5000</button>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {error && (
+                <div role="alert" className="space-y-1 rounded border border-red-200 bg-red-50 p-3 text-red-900" data-testid="studio5000-failed">
+                  <p>{error}</p>
+                  <p className="text-xs">Send this log to support: <span className="select-all font-mono">{logPath || 'studio5000-bridge.log'}</span><button onClick={() => void s5k.showLog().catch(() => undefined)} className="ml-2 rounded border border-red-300 bg-white px-2 py-0.5 font-medium hover:bg-red-100">Open folder</button></p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Line({ ok, children }: { ok: boolean; children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      {ok ? <CheckCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-green-600" aria-label="OK" /> : <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-label="Missing" />}
+      <span>{children}</span>
+    </li>
+  );
+}
