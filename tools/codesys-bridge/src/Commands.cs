@@ -1,7 +1,8 @@
 // The commands of the CODESYS bridge:
 //   ping · detect (CODESYS installed: versions, profiles) · build (the program into a CODESYS project, then a build:
 //   the user's project is opened and saved as the app's copy, never changed; or a new project) · open (the project in
-//   CODESYS, for the user) · stop (urgent: ends the CODESYS of a running job).
+//   CODESYS, for the user) · download (only with the app's confirm screen: confirmed; online change unless the PLC
+//   may stop) · stop (urgent: ends the CODESYS of a running job).
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -70,6 +71,34 @@ namespace CodesysBridge
                 return jobs.Run(install, job, pr, cts.Token);
                 }
                 finally { current = null; }
+                }
+            });
+            p.On("download", (a, pr) =>
+            {
+                // A download changes what runs on the machine: only from the app's confirm screen.
+                if (!(a.TryGetValue("confirmed", out object c) && c is bool yes && yes)) throw new BridgeError("A download needs the confirm screen in the app (nothing was sent to the PLC).");
+                string file = Str(a, "project") ?? throw new BridgeError("Put the program in and build first: there is no project to download.");
+                if (!pc.Exists(file)) throw new BridgeError($"There is no CODESYS project at {file}: put the program in and build again.");
+                string ip = Str(a, "ip");
+                if (ip == null || !System.Text.RegularExpressions.Regex.IsMatch(ip, @"^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$")) throw new BridgeError("Enter the PLC's IP address (like 192.168.0.10).");
+                bool Flag(string k) => a.TryGetValue(k, out object v) && v is bool b && b;
+                var job = new Dictionary<string, object>
+                {
+                    ["cmd"] = "download", ["confirmed"] = true, ["project"] = file, ["ip"] = ip,
+                    ["stopAllowed"] = Flag("stopAllowed"), ["startAfter"] = Flag("startAfter"),
+                    ["user"] = Str(a, "user"), ["password"] = a.TryGetValue("password", out object pw) && pw is string ps && ps.Length > 0 ? ps : null,
+                };
+                Log.Write($"download confirmed: {file} to {ip}, stop {job["stopAllowed"]}, start {job["startAfter"]}, user {(job["user"] != null ? "given" : "none")}, password {(job["password"] != null ? "given" : "none")}");
+                using (var cts = new CancellationTokenSource())
+                {
+                    current = cts;
+                    try
+                    {
+                        var install = Install(a);
+                        pr($"Starting CODESYS {install.Version} to download (in the background)…");
+                        return jobs.Run(install, job, pr, cts.Token);
+                    }
+                    finally { current = null; }
                 }
             });
             p.On("open", (a, pr) =>

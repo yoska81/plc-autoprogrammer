@@ -165,6 +165,32 @@ static class Tests
             Eq(user, pc.Opened.Single());
         });
 
+        Test("download: never without the confirm screen or a valid address; the choices to the job; the job file (password) removed", () =>
+        {
+            var dir = TempDir();
+            var pc = new FakePc().With(@"C:\Program Files", "CODESYS 3.5.19.20", "CODESYS V3.5 SP19");
+            string jobPath = null; Dictionary<string, object> job = null;
+            pc.Codesys = j => { jobPath = j; job = (Dictionary<string, object>)Json.Parse(File.ReadAllText(j)); return Answers("{\"ok\":true,\"result\":{\"state\":\"run\",\"full\":true}}")(j); };
+            string built = Path.Combine(dir, "Line_ISA.project");
+            File.WriteAllText(built, "");
+            var output = new StringWriter();
+            var p = Commands.Register(new Protocol(output), pc, new Jobs(pc, Path.Combine(dir, "jobs"), Script(dir)) { PollMs = 1 }, dir);
+            string P = Json.Write(built);
+            var m = Talk(p, output,
+                "{\"id\":1,\"cmd\":\"download\",\"args\":{\"project\":" + P + ",\"ip\":\"192.168.0.10\"}}",
+                "{\"id\":2,\"cmd\":\"download\",\"args\":{\"confirmed\":\"yes\",\"project\":" + P + ",\"ip\":\"192.168.0.10\"}}",
+                "{\"id\":3,\"cmd\":\"download\",\"args\":{\"confirmed\":true,\"project\":" + P + ",\"ip\":\"192.168.0.300\"}}",
+                "{\"id\":4,\"cmd\":\"download\",\"args\":{\"confirmed\":true,\"project\":\"C:\\\\gone.project\",\"ip\":\"192.168.0.10\"}}",
+                "{\"id\":5,\"cmd\":\"download\",\"args\":{\"confirmed\":true,\"project\":" + P + ",\"ip\":\"192.168.0.10\",\"stopAllowed\":true,\"user\":\"admin\",\"password\":\"s3cret\"}}");
+            True(((string)Answer(m, 1)["error"]).Contains("confirm screen") && ((string)Answer(m, 2)["error"]).Contains("confirm screen"), "no confirm, no download");
+            True(((string)Answer(m, 3)["error"]).Contains("IP address"), (string)Answer(m, 3)["error"]);
+            True(((string)Answer(m, 4)["error"]).StartsWith("There is no CODESYS project"), (string)Answer(m, 4)["error"]);
+            Eq(1, pc.Started.Count, "CODESYS started once, for the confirmed one");
+            Eq("run", ((Dictionary<string, object>)Answer(m, 5)["result"])["state"]);
+            Eq(true, job["confirmed"]); Eq(true, job["stopAllowed"]); Eq(false, job["startAfter"]); Eq("s3cret", job["password"]); Eq("192.168.0.10", job["ip"]);
+            True(!File.Exists(jobPath), "the job file (with the password) is removed");
+        });
+
         Test("commands: no CODESYS says how to get it", () =>
         {
             var output = new StringWriter();
