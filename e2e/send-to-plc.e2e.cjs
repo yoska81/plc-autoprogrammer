@@ -13,6 +13,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 const FAKE = () => {
   window.isaDesktop = {
     isDesktop: true, version: 'test', print: async () => ({ ok: true }),
+    onOpenFile: (cb) => { window.__openFile = cb; return () => { window.__openFile = null; }; },
     click: {
       call: async () => ({ ready: false, installs: [], running: false, steps: ['Install CLICK Programming Software from AutomationDirect.'] }),
       logPath: async () => 'C:\\logs\\click-bridge.log',
@@ -80,6 +81,17 @@ const FAKE = () => {
   check(/^Connected Components Workbench has no way for another program to put a program into it/.test(text) && /Press Load into PLC instead/.test(text), 'Micro800: said plainly, Load into PLC instead');
   await dialog.getByRole('button', { name: 'Close' }).click();
   check(await dialog.count() === 0, 'closes');
+
+  // A project handed over from the web page (electron/sendWatch.cjs): opened on the Program page, to send.
+  await page.goto(BASE + '/spec');
+  await page.evaluate(async () => {
+    const { buildProjectFile } = await appImport('/src/project/projectFile.ts');
+    const { blob } = await buildProjectFile();
+    for (let t0 = Date.now(); !window.__openFile && Date.now() - t0 < 5000;) await new Promise((r) => setTimeout(r, 50));
+    window.__openFile('Handed Over.isap', new Uint8Array(await blob.arrayBuffer()), '', 'program');
+  });
+  await page.waitForURL(/\/program$/, { timeout: 10000 });
+  check(await page.getByText(/press Send to PLC software to send it/).first().isVisible().catch(() => false), 'handed over from the web page: opened on the Program page, "press Send to PLC software"');
 
   // Help › Test card: every brand; the four the app sends to with their log.
   await page.getByRole('button', { name: 'Help' }).click();

@@ -25,6 +25,7 @@ export default function SendToPlc({ profile }: { profile: PlcProfile }) {
   const [open, setOpen] = useState(false);
   const [looking, setLooking] = useState(false);
   const [helperError, setHelperError] = useState<string | null>(null);
+  const [handover, setHandover] = useState<string | null>(null);
   const plc = usePlcBridges();
   const bridges = plc ? new Set(ROUTES.filter((r) => plc[r])) : null;
   const advice = noSendAdvice({ profileId: profile.id, vendor: profile.vendor, readOnly: profile.readOnly }, bridges);
@@ -38,7 +39,7 @@ export default function SendToPlc({ profile }: { profile: PlcProfile }) {
     const r = await connectHelper();
     setLooking(false);
     if ('error' in r) { setHelperError(r.error); setOpen(true); return; }
-    // connected: the flow's own button is there from the next frame; this press goes on to it
+    // connected: the flow's own button is there from the next frame; this press goes on to it (electron/sendWatch.cjs is the other way)
     requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-testid="send-to-${route}"]`)?.click());
   };
 
@@ -52,6 +53,20 @@ export default function SendToPlc({ profile }: { profile: PlcProfile }) {
       </>
     );
   }
+  /** Any browser: the project into Downloads as <name>.isa-send.zip; the desktop app, open on this PC, offers to open it. */
+  const handOver = async () => {
+    setHandover('Saving…');
+    try {
+      const [{ buildProjectFile }, { saveViaAccount }] = await Promise.all([import('../../project/projectFile'), import('../../preview/claudeAccount')]);
+      const { name, blob } = await buildProjectFile();
+      const file = `${name.replace(/\.isap$/i, '')}.isa-send.zip`;
+      const r = await saveViaAccount(file, blob);
+      setHandover(r === 'saved' ? `Saved to your Downloads as ${file}. ISA Auto Programmer, open on this PC, asks to open it: then press Send to PLC software there.`
+        : r === 'declined' ? 'Not saved.' : 'This page cannot save files here.');
+    } catch (e) {
+      setHandover(e instanceof Error ? e.message : String(e));
+    }
+  };
   return (
     <>
       <button onClick={() => void press()} disabled={looking} data-testid="send-to-plc" title={`Put the program into ${softwareFor(profile.id, profile.vendor)}`}
@@ -68,6 +83,12 @@ export default function SendToPlc({ profile }: { profile: PlcProfile }) {
             <div className="space-y-3 px-5 py-4 text-sm">
               <p className="flex gap-2 text-steel-800" data-testid="send-to-plc-advice"><InformationCircleIcon className="mt-0.5 h-4 w-4 flex-none text-brand-600" />{viaHelper ? helperError : advice}</p>
               {viaHelper && <p><a href={HELPER_DOWNLOAD_URL} target="_blank" rel="noreferrer" data-testid="send-to-plc-helper-download" className="inline-flex rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">Install the ISA PLC Helper</a></p>}
+              {viaHelper && (
+                <div className="space-y-1 border-t border-steel-200 pt-3 text-xs text-steel-600">
+                  <p>Or, in any browser, with ISA Auto Programmer open on this PC: <button type="button" onClick={() => void handOver()} disabled={handover === 'Saving…'} data-testid="send-to-plc-handover-button" className="ml-1 rounded border border-steel-300 bg-white px-2 py-0.5 font-medium text-steel-800 hover:bg-steel-50 disabled:opacity-40">Send to the desktop app</button></p>
+                  {handover && <p className="text-steel-800" data-testid="send-to-plc-handover">{handover}</p>}
+                </div>
+              )}
               <p className="text-xs text-steel-500">What to install and which clicks to try, brand by brand: <Link to="/test-card" onClick={() => setOpen(false)} className="underline">Test card</Link>.</p>
             </div>
           </div>

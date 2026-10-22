@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld('isaDesktop', {
   },
   // Returns an unsubscribe: a page that registers again (re-render) must not open one file twice.
   onOpenFile: (cb) => {
-    const h = (_e, name, bytes, filePath) => cb(name, bytes, filePath);
+    const h = (_e, name, bytes, filePath, then) => cb(name, bytes, filePath, then);
     ipcRenderer.on('isa:open-file', h);
     return () => { ipcRenderer.removeListener('isa:open-file', h); };
   },

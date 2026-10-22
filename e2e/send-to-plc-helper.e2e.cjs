@@ -41,7 +41,14 @@ const FAKE = () => {
       throw { code: 'tool_error', message: 'unknown tool' };
     },
   };
-  window.claude = { use: async (name) => (name === 'mcp' ? mcp : null) };
+  const downloads = {
+    save: async ({ filename, data }) => {
+      const head = new Uint8Array(await data.slice(0, 2).arrayBuffer());
+      window.__saved = { filename, size: data.size, head: String.fromCharCode(...head) };
+      return { status: 'saved' };
+    },
+  };
+  window.claude = { use: async (name) => (name === 'mcp' ? mcp : name === 'downloads' ? downloads : null) };
 };
 
 (async () => {
@@ -66,6 +73,13 @@ const FAKE = () => {
   check(/releases/.test(await dialog.getByTestId('send-to-plc-helper-download').getAttribute('href')), 'the install link');
   const calls = await page.evaluate(() => window.__calls);
   check(calls.length === 1 && calls[0].server === 'host:isa_plc_helper' && calls[0].tool === 'about', 'the press asked the helper once (about)');
+
+  // Any browser: the project into Downloads for the desktop app.
+  await dialog.getByTestId('send-to-plc-handover-button').click();
+  await dialog.getByTestId('send-to-plc-handover').filter({ hasText: 'Saved' }).waitFor({ timeout: 10000 });
+  const saved = await page.evaluate(() => window.__saved);
+  check(/\.isa-send\.zip$/.test(saved.filename) && saved.head === 'PK' && saved.size > 500, `Send to the desktop app: the project file (a zip) as ${saved.filename}`);
+  check(/^Saved to your Downloads as .*\.isa-send\.zip\. ISA Auto Programmer, open on this PC, asks to open it: then press Send to PLC software there\.$/.test(await dialog.getByTestId('send-to-plc-handover').innerText()), 'then: the desktop app asks to open it');
   await dialog.getByRole('button', { name: 'Close' }).click();
 
   // The helper answers: the same press opens the CLICK flow, which runs on the helper.

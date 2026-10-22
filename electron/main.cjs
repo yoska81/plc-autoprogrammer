@@ -13,6 +13,7 @@ const { registerTiaBridgeIpc } = require('./tiaBridge.cjs');
 const { registerClickBridgeIpc } = require('./clickBridge.cjs');
 const { registerCodesysBridgeIpc } = require('./codesysBridge.cjs');
 const { registerStudio5000BridgeIpc } = require('./studio5000Bridge.cjs');
+const { watchSends, projectName } = require('./sendWatch.cjs');
 
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://isa`;
@@ -51,6 +52,30 @@ function sendProjectFile(win, file) {
   fs.promises.readFile(file)
     .then((buf) => { writablePaths.add(file); win.webContents.send('isa:open-file', path.basename(file), new Uint8Array(buf), file); })
     .catch(() => { /* unreadable file: nothing to open */ });
+}
+
+// ── A project handed over from the web page (electron/sendWatch.cjs): asked in the app's own window ──
+function helperLog(what) {
+  const file = path.join(app.getPath('logs'), 'plc-helper.log');
+  try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.appendFileSync(file, `${new Date().toISOString()} [app] ${what}\n`); } catch { /* no log */ }
+}
+async function offerHandedOver(file) {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show(); win.focus();
+  const name = projectName(path.basename(file));
+  const r = await dialog.showMessageBox(win, {
+    type: 'question', buttons: ['Open it', 'Not now'], defaultId: 0, cancelId: 1, noLink: true,
+    title: 'Project from the web page',
+    message: `The web page sent "${name.replace(/\.isap$/i, '')}" to this PC.`,
+    detail: 'Open it here? Then press Send to PLC software on the Program page: nothing goes to the PLC software before that.',
+  });
+  helperLog(`${path.basename(file)}: ${r.response === 0 ? 'opened' : 'not now'}`);
+  if (r.response !== 0) return;
+  fs.promises.readFile(file)
+    .then((buf) => win.webContents.send('isa:open-file', name, new Uint8Array(buf), '', 'program'))
+    .catch((e) => helperLog(`${path.basename(file)} could not be read: ${e.message}`));
 }
 
 // ── Static files: app://isa/<path> → dist-desktop, with SPA fallback to index.html ──
@@ -359,6 +384,9 @@ app.whenReady().then(() => {
   buildMenu();
   createWindow();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
+  // Projects handed over from the web page while the app is open
+  const stopWatching = watchSends({ dir: app.getPath('downloads'), since: Date.now(), onFile: (f) => void offerHandedOver(f), log: helperLog });
+  app.on('will-quit', stopWatching);
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

@@ -53,3 +53,17 @@ Then restart the Claude app. The next step lets the desktop app write this entry
 node e2e/plcHelper.test.cjs                                  # MCP, jobs, Stop, refusals, Open dialog, log; fake bridges
 APP_DIR=release/win-unpacked node e2e/plcHelper.packaged.cjs # Windows CI: the installed helper as the Claude app starts it
 ```
+
+## Any browser: hand the project over through Downloads
+
+Without the Claude desktop app (or without the helper), the page's "Send to PLC software" window also offers
+**Send to the desktop app**: the project file (the `.isap`, a zip) is saved into Downloads as
+`<project>.isa-send.zip` (`.zip` is a type the page may save). While ISA Auto Programmer is open on the PC it watches
+Downloads (`electron/sendWatch.cjs`): for a new, complete `*.isa-send.zip` (not one from before it started, each once)
+it asks in its own window: **Open it** / **Not now**. Open: the project opens on the Program page, and the user
+presses Send to PLC software there; nothing goes to the PLC software before that. Each file and answer is written
+to `plc-helper.log`.
+
+```bash
+node e2e/sendWatch.test.cjs   # the Downloads watch: a finished download once; not: other files, old ones, repeats
+```
