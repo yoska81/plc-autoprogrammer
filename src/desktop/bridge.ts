@@ -99,6 +99,8 @@ export interface IsaDesktop {
   isDesktop?: boolean;
   /** App version (package.json). */
   version?: string;
+  /** Updates of the desktop app (electron/updater.cjs). */
+  update?: UpdateBridge;
   print(job: DesktopPrintJob): Promise<DesktopPrintResult>;
   listPrinters?(): Promise<DesktopPrinter[]>;
   /** Native Save dialog, then write the file. */
@@ -227,4 +229,26 @@ declare global {
 /** The desktop bridge, when running inside the Windows app. */
 export function desktopBridge(): IsaDesktop | null {
   return typeof window !== 'undefined' && window.isaDesktop ? window.isaDesktop : null;
+}
+
+/** Where the desktop app's update stands. 'off': not a packaged app (development) and no test feed. */
+export interface UpdateState {
+  status: 'off' | 'idle' | 'checking' | 'none' | 'downloading' | 'ready' | 'error';
+  /** Version running now. */
+  current: string;
+  /** Version found / downloaded. */
+  version?: string | null;
+  percent?: number;
+  /** Plain-words reason (status 'error'). */
+  message?: string;
+  /** The last check was asked for by the user ("Check for updates"): say the result even when there is none. */
+  manual?: boolean;
+}
+
+export interface UpdateBridge {
+  state(): Promise<UpdateState>;
+  check(): Promise<UpdateState>;
+  /** Closes the app (its usual save checks) and installs; false when the user called it off. */
+  install(): Promise<boolean>;
+  onState(cb: (s: UpdateState) => void): () => void;
 }

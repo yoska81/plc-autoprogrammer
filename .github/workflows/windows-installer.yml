@@ -2,6 +2,8 @@
 # Every push to the integration branch (pushed once a day) and pull requests into it once they are marked
 # ready for review (team drafts don't build): the installer is attached to the run as an artifact.
 # A tag v* (e.g. v0.7.0): also published as a GitHub Release with the Setup .exe.
+# Pushes to the integration branch: version 0.7.<run number>, published as a pre-release on the public
+# releases-only repo the desktop app updates from (needs the RELEASES_TOKEN secret; skipped with a warning without it).
 name: Windows installer
 
 on:
@@ -65,6 +67,15 @@ jobs:
       - name: Install
         run: npm ci
 
+      # Builds of the integration branch get their own version, 0.7.<run number> (package.json is not committed):
+      # the desktop app's updater sees each one as new.
+      - name: Version of this build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/optimistic-maxwell-6nfcs6'
+        shell: bash
+        run: |
+          base=$(node -p "require('./package.json').version.split('.').slice(0, 2).join('.')")
+          npm version "$base.${{ github.run_number }}" --no-git-tag-version --allow-same-version
+
       # The TIA Portal bridge is C# (.NET Framework 4.8 exe, tests on .NET 8)
       - uses: actions/setup-dotnet@v4
         with:
@@ -83,6 +94,7 @@ jobs:
           # The vendor catalog data check runs in its own job (catalog-data) so it never blocks the installer.
           for t in $(find src -name '*.test.ts' ! -name 'catalog.test.ts' | sort); do echo "== $t"; npx tsx "$t"; done
           node e2e/modbus.test.cjs
+          node e2e/updater.test.cjs
           node e2e/tiaBridge.test.cjs
           node e2e/clickBridge.test.cjs
 
@@ -136,8 +148,27 @@ jobs:
           name: ISA-Auto-Programmer-Setup
           path: |
             release/*.exe
+            release/*.exe.blockmap
             release/latest.yml
           if-no-files-found: error
+
+      # The update feed: a pre-release on the public releases-only repo (no source there, and no token in the
+      # app: package.json build.publish). The app downloads it and installs when the user clicks Restart.
+      - name: Publish update (integration branch)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/optimistic-maxwell-6nfcs6'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          RELEASES_REPO: yoska81/isa-autoprogrammer-releases
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::Update not published: add the repository secret RELEASES_TOKEN (a fine-grained token with Contents: write on $RELEASES_REPO only)."
+            exit 0
+          fi
+          v=$(node -p "require('./package.json').version")
+          gh release create "v$v" release/*.exe release/*.exe.blockmap release/latest.yml --repo "$RELEASES_REPO" --prerelease \
+            --title "ISA Auto Programmer $v" \
+            --notes "Built from ${GITHUB_SHA::7} (integration branch). The desktop app downloads it by itself and installs it when you click Restart to update."
 
       - name: Publish release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
