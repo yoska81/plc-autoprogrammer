@@ -170,6 +170,9 @@ export function readL5x(input: string): ForeignProgram {
     const qualify = (op: string) => (rename.size ? op.replace(/(^|[^\w.:#])([A-Za-z_]\w*)(?!\w*\s*\()/g, (_m, pre: string, n: string) => pre + (rename.get(n.toLowerCase()) ?? n)) : op);
     const mapOps = <T,>(x: T): T => JSON.parse(JSON.stringify(x), (k, v) => (typeof v === 'string' && OPERAND_KEYS.includes(k) ? qualify(v) : v));
     if (p.attrs.Disabled === 'true') notes.push(`Program ${pname} is disabled in the controller; imported anyway.`);
+    // Which routines run: the main and fault routines, and every routine a JSR names (called below).
+    const first = routines.length;
+    const runs = new Set([p.attrs.MainRoutineName, p.attrs.FaultRoutineName].filter(Boolean).map((n) => n!.toLowerCase()));
     for (const r of kids(kid(p, 'Routines'), 'Routine')) {
       const rname = programs.length > 1 ? `${pname} / ${r.attrs.Name}` : r.attrs.Name;
       const type = (r.attrs.Type ?? '').toUpperCase();
@@ -179,6 +182,7 @@ export function readL5x(input: string): ForeignProgram {
           const text = textOf(kid(g, 'Text')).trim();
           const comment = textOf(kid(g, 'Comment')).trim();
           if (!text) return;
+          for (const m of text.matchAll(/\bJSR\(\s*(\w+)/gi)) runs.add(m[1].toLowerCase());
           // Unconditional subroutine calls: in the app every routine is a block that runs each scan.
           if (/^JSR\(\s*[\w]+\s*(,[^)]*)?\)\s*;?$/i.test(text)) { calls.push(text); return; }
           try {
@@ -205,6 +209,7 @@ export function readL5x(input: string): ForeignProgram {
       }
       routines.push(routine);
     }
+    if (p.attrs.MainRoutineName) for (const r of routines.slice(first)) r.called = runs.has((r.origin?.routine ?? r.name).toLowerCase());
   }
   if (calls.length) notes.push(`${calls.length} subroutine call${calls.length === 1 ? '' : 's'} (JSR): each routine becomes a block of the program; all blocks run every scan.`);
   for (const op of ioRefs) {

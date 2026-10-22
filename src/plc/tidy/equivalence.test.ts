@@ -8,7 +8,8 @@ import assert from 'node:assert/strict';
 import { LADDER, seedSampleProject } from '../../preview/sampleProject';
 import { collectProject } from '../../deliverables/collect';
 import type { LadderProgram } from '../core/ladder';
-import { checkEquivalence, equivalenceSummary, programInputs } from './equivalence';
+import { checkEquivalence, equivalenceSummary, programInputs, simOptionsFor } from './equivalence';
+import { getProfile } from '../core/profiles';
 import { reorder, rungDeps } from './deps';
 
 const warn = console.warn;
@@ -29,7 +30,7 @@ const quick = { random: 60, steps: 40, plant, plantSequences: 40 };
   assert.notDeepEqual(moved.rungs.map((r) => r.id), LADDER.rungs.map((r) => r.id), 'something moved');
   const r = checkEquivalence(LADDER, moved, quick);
   assert.deepEqual(r.differences, [], equivalenceSummary(r));
-  assert.match(equivalenceSummary(r), /^Same behaviour in \d+ test sequences \(0 differences; \d+ scans, \d+ values compared every scan\)\./);
+  assert.match(equivalenceSummary(r), /^Same behaviour in [\d,]+ test sequences \(0 differences\)\. Details: [\d,]+ with one input changed, [\d,]+ random[^;]*; [\d,]+ scans, [\d,]+ values compared every scan\./);
   console.log(`  example: ${equivalenceSummary(r)} (${Math.round(performance.now() - t0)} ms for both checks)`);
 }
 
@@ -73,6 +74,33 @@ const quick = { random: 60, steps: 40, plant, plantSequences: 40 };
   assert.ok(rungDeps(p.rungs[1]).barrier);
   assert.deepEqual(reorder(p.rungs, (r) => (r.id === 'r3' ? 0 : 1)).map((r) => r.id), ['r1', 'raw', 'r3']);
   assert.equal(checkEquivalence(p, p, quick).notSimulated, 1);
+}
+
+// The lean simulator the check runs (no per-contact power, no change list) keeps the same memory as the full one.
+{
+  const sim = await import('../sim/engine');
+  const rnd = (() => { let a = 7; return () => ((a = (a * 1103515245 + 12345) >>> 0) / 4294967296); })();
+  const full = sim.createSimulator(LADDER), lean = sim.createSimulator(LADDER, { lean: true });
+  const ins = programInputs(LADDER);
+  for (let k = 0; k < 3000; k++) {
+    if (rnd() < 0.2) { const i = ins[Math.floor(rnd() * ins.length)]; const v = rnd() < 0.5; full.write(i, v); lean.write(i, v); }
+    const dt = rnd() < 0.05 ? 2000 : 10;
+    full.step(dt); lean.step(dt);
+    assert.deepEqual([...lean.state.bits].sort(), [...full.state.bits].sort(), `bits at step ${k}`);
+    assert.deepEqual([...lean.state.words].sort(), [...full.state.words].sort(), `words at step ${k}`);
+  }
+}
+
+// The project's PLC: its scan rules go to the simulators by profile id (an id can go to the worker; rules cannot).
+{
+  for (const id of ['click', 'logix', 'siemens-s7', 'yaskawa-mp']) {
+    assert.equal(getProfile(id).id, id, `a real profile: ${id}`);
+    const sem = getProfile(id).simSemantics;
+    assert.equal(simOptionsFor(id)?.semantics, sem, id);
+  }
+  assert.equal(simOptionsFor(undefined), undefined);
+  const r = checkEquivalence(LADDER, LADDER, { random: 5, steps: 10, profileId: 'logix' });
+  assert.deepEqual(r.differences, []);
 }
 
 console.log('tidy equivalence tests passed');

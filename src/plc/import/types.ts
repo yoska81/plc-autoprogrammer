@@ -63,6 +63,8 @@ export interface ForeignRoutine {
   origin?: { program: string; routine: string };
   /** Rung id → the number of the original rung it came from (one original rung can give several). */
   rungNumbers?: Record<string, string>;
+  /** false: the original never runs it (not its program's main or fault routine, and no JSR names it). */
+  called?: boolean;
 }
 
 /**

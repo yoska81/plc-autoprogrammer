@@ -9,6 +9,7 @@ import type { ValidationIssue } from '../core/validate';
 import { callClaude, type ChatTurn } from '../../lib/ai/anthropic';
 import { callOpenAI } from '../../lib/ai/openai';
 import { specForAI } from '../../lib/ai/specForAI';
+import type { AiTask } from '../../lib/ai/tasks';
 
 export interface AIConfig {
   provider: AIProvider;
@@ -205,11 +206,11 @@ function normalize(program: LadderProgram): LadderProgram {
   };
 }
 
-async function run(ai: AIConfig, system: string, messages: ChatTurn[]): Promise<LadderAIResult> {
+async function run(ai: AIConfig, system: string, messages: ChatTurn[], task: AiTask = 'program'): Promise<LadderAIResult> {
   let text: string;
   let reasoning: string | null = null;
   if (ai.provider === 'anthropic') {
-    ({ text, reasoning } = await callClaude({ ...ai, task: 'program', system, messages, schema: LADDER_RESPONSE_SCHEMA }));
+    ({ text, reasoning } = await callClaude({ ...ai, task, system, messages, schema: LADDER_RESPONSE_SCHEMA }));
   } else {
     text = await callOpenAI({ ...ai, system, messages, schema: LADDER_RESPONSE_SCHEMA });
   }
@@ -254,6 +255,26 @@ export function reviseLadder(
     const kept = keepRaw(program, r.program);
     return { ...r, program: kept.program, explanation: kept.note ? `${r.explanation}\n\n${kept.note}` : r.explanation };
   });
+}
+
+/**
+ * Simplify one block: the AI gets only the block's rungs (JSON), the I/O they use and the block's interface (what
+ * it must keep writing for the rest of the program and the machine, what it reads from them), and writes the block
+ * back in a simpler shape with the same behaviour. The caller checks it in the simulator before keeping it.
+ */
+export function rewriteBlockLadder(ai: AIConfig, ctx: PlcContext, block: LadderProgram, blockName: string, iface: { keep: string[]; reads: string[]; free: string }): Promise<LadderAIResult> {
+  const content = `I/O this block uses (address, type, category, description, field device if known):\n${ioTable(ctx)}
+
+Block "${blockName}" of a bigger program (JSON; only this block):
+${JSON.stringify(block)}
+
+Its interface, which must not change:
+- It must keep writing these addresses with exactly the same behaviour (other blocks, the HMI or the machine read them): ${iface.keep.join(', ') || '(none)'}
+- It reads these from the rest of the program and the machine (read them, never write them): ${iface.reads.join(', ') || '(none)'}
+- New internal addresses, if you need any: ${iface.free}
+
+Request: rewrite this block so a technician understands it at a glance, with exactly the same behaviour, scan by scan. Merge duplicate conditions, flatten needless branches, combine SET/RESET pairs into a seal-in only where it behaves the same, remove internal bits used only to pass a condition along, keep the scan order where one rung reads what another writes. Keep timers, counters and their presets (same addresses). Comment every rung. Return "program" with only this block: its rungs (block "${block.blocks?.[0]?.id ?? ''}"), the block itself and tags for any internal address. If it cannot be made simpler without changing behaviour, return "program": null and say why.`;
+  return run(ai, systemPrompt(ctx), [{ role: 'user', content }], 'simplify');
 }
 
 /** Most rung issues, and project-wide ones, a program change sends (the rest are counted). */
