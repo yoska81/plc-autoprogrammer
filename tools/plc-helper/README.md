@@ -49,6 +49,21 @@ not JSON is never overwritten); **Disconnect** takes it out:
 ```
 
 
+## Test card (a Windows PC with the Claude desktop app)
+
+1. ISA Auto Programmer › Settings › **Send from the web page**: "Not connected." → **Connect the Claude app** →
+   "Connected"; `%APPDATA%\Claude\claude_desktop_config.json` has `isa_plc_helper` and everything that was there
+   before (and `.isa-backup`). Close the Claude app and open it again: Settings › Developer lists `isa_plc_helper`.
+2. Open the web page in the Claude app, a CLICK project (or your PLC), PLC program page › **Send to PLC software**:
+   the Claude app asks to allow the ISA PLC Helper → allow → the Send to CLICK window opens and checks this PC.
+3. Go on as on your PLC's test card (the bridge's README): each step that changes something may be confirmed by the
+   Claude app first; **Stop** works; a download needs the confirm screen, as in the desktop app.
+4. The same page in a browser tab: Send to PLC software → "To send from this page, open it in the Claude desktop app,
+   or install the ISA PLC Helper once." → **Send to the desktop app** → the file is in Downloads; with ISA Auto
+   Programmer open (or opened now) it asks **Open it** / **Not now**; Open → the project on the Program page.
+5. If anything goes wrong: one sentence; send us `plc-helper.log` (in `%APPDATA%\ISA Auto Programmer\logs`) and the
+   bridge's log.
+
 ## Tests
 
 ```bash

@@ -13,9 +13,9 @@ const { registerTiaBridgeIpc } = require('./tiaBridge.cjs');
 const { registerClickBridgeIpc } = require('./clickBridge.cjs');
 const { registerCodesysBridgeIpc } = require('./codesysBridge.cjs');
 const { registerStudio5000BridgeIpc } = require('./studio5000Bridge.cjs');
-const { watchSends, seenStore, projectName } = require('./sendWatch.cjs');
 const { registerClaudeConfigIpc } = require('./claudeConfig.cjs');
 const { registerUpdater } = require('./updater.cjs');
+const { watchSends, seenStore, projectName } = require('./sendWatch.cjs');
 
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://isa`;

@@ -98,3 +98,7 @@ Before you start: CLICK Programming Software installed (open or not); no unsaved
    don't save it; a report file for us), **Record** (open the CLICK window you want recorded first).
 
 Note your CLICK version, Windows version and screen scaling (Settings › Display) with the result.
+
+**From the web page**: the same items on the web page opened in the Claude desktop app, with the ISA PLC Helper
+connected (Settings › Send from the web page): the steps run through the helper (tools/plc-helper, its test card);
+send us `plc-helper.log` with `click-bridge.log`.

@@ -74,3 +74,7 @@ Programmer a project on the **Logix** PLC with its program.
    has no `partial_import_from_xml_file`, the log lists the names your SDK has: send it, we fit the script.
 
 Note your Logix Designer version, SDK version (its folder name or Help › About) and Python version with the result.
+
+**From the web page**: the same items on the web page opened in the Claude desktop app, with the ISA PLC Helper
+connected (Settings › Send from the web page): the steps run through the helper (tools/plc-helper, its test card);
+send us `plc-helper.log` with `studio5000-bridge.log`.

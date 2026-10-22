@@ -71,3 +71,7 @@ project on the **Structured Text** PLC in ISA Auto Programmer, with its program 
 8. If anything goes wrong: the dialog says it in one sentence; **Open log folder** and send us `codesys-bridge.log`.
 
 Note your CODESYS version (Help › Information) with the result.
+
+**From the web page**: the same items on the web page opened in the Claude desktop app, with the ISA PLC Helper
+connected (Settings › Send from the web page): the steps run through the helper (tools/plc-helper, its test card);
+send us `plc-helper.log` with `codesys-bridge.log`.
