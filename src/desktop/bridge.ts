@@ -121,6 +121,7 @@ export interface IsaDesktop {
   /** Send to CLICK: drives CLICK Programming Software while the user watches (Windows desktop app only). */
   click?: ClickBridge;
   codesys?: CodesysBridge;
+  studio5000?: Studio5000Bridge;
 }
 
 /** The CLICK bridge (electron/clickBridge.cjs → tools/click-bridge/ClickBridge.exe): the same shape as TiaBridge. */
@@ -142,6 +143,30 @@ export interface CodesysBridge {
   /** The user's CODESYS project from Windows' Open dialog (null: cancelled). */
   pickProject(): Promise<string | null>;
   onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** The Studio 5000 bridge (electron/studio5000Bridge.cjs → tools/studio5000-bridge/Studio5000Bridge.exe): the same shape. */
+export interface Studio5000Bridge {
+  call(cmd: 'detect', args?: Record<string, never>): Promise<Studio5000Detect>;
+  call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
+  logPath(): Promise<string>;
+  showLog(): Promise<boolean>;
+  /** The user's Studio 5000 project (.ACD) from Windows' Open dialog (null: cancelled). */
+  pickProject(): Promise<string | null>;
+  onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** Studio 5000 and the Logix Designer SDK on this PC (tools/studio5000-bridge/src/StudioDetect.cs). */
+export interface Studio5000Detect {
+  /** Logix Designer and the SDK's Python client are there. */
+  ready: boolean;
+  logix: { name: string; version: string }[];
+  /** The SDK's folder (null: not installed). */
+  sdk: string | null;
+  /** Which Python has the SDK's client (null: none). */
+  python: string | null;
+  projectsDir: string;
+  steps: string[];
 }
 
 /** CODESYS on this PC (tools/codesys-bridge/src/CodesysDetect.cs), newest first. */

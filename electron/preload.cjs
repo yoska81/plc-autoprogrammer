@@ -74,6 +74,18 @@ contextBridge.exposeInMainWorld('isaDesktop', {
       return () => ipcRenderer.removeListener('isa:codesys-progress', h);
     },
   },
+  // Send to Studio 5000 (electron/studio5000Bridge.cjs): the same shape as codesys.
+  studio5000: {
+    call: async (cmd, args) => { const r = await ipcRenderer.invoke('isa:studio5000', cmd, args); if (!r.ok) throw new Error(r.error); return r.value; },
+    logPath: () => ipcRenderer.invoke('isa:studio5000-log'),
+    showLog: () => ipcRenderer.invoke('isa:studio5000-show-log'),
+    pickProject: () => ipcRenderer.invoke('isa:studio5000-pick'),
+    onProgress: (cb) => {
+      const h = (_e, p) => cb(p);
+      ipcRenderer.on('isa:studio5000-progress', h);
+      return () => ipcRenderer.removeListener('isa:studio5000-progress', h);
+    },
+  },
   modbus: {
     connect: async (o) => { const r = await ipcRenderer.invoke('isa:modbus', 'connect', [o]); return r.ok ? r.value : { ok: false, error: r.error }; },
     disconnect: () => mb('disconnect'),

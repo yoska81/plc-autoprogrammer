@@ -114,6 +114,16 @@ jobs:
           node scripts/build-codesys-bridge.cjs
           CODESYS_BRIDGE_EXE="$PWD/resources/codesys-bridge/CodesysBridge.exe" node e2e/codesysBridge.test.cjs
 
+      # The Studio 5000 bridge (tools/studio5000-bridge): its own tests (.NET 8, a fake PC and SDK), the job script's
+      # tests (python, a fake Logix Designer SDK), then the exe the installer ships, started through the app's client.
+      - name: Studio 5000 bridge
+        shell: bash
+        run: |
+          dotnet run --project tools/studio5000-bridge/tests -c Release
+          python tools/studio5000-bridge/tests/test_job.py
+          node scripts/build-studio5000-bridge.cjs
+          STUDIO5000_BRIDGE_EXE="$PWD/resources/studio5000-bridge/Studio5000Bridge.exe" node e2e/studio5000Bridge.test.cjs
+
       - name: Build installer
         run: npm run dist:win
         env:
