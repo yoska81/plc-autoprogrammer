@@ -2,7 +2,9 @@
 // whose name starts with "Studio 5000 Logix Designer", with their version), Rockwell's Logix Designer SDK (its folder
 // in Public Documents, "Studio 5000\Logix Designer SDK"), and a Python that has the SDK's Python client
 // (import logix_designer_sdk works): a virtual environment in the SDK folder first (as the SDK guide sets it up),
-// then the py launcher (3.13, 3.12), then python on the PATH.
+// then the py launcher (3.13, 3.12), then python on the PATH. Detect answers in seconds on any PC: the Pythons are
+// tried only when the SDK is there (without it no Python can have its client), each for 5 s at most and 10 s in all,
+// never the Microsoft Store's stubs (WindowsApps); RunQuick gives them no input, so nothing can wait on a question.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -53,6 +55,9 @@ namespace Studio5000Bridge
         public const string Uninstall = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
         static readonly Regex Product = new Regex(@"^Studio 5000 Logix Designer", RegexOptions.IgnoreCase);
         const string Check = "-c \"import logix_designer_sdk\"";
+        /// <summary>Longest one Python may take to try the import, and all of them together.</summary>
+        public const int ProbeMs = 5000, ProbesMs = 10000;
+        static bool StoreStub(string dir) => Regex.IsMatch(dir, "WindowsApps", RegexOptions.IgnoreCase);
 
         public static StudioFound Find(IMachine pc)
         {
@@ -82,17 +87,27 @@ namespace Studio5000Bridge
                         if (pc.Exists(exe)) candidates.Add(new SdkPython { Exe = exe, Prefix = "", How = "the SDK's virtual environment" });
                     }
             }
-            foreach (var dir in pc.PathDirs)
+            if (f.SdkFolder != null)
             {
-                string py = Join(dir, "py.exe");
-                if (pc.Exists(py)) foreach (var v in new[] { "3.13", "3.12" }) candidates.Add(new SdkPython { Exe = py, Prefix = $"-{v}", How = $"Python {v}" });
+                var dirs = pc.PathDirs.Where(d => !StoreStub(d)).ToList();
+                foreach (var dir in dirs)
+                {
+                    string py = Join(dir, "py.exe");
+                    if (pc.Exists(py) && !candidates.Any(c => c.Exe == py)) foreach (var v in new[] { "3.13", "3.12" }) candidates.Add(new SdkPython { Exe = py, Prefix = $"-{v}", How = $"Python {v}" });
+                }
+                foreach (var dir in dirs)
+                {
+                    string python = Join(dir, "python.exe");
+                    if (pc.Exists(python) && !candidates.Any(c => c.Exe == python)) candidates.Add(new SdkPython { Exe = python, Prefix = "", How = "the Python on the PATH" });
+                }
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                foreach (var c in candidates)
+                {
+                    long left = ProbesMs - clock.ElapsedMilliseconds;
+                    if (left <= 0) break;
+                    if (pc.RunQuick(c.Exe, (c.Prefix + " " + Check).Trim(), (int)Math.Min(ProbeMs, left)) == 0) { f.Python = c; break; }
+                }
             }
-            foreach (var dir in pc.PathDirs)
-            {
-                string python = Join(dir, "python.exe");
-                if (pc.Exists(python) && !Regex.IsMatch(dir, "WindowsApps", RegexOptions.IgnoreCase)) candidates.Add(new SdkPython { Exe = python, Prefix = "", How = "the Python on the PATH" });
-            }
-            f.Python = candidates.FirstOrDefault(c => pc.RunQuick(c.Exe, (c.Prefix + " " + Check).Trim(), 20000) == 0);
 
             if (f.Logix.Count == 0) f.Steps.Add("Studio 5000 Logix Designer is not installed on this PC.");
             if (f.SdkFolder == null) f.Steps.Add("Rockwell's Logix Designer SDK is not installed (it comes with Studio 5000 Professional or the SDK toolkit). Install it, then Check again.");

@@ -48,13 +48,16 @@ const ok = (what) => { passed++; console.log('  ok ', what); };
   if (real) {
     const rb = createBridge({ exe: real, logFile: path.join(dir, 'real.log'), label: 'Studio 5000 bridge', what: 'the Logix Designer SDK' });
     assert.deepEqual(await rb.call('ping'), { pong: true });
+    const t0 = Date.now();
     const rd = await rb.call('detect');
+    const took = Date.now() - t0;
     assert.equal(typeof rd.ready, 'boolean');
+    assert.ok(took < 10000, `detect answers in under 10 s (took ${took} ms)`);
     if (!rd.ready) await assert.rejects(rb.call('import', { acd: path.join(dir, 'none.ACD'), l5x: 'x', xpaths: ['a'] }), /no Studio 5000 project|not installed/);
     assert.deepEqual(await rb.call('stop'), { stopping: false });
     rb.stop();
     assert.match(fs.readFileSync(path.join(dir, 'real.log'), 'utf8'), /studio 5000 bridge .* started/);
-    ok(`the real bridge: ping, detect (${rd.ready ? rd.logix[0].version : 'no Studio 5000'}), import, stop, its log`);
+    ok(`the real bridge: ping, detect in ${took} ms (${rd.ready ? rd.logix[0].version : 'no Studio 5000'}), import, stop, its log`);
   }
   console.log(`studio5000Bridge.test: all passed (${passed})`);
   setTimeout(() => process.exit(0), 100);
