@@ -16,6 +16,8 @@ import { ALLOWED_RISE_C, cabinetHeat } from '../thermal';
 import { coolingWatts, dcFanAmps, pickAirConditioner, pickFanThermostat, pickFilterFan, pickHeatExchanger } from '../cooling';
 import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign, EnclosureChoice, MotorSpec } from '../types';
 import { defaultMachineModel, drivesFromIo, type MachineModel } from './machineModel';
+import { cpuFit, findCpu, modulesToFit } from '../../plc/core/fit';
+import { needFromIo } from '../../spec/equipmentRules';
 import { comp, controlPower, mainDisconnect, motorBranches, Tags } from './power';
 import { devicesAndWiring, motorFor, OVER_TEMP_RE } from './devices';
 import { processLoads } from './process';
@@ -119,13 +121,54 @@ export function generateDesign(input0: EngineInput): EngineResult {
   const servoMotors = motion.networkServo ? input.model.motors.filter((m) => isNetworkServoText(m.description) || fromSignal(m)) : [];
   const dropped = (t: string) => servoMotors.some((m) => t.startsWith(`${m.description.replace(/ motor$/i, '')}:`) || t.includes(`${m.tag} `));
   const baseModel = servoMotors.length ? { ...input.model, motors: input.model.motors.filter((m) => !servoMotors.includes(m)), assumptions: input.model.assumptions.filter((t) => !dropped(t)) } : input.model;
-  const model = drivesFromIo(baseModel, io, input.spec ?? '');
+  // One motor per machine motor: the same name read twice (two I/O groups of an imported program, "Conveyor 1" in
+  // IB000x and IB041x) is one motor.
+  const nameKey = (t: string) => t.toLowerCase().replace(/\b(motor|forward|fwd|reverse|rev|run|start|stop|jog|cw|ccw|on|off|output|contactor|starter)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+  const keyWords = (t: string) => nameKey(t).split(' ').filter(Boolean);
+  const seen = new Map<string, string>(), dupes: string[] = [];
+  const unique = baseModel.motors.filter((m) => {
+    const k = nameKey(m.description);
+    if (!k) return true;
+    if (seen.has(k)) { dupes.push(`${m.tag} (${m.description}) is ${seen.get(k)}`); return false; }
+    seen.set(k, m.tag);
+    return true;
+  });
+  // A motor with its own drive ("Driver of conveyor 1 fault"): the drive is on the machine, its type is not known —
+  // shown as that drive (check), its commands and fault wired to it, and no starter or VFD invented.
+  const DRIVER_FAULT = /\bdriver\b[^.]*\b(fault|alarm|error|trip)\b|\b(fault|alarm|error|trip)\b[^.]*\bdriver\b/i;
+  const ownDrive: DesignComponent[] = [], ownWiring: EngineResult['design']['ioWiring'] = [], ownClaimed = new Set<string>();
+  const kept = unique.filter((m) => {
+    const kw = keyWords(m.description);
+    if (!kw.length) return true;
+    const mine = (d: string) => { const dw = keyWords(d); return kw.every((w) => dw.includes(w)); };
+    const fault = io.filter((p) => p.type === 'input' && DRIVER_FAULT.test(p.description) && mine(p.description));
+    if (!fault.length) return true;
+    const tag = tags.next('U');
+    const pts = io.filter((p) => !ownClaimed.has(p.id) && mine(p.description));
+    for (const p of pts) {
+      ownClaimed.add(p.id);
+      const a = input.addresses.get(p.id) ?? '';
+      if (a) ownWiring.push({ address: a, deviceTag: tag, deviceType: 'vfd-input', description: p.description, location: 'Cabinet' });
+    }
+    ownDrive.push({ tag, partNumber: '', quantity: 1, motorTag: m.tag, category: 'other',
+      function: `${m.description.replace(/\b(motor|forward|fwd|reverse|rev|run)\b/gi, ' ').replace(/\s+/g, ' ').trim()} drive (on the machine, type not identified: check) — ${[...new Set(pts.filter((p) => p.type === 'output').map((p) => p.description))].join(', ') || 'no command output'} to it, ${[...new Set(fault.map((p) => p.description))].join(', ')} from it; no starter or VFD drawn` });
+    return false;
+  });
+  const io2 = ownClaimed.size ? io.filter((p) => !ownClaimed.has(p.id)) : io;
+  // the existing drives are parts of the design like the motion parts (drawn with their I/O, no power circuit)
+  motion.components.push(...ownDrive);
+  motion.ioWiring.push(...ownWiring);
+  const motorsModel = kept.length === baseModel.motors.length ? baseModel : { ...baseModel, motors: kept,
+    assumptions: baseModel.assumptions.filter((t) => kept.some((m) => t.includes(m.description.replace(/ motor$/i, ''))) || !baseModel.motors.some((m) => t.startsWith(`${m.description.replace(/ motor$/i, '')}:`))) };
+  const model = drivesFromIo(motorsModel, io2, input.spec ?? '');
   const notes: string[] = [...motion.notes];
+  if (dupes.length) notes.push(`${dupes.join('; ')}: the same motor named twice in the I/O list — drawn once.`);
+  if (ownDrive.length) notes.push(`${ownDrive.map((c) => `${c.tag} ${c.function.split(' (')[0]}`).join(', ')}: each has its own drive on the machine (a "driver … fault" input), type not identified — check the drive on the machine; no starter or VFD is drawn for it.`);
   if (servoMotors.length) notes.push(`${servoMotors.map((m) => `${m.tag} ${m.description}`).join(', ')}: a servo axis on MECHATROLINK-III, not an AC motor — left out of the motor circuits (no VFD or starter). Only AC induction motors get a VFD or starter.`);
   const askUser: string[] = [...model.assumptions, ...motion.askUser];
 
   // Discrete PLC points with addresses (analog channels are wired by electrical/analog.ts).
-  const points = io
+  const points = io2
     .map((point) => ({ point, address: input.addresses.get(point.id) ?? '' }))
     .filter(({ point, address }) => address && point.signal !== 'analog' && !/^DF\d+$/i.test(address));
 
@@ -142,7 +185,7 @@ export function generateDesign(input0: EngineInput): EngineResult {
   const power = motorBranches(pk, tags, model.motors, supply, input.region, reversingByIo);
   notes.push(...power.notes);
   const overTempInput = points.some(({ point }) => point.type === 'input' && OVER_TEMP_RE.test(point.description));
-  const proc = processLoads(pk, tags, model.heaters ?? [], supply, io, overTempInput);
+  const proc = processLoads(pk, tags, model.heaters ?? [], supply, io2, overTempInput);
   notes.push(...proc.notes);
   askUser.push(...proc.askUser);
   const dev = devicesAndWiring(pk, tags, model, power.branches, points, proc);
@@ -151,7 +194,22 @@ export function generateDesign(input0: EngineInput): EngineResult {
 
   const cpu0 = getPart(input.plc.cpuPartNumber);
   const plc: DesignComponent[] = [comp('PLC', input.plc.cpuPartNumber, 1, cpu0?.ratings.builtInFunctions ? `PLC CPU ${cpu0.ratings.series ?? ''} — built in: ${cpu0.ratings.builtInFunctions} (no separate parts)` : 'PLC CPU')];
-  input.modules.forEach((pn, i) => {
+  // The CPU and its modules must hold the I/O (plc/core/fit.ts, the same check the PLC page and Equipment use): the
+  // modules modulesToFit adds go after the chosen ones, in slot order (the addresses X101… already count on them).
+  // A rack CPU on a base unit (Yaskawa MP3300) holds no I/O itself: its field I/O is remote I/O (derive.ts says so).
+  const cpuModel = cpu0?.ratings.baseUnit ? undefined : findCpu(input.plc.cpuPartNumber);
+  const need = needFromIo(input.io, false, 0);
+  const fit = cpuModel ? cpuFit(cpuModel, input.modules, need) : null;
+  let modules = input.modules;
+  if (cpuModel && fit && !fit.ok) {
+    const mods = modulesToFit(cpuModel.id, input.modules, need);
+    const added = mods ? mods.slice(input.modules.length) : [];
+    if (mods && input.modules.every((m, i) => mods[i] === m) && added.length) {
+      modules = mods;
+      notes.push(`${added.join(', ')} added after ${input.modules.length ? input.modules.join(', ') : `the ${input.plc.cpuPartNumber} CPU`} to hold the I/O (${fit.reason}) — add ${added.length > 1 ? 'them' : 'it'} on the PLC page.`);
+    } else askUser.push(`The PLC does not hold the I/O: ${fit.reason} No module of this platform makes it fit — choose a larger CPU or another module on the PLC page.`);
+  }
+  modules.forEach((pn, i) => {
     const p = getPart(pn);
     const discrete = num(p?.ratings.inputs) || num(p?.ratings.outputs);
     const kind = /analog/i.test(p?.description ?? '') && !discrete ? 'Analog' : /snap-in/i.test(p?.description ?? '') ? 'Snap-in I/O' : 'I/O';
@@ -179,7 +237,7 @@ export function generateDesign(input0: EngineInput): EngineResult {
     const npnIn = points.some(({ point }) => point.deviceType === 'sensor-npn');
     const r = cpuPart.ratings;
     // Inputs on the CPU, else on its snap-in / first module (V700 / V1040 / V1210 have none on board).
-    const inPart = num(r.discreteInputs) ? cpuPart : input.modules.map((m) => getPart(m)).find((m) => num(m?.ratings.inputs));
+    const inPart = num(r.discreteInputs) ? cpuPart : modules.map((m) => getPart(m)).find((m) => num(m?.ratings.inputs));
     if (inPart) notes.push(`${inPart.partNumber} inputs (${inPart.ratings.inputType ?? 'see the guide'}): wired ${npnIn ? 'sourcing for the npn sensors (common to 24+)' : 'sinking for the pnp sensors (common to 0V)'}${/jumper/i.test(String(inPart.ratings.inputType ?? '')) ? `; set the input jumper to ${npnIn ? 'npn' : 'pnp'}` : ''}.`);
     if (r.analogSharedWith) notes.push(`${input.plc.cpuPartNumber}: inputs ${r.analogSharedWith} are the analog inputs when used as analog (jumper per input); the I/O addressing leaves a used one out of the digital inputs.`);
     // Mostly-relay CPUs: the npn points are given out last; a used one switches 0V, not a relay contact.
@@ -197,7 +255,7 @@ export function generateDesign(input0: EngineInput): EngineResult {
     // The CPU and the modules are the project's PLC selection: a CPU / module left in the required parts
     // from an earlier equipment choice is never a second PLC.
     if (p?.category === 'plc' || p?.category === 'plcModule') {
-      notes.push(`${r.partNumber} from the equipment list is not used: the project's PLC is ${input.plc.cpuPartNumber}${input.modules.length ? ` with ${input.modules.join(', ')}` : ''} (change it on the PLC page).`);
+      notes.push(`${r.partNumber} from the equipment list is not used: the project's PLC is ${input.plc.cpuPartNumber}${modules.length ? ` with ${modules.join(', ')}` : ''} (change it on the PLC page).`);
       continue;
     }
     required.push(comp(tags.next(TAG_PREFIX[p?.category ?? 'other'] ?? 'X'), r.partNumber, r.quantity, `Required by the designer${p ? `: ${p.description}` : ''}`));

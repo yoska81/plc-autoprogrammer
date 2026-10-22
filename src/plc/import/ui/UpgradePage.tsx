@@ -107,6 +107,16 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                 </div>
               </div>
 
+              {ladder.rungs.length > 0 && (
+                <div className="bg-brand-50 rounded-lg border border-brand-200 p-4 flex flex-wrap items-center gap-3" data-testid="upgrade-simplify">
+                  <div className="flex-1 min-w-[16rem]">
+                    <h3 className="text-sm font-semibold text-gray-800">Next: simplify &amp; explain this program</h3>
+                    <p className="text-xs text-gray-600">Adds a plain-words note to every rung, finds the parts of the program that do nothing, and puts the rest in a clear order. Every change is tried in the simulator first and waits for your approval{readOnly ? '; the copy for the new PLC is the one simplified, the original stays as it is' : ''}.</p>
+                  </div>
+                  <Link to="/program?tidy=1" className="text-sm px-4 py-2 rounded bg-brand-600 text-white font-medium hover:bg-brand-700">Simplify &amp; explain this program</Link>
+                </div>
+              )}
+
               {readOnly && (
                 <div className="bg-white rounded-lg border-2 border-brand-300 p-5 space-y-3" data-testid="upgrade-choose-plc">
                   <h3 className="text-sm font-semibold text-gray-800">Move it to another PLC: choose one</h3>

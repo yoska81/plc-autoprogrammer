@@ -7,6 +7,7 @@ import { addProgramAlarms, plcChangesFor, programAlarmRoles, type UpgradeRoles }
 import { rungAddresses, rungWrites, type LadderProgram } from '../../plc/core/ladder';
 import { callClaude } from './anthropic';
 import type { AiOptions } from './machineModelAI';
+import { specForAI } from './specForAI';
 
 /**
  * HMI, rules first and AI second: the rule-based engine (src/hmi/engine) builds every screen from the
@@ -78,7 +79,7 @@ export function projectHmiContent(o: HmiProjectInput): HmiContent {
 
 export async function hmiContentFromSpec(opts: AiOptions & { spec: string; base: HmiContent }): Promise<{ content: HmiContent; promptChars: number }> {
   const acts = opts.base.actuators.map((a, i) => `${i}: ${a.kind} "${a.name}" — ${[a.run, a.reverse, a.extend, a.retract].filter(Boolean).map((p) => p!.description).join(', ')}`).join('\n') || '(none)';
-  const content = `Machine specification:\n${opts.spec || '(not given)'}\n\nActuators found in the I/O list:\n${acts}\n\nAnalog values: ${opts.base.analogs.map((a) => a.name).join(', ') || 'none'}`;
+  const content = `Machine specification:\n${specForAI(opts.spec, 'hmi-names') || '(not given)'}\n\nActuators found in the I/O list:\n${acts}\n\nAnalog values: ${opts.base.analogs.map((a) => a.name).join(', ') || 'none'}`;
   const { text } = await callClaude({ apiKey: opts.apiKey, model: opts.model, effort: opts.effort, signal: opts.signal, cache: opts.cache, task: 'hmi-names', system: SYSTEM, messages: [{ role: 'user', content }], schema: HMI_CONTENT_SCHEMA });
   let parsed: AiContent;
   try { parsed = JSON.parse(text); } catch (err) { throw new Error('The AI answer could not be read.', { cause: err }); }

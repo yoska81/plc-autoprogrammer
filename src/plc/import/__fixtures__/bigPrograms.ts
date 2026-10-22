@@ -14,7 +14,10 @@ export function plcopen(pous: number, io: number): string {
   return out.join('\n');
 }
 
-/** An L5X with one program per station, each with timers, counters and alias I/O. */
+/**
+ * An L5X with one program per station, each with timers, counters and alias I/O. `io` a multiple of 16 gives whole
+ * 16-point modules (with another count the output aliases land on fractional slots and read as internal bits).
+ */
 export function l5x(programs: number, io: number): string {
   const slots = io / 16;
   const tags = Array.from({ length: io }, (_, i) => `<Tag Name="In_${i}" TagType="Alias" AliasFor="Local:${(i >> 4) + 1}:I.Data.${i % 16}"/><Tag Name="Out_${i}" TagType="Alias" AliasFor="Local:${slots + (i >> 4) + 1}:O.Data.${i % 16}"/>`);

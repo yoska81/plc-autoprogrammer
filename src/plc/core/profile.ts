@@ -1,3 +1,4 @@
+import type { MemoryLayout } from './profiles/yaskawa';
 import type { AnalogRange, IOPoint } from '../../types/io';
 import type { LadderProgram, Rung } from './ladder';
 
@@ -93,6 +94,8 @@ export interface ExportContext {
   projectName?: string;
   /** Export time stamp (fixed in tests). */
   now?: Date;
+  /** Yaskawa: the MW bases of the app's memory areas in this project (profiles/yaskawa.ts; defaults when absent). */
+  yaskawaMemory?: MemoryLayout;
 }
 
 /** One file the vendor's software can import or the engineer types in from. */
@@ -101,6 +104,8 @@ export interface ProgramExporter {
   label: string;
   fileName(base: string): string;
   build(program: LadderProgram, ctx: ExportContext): string;
+  /** Several files instead of one (names may have a folder: "<base>_TIA_LAD/Main.xml"); then `build` is not used. */
+  files?(program: LadderProgram, ctx: ExportContext, base: string): { name: string; content: string }[];
 }
 
 export interface PlcProfile {

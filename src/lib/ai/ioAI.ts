@@ -2,10 +2,11 @@ import type { Effort } from '../../store/useSettingsStore';
 import type { CpuModel, PlcProfile } from '../../plc/core/profile';
 import { ANALOG_RANGES, withAnalogRange, type AnalogSpec, type IOCategory, type IOPoint } from '../../types/io';
 import type { FieldDeviceType } from '../../electrical/types';
-import { specToText, type SpecSections } from '../../spec/types';
+import type { SpecSections } from '../../spec/types';
 import { callClaude } from './anthropic';
 import { ANSWERED_RULE } from '../../components/questions/classify';
 import { NO_PANEL_RULE } from '../../spec/operatorIo';
+import { specForAI } from './specForAI';
 
 const CATEGORIES: IOCategory[] = ['Safety', 'Operator/HMI', 'External Machine', 'Product Detection', 'Conveyor', 'Pneumatic', 'Vacuum', 'Servo/Axis', 'Station 1', 'Station 2', 'Analog/Process', 'Spare'];
 const DEVICE_TYPES: FieldDeviceType[] = ['pushbutton-no', 'pushbutton-nc', 'selector', 'estop-contact', 'sensor-pnp', 'sensor-npn', 'limit-switch', 'pressure-switch', 'safety-relay-output', 'contactor-coil', 'relay-coil', 'solenoid', 'pilot-light', 'stack-light', 'vfd-input', 'other'];
@@ -100,7 +101,7 @@ export async function generateIOFromSpec(opts: {
   const content = `PLC: ${opts.profile.vendor} ${opts.profile.name}
 
 Machine specification:
-${specToText(opts.spec) || '(empty)'}
+${specForAI(opts.spec, 'io') || '(empty)'}
 
 Existing I/O list (type, category, description):
 ${existing}

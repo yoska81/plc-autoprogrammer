@@ -92,6 +92,15 @@ export async function buildPackageParts(p: ProjectSnapshot, onProgress?: Progres
     });
   }
   steps.push({ title: 'PLC program listing', description: 'Program blocks, every rung with comments and logic in words, tag table', run: () => buildProgramListingPdf(p) });
+  if (p.profile.language === 'ladder' && p.ladder.rungs.length) {
+    steps.push({
+      title: 'How the program works', description: 'One section per block: what it does, inputs and outputs, steps, timers, alarms',
+      run: async () => {
+        const [{ explainProgram }, { explainSummaries }, { buildExplanationPdf }] = await Promise.all([import('../plc/tidy/explain'), import('../plc/tidy/explainStore'), import('../plc/tidy/explainExport')]);
+        return buildExplanationPdf(p, explainProgram(p, explainSummaries()));
+      },
+    });
+  }
   steps.push({ title: 'I/O list', description: `${p.io.length} I/O points with addresses, devices and terminals`, run: () => (p.io.length ? ioListPdf(p) : Promise.resolve(null)) });
   if (p.drawingCtx) {
     steps.push({ title: 'Bill of materials', description: 'Parts list with part numbers and tags', run: () => bomPdf(p) });

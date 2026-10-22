@@ -118,6 +118,25 @@ export interface IsaDesktop {
   dwg?: DwgReaderBridge;
   /** Send to TIA Portal through TIA Openness (Windows desktop app only; older builds don't have it). */
   tia?: TiaBridge;
+  /** Send to CLICK: drives CLICK Programming Software while the user watches (Windows desktop app only). */
+  click?: ClickBridge;
+}
+
+/** The CLICK bridge (electron/clickBridge.cjs → tools/click-bridge/ClickBridge.exe): the same shape as TiaBridge. */
+export interface ClickBridge {
+  call(cmd: 'detect', args?: Record<string, never>): Promise<ClickDetect>;
+  call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
+  logPath(): Promise<string>;
+  onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** CLICK Programming Software on this PC (tools/click-bridge/src/ClickDetect.cs), newest first. */
+export interface ClickDetect {
+  ready: boolean;
+  installs: { name: string; version: string; exe: string }[];
+  /** It is open now (the run uses the open one). */
+  running: boolean;
+  steps: string[];
 }
 
 /**

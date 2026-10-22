@@ -5,16 +5,28 @@ import type { Effort, Speed } from '../../store/useSettingsStore';
  * thinking; Speed "fast" caps each task's effort at its own level so they answer in seconds, while
  * "thorough" uses the Settings effort for everything.
  */
-export type AiTask = 'hmi-names' | 'equipment' | 'cycle' | 'machine' | 'io' | 'spec' | 'review' | 'program' | 'design' | 'import' | 'troubleshoot';
+export type AiTask = 'hmi-names' | 'equipment' | 'cycle' | 'machine' | 'io' | 'spec' | 'review' | 'program' | 'design' | 'import' | 'troubleshoot' | 'comments' | 'simplify';
 
 export const TASK_EFFORT: Record<AiTask, Effort> = {
-  'hmi-names': 'low', equipment: 'low', troubleshoot: 'low',
+  'hmi-names': 'low', equipment: 'low', troubleshoot: 'low', comments: 'low',
   cycle: 'medium', machine: 'medium', io: 'medium', spec: 'medium',
-  review: 'high', program: 'high', design: 'high', import: 'high',
+  review: 'high', program: 'high', design: 'high', import: 'high', simplify: 'medium',
+};
+
+/**
+ * Most tokens a task's answer may take, thinking included (the API's max_tokens). Small JSON answers need a few
+ * thousand; the program and an import write the whole program back. An answer cut off at a lower cap is asked
+ * again once at MAX_ANSWER_TOKENS (anthropic.ts), so a long think never loses the answer.
+ */
+export const MAX_ANSWER_TOKENS = 64000;
+export const TASK_MAX_TOKENS: Record<AiTask, number> = {
+  'hmi-names': 8000, equipment: 8000, troubleshoot: 8000, machine: 8000, comments: 16000,
+  cycle: 12000, io: 16000, spec: 16000, review: 16000,
+  design: 32000, program: MAX_ANSWER_TOKENS, import: MAX_ANSWER_TOKENS, simplify: 32000,
 };
 
 /** Tasks a smaller, faster model may answer (Settings → "Model for small tasks"). */
-export const SMALL_TASKS: AiTask[] = ['hmi-names', 'equipment', 'troubleshoot'];
+export const SMALL_TASKS: AiTask[] = ['hmi-names', 'equipment', 'troubleshoot', 'comments'];
 
 const RANK: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 

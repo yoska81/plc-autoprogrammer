@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SPEC_SECTIONS } from '../../../spec/types';
 import { useIOStore } from '../../../store/useIOStore';
 import { looksLeftOver } from '../../../spec/leftovers';
-import { ArrowsPointingInIcon, ArrowsPointingOutIcon, ArrowsRightLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, MagnifyingGlassMinusIcon, MagnifyingGlassPlusIcon, PrinterIcon } from '@heroicons/react/20/solid';
+import { ArrowsPointingInIcon, ArrowsPointingOutIcon, ArrowsRightLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, MagnifyingGlassMinusIcon, MagnifyingGlassPlusIcon, PrinterIcon, SparklesIcon } from '@heroicons/react/20/solid';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useReviewStore } from '../../../review/useReviewStore';
 import { replaceProgramQuestion, useProgramStore } from '../../../store/useProgramStore';
@@ -29,6 +29,7 @@ import { useNarrow } from '../../../components/useNarrow';
 import { useFingerprints, useStages } from '../../../spec/useStages';
 import { useStageStore } from '../../../store/useStageStore';
 import { changedSections, specToText } from '../../../spec/types';
+import { specForAI } from '../../../lib/ai/specForAI';
 import BlockTree from './BlockTree';
 import CrossRefPanel from './CrossRefPanel';
 import { useFullScreen, useLadderHistory } from './workspaceView';
@@ -38,12 +39,21 @@ import { useDraft } from '../../../store/useDraftStore';
 import { useUi } from '../../../store/useUiStore';
 import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
 import VoiceTextarea from '../../../voice/VoiceTextarea';
+import { collectProject } from '../../../deliverables/collect';
+import { addComments } from '../../tidy/comments';
+import { applyReorganize, describeChanges, externalAddresses, planReorganize, plcBaseline, removalCounts, removalPreview, type ReorgPlan, type SectionId } from '../../tidy/reorganize';
+import { equivalenceSummary } from '../../tidy/equivalence';
+import { checkEquivalenceOffThread } from '../../tidy/equivalenceOffThread';
+import { explainWithAi } from '../../tidy/explain';
+import { explainSummaries, saveExplainSummaries } from '../../tidy/explainStore';
+import ExplainPanel from './ExplainPanel';
+import { rewriteCandidates, simplifyBlocks, type RewriteCandidate } from '../../tidy/rewrite';
 import SpeakButton from '../../../voice/SpeakButton';
 import { usePlcNames } from '../ladder/plcNames';
 import { useProjectStore } from '../../../store/useProjectStore';
 import { ptoPointsFor } from '../../../electrical/highSpeedIo';
 
-type Tab = 'describe' | 'fix' | 'history';
+type Tab = 'describe' | 'fix' | 'explain' | 'history';
 
 interface Props {
   ai: AIConfig;
@@ -123,7 +133,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const notesCheck = /^the machine specification and\/or i\/o list changed|^current specification:/i.test(userPrompt.trim()) || userPrompt.length > 600 && specText && userPrompt.includes(specText.slice(0, 80))
     ? { leftOver: true, terms: ['a copy of the update message / specification'] }
     : looksLeftOver(userPrompt, specText);
-  const machineText = [specText, userPrompt.trim() && `Additional notes for the program:\n${userPrompt}`].filter(Boolean).join('\n\n');
+  const machineText = [specText, userPrompt.trim() && `## Additional notes for the program\n${userPrompt}`].filter(Boolean).join('\n\n');
   const recordSource = () => markGenerated('program', { specFp: fp.specFp, spec: fp.spec, ioFp: fp.ioFp, hmiFp: fp.hmiFp });
 
   // A finding sent from the Design review page opens Fix & Ask with the request filled in.
@@ -154,7 +164,27 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const [xrefOpen, setXrefOpen] = useUi('program.xrefOpen', false);
   // Phones: one pane at a time (the assistant, the program, its blocks, the cross-reference) from a tab strip.
   const narrow = useNarrow();
-  const [phonePane, setPhonePane] = useState<'assistant' | 'ladder' | 'blocks' | 'xref'>('ladder');
+  const [phonePane, setPhonePane] = useState<'assistant' | 'ladder' | 'blocks' | 'xref'>(() => (searchParams.get('tidy') === '1' ? 'assistant' : 'ladder'));
+  /**
+   * "Simplify & explain" (the toolbar button, or /program?tidy=1 from the Upgrade page): the Change tab with the
+   * Tidy up group in view and marked for a moment.
+   */
+  const tidyRef = useRef<HTMLDivElement>(null);
+  const [tidyAsk, setTidyAsk] = useState(() => (searchParams.get('tidy') === '1' ? 1 : 0));
+  const tidyShown = useRef(0);
+  const openTidy = () => { setTab('fix'); if (narrow) setPhonePane('assistant'); setTidyAsk((n) => n + 1); };
+  useEffect(() => {
+    if (!tidyAsk || tidyShown.current === tidyAsk) return;
+    if (tab !== 'fix') { setTab('fix'); return; }
+    const el = tidyRef.current;
+    if (!el) return;
+    tidyShown.current = tidyAsk;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const mark = ['bg-brand-50', 'ring-2', 'ring-brand-400'];
+    el.classList.add(...mark);
+    const t = setTimeout(() => el.classList.remove(...mark), 2000);
+    return () => { clearTimeout(t); el.classList.remove(...mark); };
+  }, [tidyAsk, tab, setTab]);
   // Full screen (button, Ctrl+Shift+F, Esc), zoom of the diagram, undo / redo of hand edits.
   const { full, toggle: toggleFull } = useFullScreen();
   const [zoom, setZoom] = useUi('program.zoom', 1);
@@ -215,14 +245,15 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     setTab('fix');
     return handleRevise(
       `The machine specification and/or I/O list changed${changed.length ? ` (spec sections: ${changed.join(', ')})` : ''}. ` +
-      `Update the program so it matches the current specification below, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specText}`,
+      `Update the program so it matches the current specification below, keep everything that still applies, and list each change in the explanation.\n\nCurrent specification:\n${specForAI(specText, 'program')}`,
       true,
     );
   };
 
   // CLICK: a motion axis's pulse must be on a pulse-train output of the CPU's option-slot module.
   const moduleParts = useProjectStore((st) => st.modules);
-  const checkOpts = useMemo(() => (ctx.profile.id === 'click' ? { pulseOutputs: ptoPointsFor(ctx.cpu.id, moduleParts) } : {}), [ctx.profile.id, ctx.cpu.id, moduleParts]);
+  const yaskawaMemory = useProjectStore((st) => st.yaskawaMemory);
+  const checkOpts = useMemo(() => ({ yaskawaMemory, ...(ctx.profile.id === 'click' ? { pulseOutputs: ptoPointsFor(ctx.cpu.id, moduleParts) } : {}) }), [ctx.profile.id, ctx.cpu.id, moduleParts, yaskawaMemory]);
   const issues = useMemo(() => validateProgram(ladder, ctx.profile, ioAddressSet, hmiDesign ?? undefined, checkOpts), [ladder, ctx.profile, ioAddressSet, hmiDesign, checkOpts]);
 
   // While reviewing an AI change, show the proposed program with removed rungs kept in place.
@@ -242,14 +273,14 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const rungNumber = (id: string) => (review?.display ?? ladder).rungs.findIndex((r) => r.id === id) + 1;
 
   /** Run an AI step as a global job: it keeps going (and its result is applied) when the user leaves the page. */
-  const runAI = <T,>(kind: 'program' | 'program-revise', label: string, run: (signal: AbortSignal) => Promise<T>, apply: (r: T) => void, needsKey = true) => {
+  const runAI = <T,>(kind: 'program' | 'program-revise', label: string, run: (signal: AbortSignal, stage: (text: string) => void) => Promise<T>, apply: (r: T) => void, needsKey = true) => {
     if ((needsKey && !ready) || isGenerating) return;
     setError(null);
     void startAiJob({
       kind, label,
       run: async (h) => {
         useProgramStore.getState().setIsGenerating(true);
-        try { return await run(h.signal); } finally { useProgramStore.getState().setIsGenerating(false); }
+        try { return await run(h.signal, h.stage); } finally { useProgramStore.getState().setIsGenerating(false); }
       },
       apply,
     });
@@ -261,6 +292,8 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
    * `full` = the older all-AI program (experimental).
    */
   const handleGenerate = (full = false) => {
+    // A program kept read only on the machine's own PLC is not rebuilt for it (it would get another PLC's memory).
+    if (ctx.profile.readOnly) return;
     if (full && !machineText.trim()) return;
     if (ladder.rungs.length && !programLeftOver.leftOver && !confirm(replaceProgramQuestion(useProgramStore.getState()))) return;
     setTab('describe');
@@ -283,13 +316,98 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     });
   };
 
+  /** Reorganize: the transforms found (each with its checkbox), then the chosen ones checked in the simulator. */
+  const [reorg, setReorg] = useState<{ plan: ReorgPlan; chosen: Set<SectionId> } | null>(null);
+  const reorgPreview = useMemo(() => (reorg ? removalPreview(useProgramStore.getState().ladder, reorg.plan, reorg.chosen) : null), [reorg]);
+  const openReorganize = () => {
+    const plan = planReorganize(collectProject());
+    setReorg({ plan, chosen: new Set(plan.sections.filter((x) => x.defaultOn).map((x) => x.id)) });
+  };
+  const runReorganize = () => {
+    if (!reorg) return;
+    const { plan, chosen } = reorg;
+    setReorg(null);
+    return runAI('program-revise', 'Reorganize program', async (signal, stage) => {
+      const p = collectProject();
+      const program = applyReorganize(p, plan, chosen);
+      const plant = p.io.map((x) => ({ address: p.addresses.get(x.id) ?? '', description: x.description, type: x.type, category: x.category }));
+      // In a worker: the page stays free, the job bar shows how far it got, Cancel stops it.
+      // Against the program as the original PLC runs it (without the code it never runs, when that is removed).
+      const check = await checkEquivalenceOffThread(plcBaseline(p, plan, chosen), program, { observe: [...externalAddresses(p)], plant, profileId: p.profile.id }, {
+        signal, onProgress: (done, total) => stage(`checking in the simulator, sequence ${done + 1} of ${total}`),
+      });
+      return { program, check, before: p.ladder.rungs.length, changes: describeChanges(plan, chosen, removalPreview(p.ladder, plan, chosen)) };
+    }, (r) => {
+      const st = useProgramStore.getState();
+      st.addChat({ role: 'user', text: 'Reorganize the program.' });
+      const said = equivalenceSummary(r.check);
+      if (r.check.differences.length) { st.addChat({ role: 'assistant', text: `Nothing was changed: with these choices the program would not behave the same in the simulator. Untick some changes and try again.\n\n${said}`, outcome: 'no-change' }); return; }
+      const text = `Reorganized (${r.before.toLocaleString('en-US')} rungs → ${r.program.rungs.length.toLocaleString('en-US')}):\n${r.changes.map((c) => `- ${c}`).join('\n')}\n\nChecked in the simulator: ${said}\n\nThe wiring, the I/O addresses and what the screen shows did not move; instructions kept from the old PLC stay as they were. Approve to keep it; the program before it stays in History.`;
+      st.addChat({ role: 'assistant', text });
+      st.setProposal({ program: r.program, explanation: text, reasoning: null });
+    }, false);
+  };
+
+  /** Simplify blocks with AI: the blocks it may rewrite (each with its checkbox); each rewrite checked before it is kept. */
+  const [simp, setSimp] = useState<{ cands: RewriteCandidate[]; chosen: Set<string> } | null>(null);
+  const openSimplify = () => {
+    const cands = rewriteCandidates(useProgramStore.getState().ladder);
+    setSimp({ cands, chosen: new Set(cands.filter((c) => c.ok).map((c) => c.id)) });
+  };
+  const runSimplify = () => {
+    if (!simp) return;
+    const chosen = simp.cands.filter((c) => simp.chosen.has(c.id)).map((c) => c.id);
+    setSimp(null);
+    return runAI('program-revise', 'Simplify blocks with AI', async (signal, stage) => {
+      let step = '';
+      const r = await simplifyBlocks(collectProject(), ctx, { ...ai, signal }, chosen,
+        (a, b, o) => checkEquivalenceOffThread(a, b, o, { signal, onProgress: (done, total) => stage(`${step}, sequence ${done + 1} of ${total}`) }),
+        { stage: (t) => { step = t; stage(t); } });
+      return { ...r, before: useProgramStore.getState().ladder.rungs.length };
+    }, (r) => {
+      const st = useProgramStore.getState();
+      st.addChat({ role: 'user', text: `Simplify blocks with AI: ${chosen.length} block(s).` });
+      const dropped = r.dropped.length ? `\nNot changed:\n${r.dropped.map((d) => `- ${d.name}: ${d.why}`).join('\n')}` : '';
+      if (!r.kept.length) { st.addChat({ role: 'assistant', text: `No block was rewritten.${dropped}`, outcome: 'no-change' }); return; }
+      const text = `Rewritten by the AI and checked in the simulator (${r.before} rungs → ${r.program.rungs.length}):\n${r.kept.map((k) => `- ${k.name}: ${k.rungsBefore} → ${k.rungsAfter} rungs, ${k.before} → ${k.after} parts. ${k.summary.split(' Not simulated')[0]} ${k.explanation.split('\n')[0]}`).join('\n')}${r.final ? `\nAll of them together: ${r.final.differences.length ? 'different' : r.final.sequences ? `same behaviour in ${r.final.sequences} test sequences (0 differences)` : ''}.` : ''}${dropped}\nAddresses, the I/O and what the HMI reads did not move. Approve to keep it; the current program stays in History.`;
+      st.addChat({ role: 'assistant', text });
+      st.setProposal({ program: r.program, explanation: text, reasoning: null });
+    });
+  };
+
+  /** Explain with AI: a paragraph per block, saved with the project (kept while the block's logic stays the same). */
+  const handleExplainAi = () => runAI('program-revise', 'Explain the program', (signal, stage) =>
+    explainWithAi(collectProject(), { ...ai, signal }, (done, total) => stage(`part ${Math.min(done + 1, total)} of ${total}`)), (r) => {
+    saveExplainSummaries({ ...explainSummaries(), ...r.summaries });
+    if (r.notes.length) setError(r.notes.join(' '));
+  });
+
+  /**
+   * Add comments: every blank rung comment, block description and tag comment in plain words (the AI's with a key,
+   * else from the I/O names and the cross-reference). Only comments change; it comes as a proposal to approve.
+   */
+  const handleComments = (rewrite: boolean) => {
+    if (rewrite && !confirm('Rewrite every comment of the program, also the ones already there? You approve the result first, and the current program is kept in History.')) return;
+    setTab('fix');
+    return runAI('program-revise', rewrite ? 'Rewrite all comments' : 'Add comments', (signal) => addComments(collectProject(), { ai: ready && ai.apiKey ? { ...ai, signal } : undefined, rewrite }), (r) => {
+      const st = useProgramStore.getState();
+      const n = r.rungs + r.blocks + r.tags;
+      st.addChat({ role: 'user', text: rewrite ? 'Rewrite all comments.' : 'Add comments.' });
+      if (!n) { st.addChat({ role: 'assistant', text: 'Every rung, block and tag already has a comment.', outcome: 'no-change' }); return; }
+      const parts = [`${r.rungs} rung comment${r.rungs === 1 ? '' : 's'}`, r.blocks ? `${r.blocks} block description${r.blocks === 1 ? '' : 's'}` : '', r.tags ? `${r.tags} tag comment${r.tags === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ');
+      const text = `Comments ${rewrite ? 'rewritten' : 'added'}: ${parts}${r.byAi ? ` (${r.byAi} written by the AI, the rest from the I/O names and the cross-reference)` : ' (from the I/O names and the cross-reference)'}. Only comments change: the logic and the addresses are the same${rewrite ? '' : ', and the comments already there are kept'}.${r.notes.length ? `\n${r.notes.join('\n')}` : ''}`;
+      st.addChat({ role: 'assistant', text });
+      st.setProposal({ program: r.program, explanation: text, reasoning: null });
+    }, false);
+  };
+
   const handleRevise = (text: string, specUpdate = false) => {
     const req = text.trim();
     if (!req || proposal) return;
     // Earlier turns as plain text; the current program is attached fresh by reviseLadder.
     // The conversation must open with a user turn, so lead with the original request.
     const history = [
-      { role: 'user' as const, content: `Machine specification:\n${machineText || '(program was drawn by hand)'}` },
+      { role: 'user' as const, content: `Machine specification (overview):\n${specForAI(machineText, 'fix-it') || '(program was drawn by hand)'}` },
       ...chat.map((m) => ({ role: m.role, content: m.text })),
     ];
     const scoped = activeBlock !== null && !specUpdate ? `[Block: ${blockName}${activeBlock ? ` (id "${activeBlock}")` : ''}] ${req}` : req;
@@ -344,6 +462,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
         <div className="flex border-b border-gray-200">
           {tabButton('describe', 'Build')}
           {tabButton('fix', 'Change')}
+          {tabButton('explain', 'Explain')}
           {tabButton('history', `History (${versions.length})`)}
         </div>
 
@@ -355,6 +474,11 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                   <b>The current program is from another machine</b> (it mentions {programLeftOver.terms.join(', ')}, which are not in your machine description). Build a new program from your project.
                 </div>
               )}
+              {ctx.profile.readOnly ? (
+                <p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded px-3 py-2" data-testid="build-read-only">
+                  This program is on the machine's own {ctx.profile.vendor} controller ({ctx.cpu.id}), read only: <Link to="/upgrade" className="underline">choose the PLC to move it to</Link> first, then the program can be built for it.
+                </p>
+              ) : (
               <button
                 onClick={() => handleGenerate()}
                 disabled={isGenerating}
@@ -362,6 +486,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               >
                 {isGenerating ? <><Spinner /> Building the program…</> : 'Build program from my project'}
               </button>
+              )}
               <div className="text-sm text-gray-700 bg-brand-50 border border-brand-200 rounded px-3 py-2" data-testid="program-sources">
                 <div className="font-medium text-gray-800 mb-1">The program is made directly from:</div>
                 <ul className="text-xs space-y-0.5">
@@ -432,6 +557,10 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             </>
           )}
 
+          {tab === 'explain' && (
+            <ExplainPanel aiReady={ready} busy={isGenerating} onExplainWithAi={handleExplainAi}
+              onShowBlock={(id) => { setBlock(id || GENERAL); if (narrow) setPhonePane('ladder'); }} />
+          )}
           {tab === 'history' && (
             <>
               {!versions.length && <p className="text-sm text-gray-500">A copy of the program is saved here before every AI change, new generation or restore.</p>}
@@ -468,6 +597,58 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               >
                 Ask AI to fix the {issues.length} checker issue{issues.length !== 1 && 's'}
               </button>
+            )}
+            {ladder.rungs.length > 0 && (
+              <div ref={tidyRef} className="flex flex-wrap items-center gap-2 rounded p-1.5 -m-1.5 transition-colors" role="group" aria-label="Tidy up" data-testid="tidy-up">
+                <p className="w-full text-xs font-semibold text-gray-700">Simplify &amp; explain</p>
+                {proposal && <p className="w-full text-xs text-amber-800" data-testid="tidy-wait">Approve or reject the current proposal first.</p>}
+                <button onClick={() => handleComments(false)} disabled={isGenerating || Boolean(proposal)}
+                  title="Fill in every missing rung comment, block description and tag comment in plain words; the logic is not changed"
+                  className="flex-1 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Add comments</button>
+                <button onClick={() => handleComments(true)} disabled={isGenerating || Boolean(proposal)}
+                  title="Write every comment again, also the ones already there (you approve the result first)"
+                  className="py-1.5 px-2 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Rewrite all comments</button>
+                <p className="w-full text-[11px] text-gray-500 -mt-1">Adds a plain-words note on every rung, then you can simplify.</p>
+                <button onClick={() => (simp ? setSimp(null) : openSimplify())} disabled={isGenerating || Boolean(proposal) || !ready} aria-expanded={Boolean(simp)}
+                  title={ready ? 'The AI rewrites the blocks you choose in a simpler shape; each one is kept only if the simulator finds the same behaviour' : 'Add your API key in Settings to use the AI'}
+                  className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Simplify blocks with AI…</button>
+                <button onClick={() => (reorg ? setReorg(null) : openReorganize())} disabled={isGenerating || Boolean(proposal)} aria-expanded={Boolean(reorg)}
+                  title="Rebuild the same behaviour in a simpler shape: grouped by machine function, dead code out, names and comments; checked in the simulator before you approve"
+                  className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Reorganize program…</button>
+              </div>
+            )}
+            {simp && !proposal && (
+              <div className="rounded border border-gray-200 bg-gray-50 p-2 text-xs space-y-1.5" role="group" aria-label="Simplify blocks">
+                <p className="text-gray-600">The AI rewrites each block you choose (one request per block, only that block sent). A rewrite is kept only if it is simpler, writes nothing new and behaves the same in the simulator; nothing changes until you approve.</p>
+                {simp.cands.map((c) => (
+                  <label key={c.id || 'general'} className="flex items-start gap-2">
+                    <input type="checkbox" className="mt-0.5" checked={simp.chosen.has(c.id)} disabled={!c.ok}
+                      onChange={(e) => { const s2 = new Set(simp.chosen); if (e.target.checked) s2.add(c.id); else s2.delete(c.id); setSimp({ ...simp, chosen: s2 }); }} />
+                    <span><span className="font-medium text-gray-800">{c.name}</span> <span className="text-gray-500">({c.rungs} rung{c.rungs === 1 ? '' : 's'}){c.why ? `: ${c.why}` : ''}</span></span>
+                  </label>
+                ))}
+                <button onClick={runSimplify} disabled={!simp.chosen.size || isGenerating} className="w-full py-1.5 bg-brand-600 text-white rounded font-medium hover:bg-brand-700 disabled:opacity-50">Rewrite and check {simp.chosen.size} block{simp.chosen.size === 1 ? '' : 's'}</button>
+              </div>
+            )}
+            {reorg && !proposal && (
+              <div className="rounded border border-gray-200 bg-gray-50 p-2 text-xs space-y-1.5" role="group" aria-label="Reorganize">
+                <p className="text-gray-600">Choose what to change. Everything you tick is tried together in the simulator first, and nothing changes until you approve.</p>
+                {reorg.plan.sections.map((sec) => (
+                  <label key={sec.id} className="flex items-start gap-2">
+                    <input type="checkbox" className="mt-0.5" checked={reorg.chosen.has(sec.id)} disabled={!sec.items.length && sec.id !== 'comment' && sec.id !== 'reorder'}
+                      onChange={(e) => { const c = new Set(reorg.chosen); if (e.target.checked) c.add(sec.id); else c.delete(sec.id); setReorg({ ...reorg, chosen: c }); }} />
+                    <span><span className="font-medium text-gray-800">{sec.title}</span><br /><span className="text-gray-500">{sec.note}</span>
+                      {sec.items.length > 0 && sec.id !== 'reorder' && <span className="block text-gray-500">{sec.items.slice(0, 4).join(' · ')}{sec.items.length > 4 ? ` · and ${(sec.items.length - 4).toLocaleString('en-US')} more` : ''}</span>}
+                      {reorgPreview && reorg.chosen.has(sec.id) && (() => { const c = removalCounts(reorg.plan, reorgPreview, sec.id); return c.keptBack ? <span className="block text-amber-800" data-testid="reorg-kept-back">{c.removed.toLocaleString('en-US')} will go; {c.keptBack.toLocaleString('en-US')} {c.keptBack === 1 ? 'stays because a rung you keep still uses what it sets' : 'stay because a rung you keep still uses what they set'}{sec.id === 'remove-internal' && reorg.plan.sections.some((x) => x.id === 'remove-registers') && !reorg.chosen.has('remove-registers') ? ' (tick the data-register removal below to take those too)' : ''}.</span> : null; })()}</span>
+                  </label>
+                ))}
+                {reorg.plan.findings.length > 0 && (
+                  <div className="text-gray-600" data-testid="reorg-findings"><span className="font-medium text-gray-800">Also found (nothing to change):</span>
+                    <ul className="list-disc ml-5">{reorg.plan.findings.slice(0, 6).map((f, i) => <li key={i}>{f}</li>)}{reorg.plan.findings.length > 6 && <li>… and {reorg.plan.findings.length - 6} more</li>}</ul>
+                  </div>
+                )}
+                <button onClick={runReorganize} disabled={!reorg.chosen.size || isGenerating} className="w-full py-1.5 bg-brand-600 text-white rounded font-medium hover:bg-brand-700 disabled:opacity-50">Check and propose</button>
+              </div>
             )}
             <VoiceTextarea
               value={request}
@@ -508,7 +689,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
         {review ? (
           <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-200 flex items-center gap-3">
             <div className="flex-1 text-sm text-indigo-900">
-              <span className="font-semibold">Review AI change:</span> {review.summary}.
+              <span className="font-semibold">Review the proposed change:</span> {review.summary}.
               {review.issues.some((i) => i.severity === 'error') && <span className="text-red-700"> The checker found errors in this change.</span>}
               {proposal?.note && <span className="block text-xs text-indigo-900 mt-0.5" data-testid="proposal-note">{proposal.note}</span>}
               <span className="block text-xs text-indigo-700 mt-0.5">Green = added, amber = changed, red = removed.</span>
@@ -517,7 +698,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             <button onClick={() => { const fromSpec = proposal?.specUpdate; store.applyProposal(); if (fromSpec) recordSource(); }} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700">Approve</button>
           </div>
         ) : (
-          ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} plcName={ctx.profile.name} onRebuild={() => handleGenerate(false)} />
+          ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} plcName={ctx.profile.name} onRebuild={ctx.profile.readOnly ? undefined : () => handleGenerate(false)} />
         )}
 
         {!review && ladder.rungs.length > 0 && (
@@ -525,13 +706,19 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             <span className="font-semibold text-gray-700">{activeBlock === null ? 'Whole program' : blockName}</span>
             <span className="text-gray-400">{shown.rungs.length} rung{shown.rungs.length === 1 ? '' : 's'}</span>
             {activeBlock !== null && (
-              <button onClick={() => { setTab('fix'); handleRevise(`Review and rewrite this block so it fully matches the specification for this part of the machine. Keep its interface (the internal bits other blocks read or write) unless it is wrong, and explain any change to it.\n\nCurrent specification:\n${specText}`); }}
+              <button onClick={() => { setTab('fix'); handleRevise(`Review and rewrite this block so it fully matches the specification for this part of the machine. Keep its interface (the internal bits other blocks read or write) unless it is wrong, and explain any change to it.\n\nCurrent specification:\n${specForAI(specText, 'program')}`); }}
                 disabled={isGenerating || !ready || Boolean(proposal)}
                 className="px-2.5 py-1 rounded-sm border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 disabled:opacity-50">
                 Regenerate this block
               </button>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
+              <button onClick={openTidy} data-testid="simplify-explain"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-sm border border-brand-600 bg-brand-600 text-white hover:bg-brand-700"
+                title="Comments in plain words on every rung, dead code found, the program grouped by machine function; every change checked in the simulator before you approve">
+                <SparklesIcon className="h-3.5 w-3.5" /> Simplify &amp; explain
+              </button>
+              <span className="mx-1 h-4 border-l border-gray-300" />
               <button onClick={history.undo} disabled={!history.canUndo || isGenerating} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Undo the last hand edit (Ctrl+Z)"><ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo</button>
               <button onClick={history.redo} disabled={!history.canRedo || isGenerating} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Redo (Ctrl+Shift+Z / Ctrl+Y)"><ArrowUturnRightIcon className="h-3.5 w-3.5" /> Redo</button>
               <span className="mx-1 h-4 border-l border-gray-300" />

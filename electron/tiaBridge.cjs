@@ -1,4 +1,4 @@
-// "Send to TIA Portal": the app's side of the TIA bridge (tools/tia-bridge, TiaBridge.exe, shipped in
+// "Send to TIA Portal": the app's side of the TIA bridge (the same client drives the CLICK bridge: clickBridge.cjs) (tools/tia-bridge, TiaBridge.exe, shipped in
 // resources/tia-bridge). The bridge is one long-lived process spoken to over stdin / stdout, one JSON object per
 // line (tools/tia-bridge/src/Protocol.cs): {id, cmd, args} → {id, progress}… then {id, ok, result | error}.
 // It is started on the first request and stopped with the app. Contract: src/desktop/bridge.ts (TiaBridge).
@@ -16,7 +16,7 @@ const TIMEOUT_MS = { detect: 60000, default: 30 * 60000 };
  * A bridge client. `exe`: the bridge program; `logFile`: where the bridge logs every call; `onProgress(id, text)`.
  * call(cmd, args) resolves with the result or rejects with the bridge's plain-English error.
  */
-function createTiaBridge({ exe, logFile, onProgress, timeouts = TIMEOUT_MS }) {
+function createTiaBridge({ exe, logFile, onProgress, timeouts = TIMEOUT_MS, label = 'TIA Portal bridge', what = 'TIA Portal' }) {
   let proc = null;
   let ready = null; // promise of the "ready" line
   let nextId = 1;
@@ -29,7 +29,7 @@ function createTiaBridge({ exe, logFile, onProgress, timeouts = TIMEOUT_MS }) {
 
   function start() {
     if (proc) return ready;
-    if (!exe || !fs.existsSync(exe)) return Promise.reject(new Error('The TIA Portal bridge is not in this installation (Windows desktop app only). Reinstall ISA Auto Programmer.'));
+    if (!exe || !fs.existsSync(exe)) return Promise.reject(new Error(`The ${label} is not in this installation (Windows desktop app only). Reinstall ISA Auto Programmer.`));
     const script = /\.c?js$/i.test(exe);
     const args = logFile ? ['--log', logFile] : [];
     proc = script
@@ -50,19 +50,19 @@ function createTiaBridge({ exe, logFile, onProgress, timeouts = TIMEOUT_MS }) {
         pending.delete(m.id);
         clearTimeout(p.timer);
         if (m.ok) p.resolve(m.result ?? null);
-        else p.reject(new Error(m.error || 'The TIA Portal bridge failed without saying why.'));
+        else p.reject(new Error(m.error || `The ${label} failed without saying why.`));
       });
       let stderr = '';
       me.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
       me.on('error', (err) => {
-        const msg = `The TIA Portal bridge could not start: ${err.message}`;
+        const msg = `The ${label} could not start: ${err.message}`;
         if (!isReady) reject(new Error(msg));
         failAll(msg);
         if (proc === me) proc = null;
       });
       me.on('exit', (code) => {
         const why = stderr.trim().split(/\r?\n/).slice(-1)[0];
-        const msg = `The TIA Portal bridge stopped (exit code ${code})${why ? `: ${why}` : ''}. Try again; the log is at ${logFile || 'the app\'s logs folder'}.`;
+        const msg = `The ${label} stopped (exit code ${code})${why ? `: ${why}` : ''}. Try again; the log is at ${logFile || 'the app\'s logs folder'}.`;
         if (!isReady) reject(new Error(msg));
         failAll(msg);
         if (proc === me) proc = null;
@@ -79,7 +79,7 @@ function createTiaBridge({ exe, logFile, onProgress, timeouts = TIMEOUT_MS }) {
       const timer = setTimeout(() => {
         if (!pending.has(id)) return;
         pending.delete(id);
-        reject(new Error(`TIA Portal did not answer within ${Math.round(ms / 1000)} s (${cmd}). Check TIA Portal for an open dialog (e.g. the Openness access question) and try again.`));
+        reject(new Error(`${what} did not answer within ${Math.round(ms / 1000)} s (${cmd}). Check ${what} for an open dialog${what === 'TIA Portal' ? ' (e.g. the Openness access question)' : ''} and try again.`));
       }, ms);
       pending.set(id, { resolve, reject, timer, cmd });
       proc.stdin.write(`${JSON.stringify({ id, cmd, args })}\n`);
@@ -90,7 +90,7 @@ function createTiaBridge({ exe, logFile, onProgress, timeouts = TIMEOUT_MS }) {
     if (!proc) return;
     const p = proc;
     proc = null;
-    failAll('The TIA Portal bridge was stopped.');
+    failAll(`The ${label} was stopped.`);
     try { p.stdin.write(`${JSON.stringify({ id: 0, cmd: 'quit' })}\n`); p.stdin.end(); } catch { /* gone */ }
     setTimeout(() => { try { p.kill(); } catch { /* gone */ } }, 3000).unref?.();
   }
@@ -118,4 +118,4 @@ function registerTiaBridgeIpc(ipcMain, app, resourcesDir) {
   return bridge;
 }
 
-module.exports = { createTiaBridge, registerTiaBridgeIpc, TIMEOUT_MS };
+module.exports = { createTiaBridge, createBridge: createTiaBridge, registerTiaBridgeIpc, TIMEOUT_MS };

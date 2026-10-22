@@ -11,6 +11,8 @@ import { wiringPaths } from '../troubleshoot/wiringPath';
 import { buildCircuit } from '../troubleshoot/circuit';
 import { runCodeRules } from '../review/codeRules/rules';
 import { parseRow, wireListCsvWithNotes, wireNoteKeys } from '../edits/lists';
+import { amlDocument, plcAssignmentCsv } from './cad/eplan';
+import { designWarnings } from './derive';
 import { planDrawings } from './drawings/plan';
 import { getPart } from './catalog';
 import { DESIGN } from '../preview/sampleProject';
@@ -89,5 +91,27 @@ const i = clickWires.findIndex((w) => w.wire === 'X001' && /PLC:X001/.test(`${w.
 assert.ok(i >= 0);
 const noted = wireListCsvWithNotes(sie, { [ck[i]]: 'Checked' }).split('\r\n').map(parseRow);
 assert.ok(noted.some((c) => c[0] === 'I0.0' && /PLC:I0\.0/.test(`${c[1]} ${c[2]}`) && c.at(-1) === 'Checked'), 'the X001 note on the S7 I0.0 row');
+
+// EPLAN: the AML logical addresses and the PLC assignment list in the PLC's naming
+const aml = amlDocument(sie).xml;
+assert.ok(aml.includes('%I0.0') && !/LogicalAddress[^>]*>\s*<Value>[XY]\d{3}</.test(aml), 'AML LogicalAddress %I0.0');
+const assign = plcAssignmentCsv(nativeModel(sie), sie).split('\r\n').slice(1).filter(Boolean).map((r) => parseRow(r)[3]);
+assert.ok(assign.includes('%I0.0') && !assign.some((a) => /^[XY]\d{3}$/.test(a)), `plc_assignment_list Address: ${assign.slice(0, 4).join(', ')}`);
+
+// free-text design notes and review items on the notes sheet: "on Y001" → "on %Q0.0"
+const noted7: DrawingContext = { ...sie, design: { ...sie.design, notes: ['Pusher solenoid on Y001 (check the coil).'] } };
+const notesSheet = planDrawings(noted7).sheets.find((x) => x.spec.kind === 'notes')!.spec as { notes: string[] };
+assert.deepEqual(notesSheet.notes, ['Pusher solenoid on %Q0.0 (check the coil).']);
+
+// a PLC that names only part of its I/O (Micro800 expansion 2085 modules): those sheets and a review item say so
+const m8: DrawingContext = {
+  ...ctx('2080-L20E-20QBB', 'Allen-Bradley'),
+  io: [...io, { address: 'X101', description: 'Spare expansion input', type: 'input' }],
+  design: { ...DESIGN, components: [...DESIGN.components.filter((c) => getPart(c.partNumber)?.category !== 'plcModule'), { tag: 'IO1', partNumber: '2085-IQ16', quantity: 1, function: 'Expansion inputs' }] },
+};
+const m8titles = planDrawings(m8).sheets.filter((x) => x.spec.kind === 'io').map((x) => x.title);
+assert.ok(m8titles.some((t) => /IO1 .*APP ADDRESSES/.test(t)) && m8titles.some((t) => /PLC INPUTS — PLC .*_IO_EM_DI_00/.test(t) && !/APP ADDRESSES/.test(t)), `Micro800 titles: ${m8titles.join(' | ')}`);
+assert.ok(designWarnings(m8).some((w) => /X101.*keeps the app's addresses/.test(w)), 'Micro800: the mix is a review item');
+assert.ok(!designWarnings(sie).some((w) => /keeps the app's addresses/.test(w)), 'S7-1200 on-board only: no mix');
 
 console.log('ioNames.test: ok');

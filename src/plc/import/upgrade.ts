@@ -334,14 +334,17 @@ export function describeProgram(imp: ImportedProgram): Partial<Record<SpecSectio
   // Rung comments, part by part, are the sequence the original programmer described.
   const seq: string[] = [];
   const byBlock = rungsByBlock(imp);
-  const partsShown = blocks.slice(0, max(MAX_LINES.parts));
+  // An MPE720 project has hundreds of drawings: the sequence is the drawings that say what they do (their first
+  // rung comments other than their own name), at most MPE720_SEQUENCE of them.
+  const mpe = imp.source.format === 'yaskawa-mpe720';
+  const said = (b: ProgramBlockLike) => [...new Set((byBlock.get(b.id) ?? []).map((r) => r.comment.trim()).filter((c) => c && !sameName(c, b.name)))];
+  const described = mpe ? blocks.filter((b) => said(b).length) : blocks;
+  const partsShown = described.slice(0, mpe ? MPE720_SEQUENCE : max(MAX_LINES.parts));
   for (const b of partsShown) {
-    const comments = (byBlock.get(b.id) ?? []).filter((r) => r.comment.trim() && r.comment.trim() !== b.name).map((r) => `  - ${r.comment.trim()}`);
+    const comments = (mpe ? said(b).slice(0, 3) : said(b)).map((c) => `  - ${c}`);
     if (comments.length) seq.push(`${b.name}:`, ...capped(comments, max(MAX_LINES.perPart), (n) => `  - … and ${n} more rung comments`));
-    // An MPE720 drawing is a step of the scan even when its rungs say nothing more than its title.
-    else if (imp.source.format === 'yaskawa-mpe720') seq.push(`${b.name}`);
   }
-  if (blocks.length > partsShown.length) seq.push(`… and ${blocks.length - partsShown.length} more parts (see the PLC program).`);
+  if (described.length > partsShown.length) seq.push(`… and ${described.length - partsShown.length} more ${mpe ? 'drawings' : 'parts'} (see the PLC program).`);
   const nick = new Map(imp.program.tags.map((t) => [t.address, t.nickname]));
   if (timers.length) seq.push('Timers:', ...capped(timers.map((t) => `  - ${nick.get(t.address) ?? t.address}: ${t.preset} ${t.unit}${t.mode === 'OFF_DELAY' ? ' off-delay' : ''}${t.accumulate ? ' (retentive)' : ''}`), max(MAX_LINES.list), (n) => `  - … and ${n} more timers`));
   if (counters.length) seq.push('Counters:', ...capped(counters.map((c) => `  - ${nick.get(c.address) ?? c.address}: counts to ${c.preset}`), max(MAX_LINES.list), (n) => `  - … and ${n} more counters`));
@@ -378,14 +381,14 @@ function machineFacts(imp: ImportedProgram, out: Partial<Record<SpecSectionId, s
   if (s.format === 'yaskawa-mpe720') {
     // Each drawing with what its first commented rung says it does.
     const drawings = (imp.program.blocks ?? []).map((b) => {
-      const first = (byBlock.get(b.id) ?? []).find((r) => r.comment.trim() && r.comment.trim() !== b.name)?.comment.trim();
+      const first = (byBlock.get(b.id) ?? []).find((r) => r.comment.trim() && !sameName(r.comment, b.name))?.comment.trim();
       return `- ${b.name}${first ? ` — ${first}` : ''}`;
     });
-    if (drawings.length) over.push('Drawings (in scan order):', ...capped(drawings, max(MAX_LINES.parts), (n) => `- … and ${n} more drawings`));
+    if (drawings.length) over.push('Drawings (in scan order):', ...capped(drawings, MPE720_DRAWINGS, (n) => `- … and ${n} more drawings (see the PLC program)`));
     // The I/O by register word: one word is one 16-point module group on the machine.
     const words = new Map<string, string[]>();
     for (const p of imp.io) { const w = mpWord(p.original); if (w) words.set(w, [...(words.get(w) ?? []), p.description || p.name]); }
-    if (words.size) over.push('I/O by register word:', ...capped([...words].sort(([a], [b]) => a.localeCompare(b)).map(([w, names]) => `- ${w[0] === 'I' ? 'Inputs' : 'Outputs'} ${w[0]}B${w.slice(1)}0–${w[0]}B${w.slice(1)}F: ${names.join(', ')}`), max(MAX_LINES.list), (n) => `- … and ${n} more words`));
+    if (words.size) over.push('I/O by register word:', ...capped([...words].sort(([a], [b]) => a.localeCompare(b)).map(([w, names]) => `- ${w[0] === 'I' ? 'Inputs' : 'Outputs'} ${w[0]}B${w.slice(1)}0–${w[0]}B${w.slice(1)}F: ${names.join(', ')}`), MPE720_WORDS, (n) => `- … and ${n} more words (all are on the I/O list)`));
   }
   add('overview', over, true);
   const motion: string[] = [];
@@ -394,6 +397,12 @@ function machineFacts(imp: ImportedProgram, out: Partial<Record<SpecSectionId, s
     motion.push(`Servo axes on MECHATROLINK (${s.axes.length}${servos < s.axes.length ? `, ${s.axes.length - servos} virtual` : ''}): each servo axis is a ${s.vendor} servo drive with its servo motor, not a VFD or an AC motor.`, ...s.axes.map((a) => `- ${axisText(a)}`));
     // The motion I/O written below are the program's signals: no motor of their own unless they name a contactor or a VFD.
     if (out.motion) out.motion = `Motion I/O (signals of the program; an AC motor only where a contactor or VFD output is named, from the program: check):\n${out.motion}`;
+  }
+  // Other drives the machine has besides the servo axes: an input reporting a drive's fault names one each
+  // ("Conveyor 3 driver fault"). Listed apart from the axes, as AC / drive motors to check.
+  if (s.format === 'yaskawa-mpe720') {
+    const drives = imp.io.filter((p) => p.type === 'input' && /\b(driver?s?|inverter|vfd)\b/i.test(p.description) && /\b(fault|alarm|error|trip)\b/i.test(p.description));
+    if (drives.length) motion.push(`Conveyor drives (from fault inputs: check type, AC motor and drive) (${drives.length}):`, ...drives.map((p) => `- ${p.description.replace(/\s*\b(fault|alarm|error|trip)\b.*$/i, '').trim() || p.description} (fault input ${p.original})`));
   }
   const programs = imp.report.notConverted.filter((n) => / motion program$/.test(n.where));
   if (programs.length) {
@@ -405,6 +414,13 @@ function machineFacts(imp: ImportedProgram, out: Partial<Record<SpecSectionId, s
   add('motion', motion);
   if (s.panel) add('operator', [`Touch panel: ${s.panel.software} project with ${s.panel.screens.length} screen${s.panel.screens.length === 1 ? '' : 's'}${s.panel.screens.length ? ` (${capped(s.panel.screens, 30, (n) => `and ${n} more`).join(', ')})` : ''}.`]);
 }
+
+/** A comment that only repeats its part's name ("A01 Ax.1" in drawing "A01 Ax.1", "Ax.1" in it). */
+type ProgramBlockLike = { id: string; name: string };
+const norm = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
+const sameName = (comment: string, name: string) => { const c = norm(comment), n = norm(name); return c === n || n.endsWith(` ${c}`); };
+/** Most drawings in an MPE720 project's sequence, drawing list and I/O words written into the description (users read it). */
+const MPE720_SEQUENCE = 40, MPE720_DRAWINGS = 30, MPE720_WORDS = 20;
 
 /** Most lines of each kind in the description written from a big program (one of more lines than BIG_DESCRIPTION_LINES). */
 const MAX_LINES = { parts: 40, perPart: 15, list: 150 };

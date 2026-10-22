@@ -102,7 +102,7 @@ test('AI request: summary has every part of the project, schema is strict', () =
   const s = projectSummary(collectProject(), det);
   for (const h of ['# Specification', '# I/O list', '# Equipment', '# Control panel', 'Safety circuit wiring', 'Calculations:', '# PLC program', '# HMI', '# Deterministic findings']) assert.ok(s.includes(h), h);
   assert.ok(s.includes('X001') && s.includes('PB3') && s.includes('C1204') && s.includes('Design not approved'));
-  assert.ok(s.includes('1=r_init_tmo'), 'rung ids for links');
+  assert.ok(s.includes('Rung 1 (id r_init_tmo)'), 'rung ids for links');
   const item = REVIEW_SCHEMA.properties.findings.items;
   assert.deepEqual([...item.required].sort(), Object.keys(item.properties).sort());
   assert.equal(pageRoute('hmi', 'manual'), '/hmi?screen=manual');

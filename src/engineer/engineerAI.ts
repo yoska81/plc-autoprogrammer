@@ -49,8 +49,8 @@ Rules:
 
 export async function runEngineerAI(opts: { apiKey: string; model: string; effort: Effort; signal?: AbortSignal }, p: ProjectSnapshot, rules: EngineerFinding[]): Promise<{ summary: string; findings: EngineerFinding[] }> {
   // The electrical review needs the program's outline only when the whole listing is too big for one request.
-  const whole = projectSummary(p, rules);
-  const content = approxTokens(whole) <= INPUT_TOKENS ? whole : projectSummary(p, rules, { outline: true });
+  const whole = projectSummary(p, rules, { specTask: 'engineer' });
+  const content = approxTokens(whole) <= INPUT_TOKENS ? whole : projectSummary(p, rules, { outline: true, specTask: 'engineer' });
   const r = await callClaude({ ...opts, system: SYSTEM, schema: SCHEMA, messages: [{ role: 'user', content }] });
   let parsed: { summary: string; findings: { severity: Severity; area: ReviewArea; topic: string; title: string; explanation: string; fix: string; tag: string; replaceWith: string }[] };
   try { parsed = JSON.parse(r.text); } catch (err) { throw new Error('The engineer review returned an answer the app could not read. Please try again.', { cause: err }); }

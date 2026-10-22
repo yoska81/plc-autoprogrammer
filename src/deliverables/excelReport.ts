@@ -20,6 +20,7 @@ import { fatProcedure, satChecklist, satTable, testTable } from './docs/fat';
 import { pmSchedule, sparePartsTable } from './docs/maintenance';
 import { isGroup, type DocTable } from './docs/table';
 import { cableKey, noteOf, wireNoteKeys } from '../edits/lists';
+import { addressTextFor } from './docs/addressText';
 
 /** Deep blue: title rows (white text) and dark text. */
 const BRAND = 'FF0B2A5C';
@@ -234,7 +235,8 @@ export async function buildExcelReport(p: ProjectSnapshot): Promise<Blob> {
 
     const notes = wb.addWorksheet('Design Review');
     header(notes, [{ header: 'Item to check', key: 'n', width: 140 }]);
-    for (const n of [...p.electrical!.notes, ...designWarnings(p.drawingCtx), ...calcWarnings(p)]) notes.addRow({ n }).alignment = { wrapText: true };
+    const named = addressTextFor(p);
+    for (const n of [...p.electrical!.notes, ...designWarnings(p.drawingCtx), ...calcWarnings(p)]) notes.addRow({ n: named(n) }).alignment = { wrapText: true };
   }
 
   tableSheet(wb, 'Review Findings', designReviewTable(p), aiReviewNote());

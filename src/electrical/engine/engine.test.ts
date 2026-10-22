@@ -715,6 +715,12 @@ for (const s of SCENARIOS) {
   assert.ok(m2k && dev(/Oil pump contactor/) === m2k, `oil pump output on M2's contactor ${m2k}, not ${dev(/Oil pump contactor/)}`);
   assert.equal(dev(/Forming motor run/), 'VFD1');
   assert.deepEqual(r.design.inputs.motors.map((x) => x.tag), conv.motors.map((x) => x.tag), 'no invented motor');
+  // 12 inputs on a C0-10DD1E-D (8 inputs) and no module chosen: the engine adds the input module X101… land on
+  const io1 = r.design.components.find((c) => c.tag === 'IO1');
+  assert.ok(io1 && Number(getPart(io1.partNumber)?.ratings.inputs ?? 0) > 0, `an input module in slot 1: ${io1?.partNumber}`);
+  assert.ok(r.design.notes.some((n) => n.includes(`${io1!.partNumber} added after the C0-10DD1E-D CPU to hold the I/O`)), 'and the note says so');
+  const ctxR = run({ name: 'roll-former-converted', supply: conv.supply, points: conv.io.map((p) => ({ description: p.description, type: p.type, category: p.category, deviceType: p.deviceType })) as P[], motors: conv.motors }).ctx;
+  assert.ok(!designWarnings(ctxR).some((w) => /over capacity/i.test(w)), 'no capacity warning left');
 }
 
 if (failures) { console.error(`${failures} scenario(s) failed`); process.exit(1); }

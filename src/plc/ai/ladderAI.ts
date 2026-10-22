@@ -8,6 +8,8 @@ import { LADDER_RESPONSE_SCHEMA } from '../core/schema';
 import type { ValidationIssue } from '../core/validate';
 import { callClaude, type ChatTurn } from '../../lib/ai/anthropic';
 import { callOpenAI } from '../../lib/ai/openai';
+import { specForAI } from '../../lib/ai/specForAI';
+import type { AiTask } from '../../lib/ai/tasks';
 
 export interface AIConfig {
   provider: AIProvider;
@@ -53,7 +55,45 @@ export interface LadderAIResult {
   reasoning: string | null;
 }
 
+/** An I/O point of a variable-speed drive. */
+const VFD_IO = /\bvfd|drive|inverter|speed ref/i;
+
+const VFD_RULES = `- VFDs (wired per drive: run output → FWD/DI1, reverse → REV/DI2, preset-speed outputs → DI3/DI4 (binary steps), fault relay R1 → an input that is ON when the drive is faulted, analog speed reference DF → the drive's analog input):
+  - Run output = (auto run request OR manual jog permitted) AND Safety OK AND NOT drive-fault alarm. Forward and reverse outputs are never ON together (each has NOT the other in series), and a direction change waits for the motor to stop (an off-delay timer of the decel time, e.g. 3 s).
+  - Drive fault: the fault input SETs a latched alarm bit (C1101…, with a clear alarm text like "VFD1 fault"); the alarm drops the run output; only the fault reset (HMI button or reset pushbutton) RSTs it, and only while the fault input is OFF. Reset of the drive itself is done on the drive keypad unless a reset output exists.
+  - Speed: when the I/O list has an analog speed reference (ANALOG, units Hz or %), the HMI enters the speed setpoint in a DF register (DF101–DF200) with limits; on the first scan, and whenever the setpoint is outside its limits, COPY a safe default (e.g. 30 Hz) into it; COPY / MATH it to the speed-reference DF only while running, else write 0. Clamp to the min/max with two CMP rungs before the copy. Never write a speed above the drive's upper limit (P01.10 = the reference's maximum).
+  - Preset speeds: one preset output per speed; the drive's multi-step parameters hold the actual frequencies (set on site) — say which output selects which step.
+  - No analog reference and no preset outputs: the speed is set on the drive keypad; say so in the explanation.
+`;
+
+const ANALOG_RULES = `- Analog I/O: analog points are DF registers (marked ANALOG in the I/O list) that already hold the value in engineering units — the PLC's analog setup scales the 4-20 mA / 0-10 V signal (CLICK: Setup > System Configuration; there is no scaling instruction in ladder), so never scale raw counts. Read analog inputs with CMP (e.g. DF1 >= DF101); write analog outputs with COPY or MATH in their engineering units (e.g. COPY DF102 → DF5 for a valve position in %, MATH DF6 = DF103 for a VFD speed in Hz). Analog setpoints and alarm limits the HMI enters are DF registers DF101–DF200 (floating point, so they compare directly with analog values); give each a default on the first scan when it is outside its range.
+- Analog alarms: high / low alarms latch with a deadband so they don't chatter: SET the alarm when value >= high limit (or <= low limit), RST it only when value < high limit − deadband (> low limit + deadband) AND the operator pressed Reset; use the same deadband for control switching (e.g. a fill valve opens below setpoint − deadband and closes at setpoint). A transmitter reading at the bottom of its range (≤ min) while the process should be running indicates a broken 4-20 mA loop: alarm it.
+`;
+
+const HMI_RULES = `Implementing the HMI tags (standard ranges: commands C1001–C1100, setpoints DS1001–DS1100, status words DS1101–DS1200, alarms C1101–C1200, status bits C1201–C1300). For each kind the HMI design uses:
+- Command buttons (HMI writes, momentary): use them as commands in the logic. Start: rising edge (RISE) in parallel with the panel Start, sealed in; Stop: NC in series. Reset: clears latched alarms only when the cause is gone. Count/cycle resets: the counter's reset bit.
+- Mode select (a toggle the HMI reads and writes, e.g. HMI_Manual_Select): Manual is accepted only while the automatic cycle is not running — a rung "cycle running AND select → RST select" refuses it while running. The mode status bit (e.g. STS_Manual_Mode) = select AND NOT running. Start is blocked while Manual is active (NC of the mode status bit in the run seal-in), and the cycle drops if Manual turns on.
+- Permissive bits (status bits shown as a button's interlock, e.g. STS_Jog_Permit): compute them every scan exactly as the tag description says (typically Manual mode AND safety OK AND the conflicting actuator OFF). Hold-to-run commands (Jog/Extend …): the manual request bit = command AND its permissive; when two manual requests conflict, give one priority (NC of the other request) so they cannot both energize in the same scan. Combine the Auto and Manual requests in the Outputs block: one OUT coil per output.
+- Setpoints (DS, HMI reads/writes): use the register directly — as the timer preset (CLICK timer presets may be a DS register), counter preset or compare value. DS registers are retentive, so on the first scan (SC2) load the documented default only when the value is outside its min–max limits.
+- Machine state word (e.g. DS1101 Machine_State): must use exactly the values of the HMI state table below. Write it every scan with one COPY rung per state, ordered from the lowest to the highest priority (an SC1 rung copies the default first), so the highest applicable state wins.
+- Heartbeat (e.g. STS_Heartbeat): changes state every second: a one-scan pulse on the rising edge of SC7 (CLICK 1 s clock), then OUT heartbeat with branches (pulse AND NOT heartbeat) OR (NOT pulse AND heartbeat).
+- Counters shown on the HMI (CTD): CNT on the event (part sensor, actuator output turning ON) with the HMI reset bit as reset; CTD holds the value the HMI reads.
+- Run hours (retentive DS): an accumulating ON-delay timer, 3600 sec, enabled while the motor output is ON and reset by a one-scan "hour reached" bit; that bit adds 1 (MATH) to the run-hours register and to the hours-since-service register.
+- Service interval: warning bit ON when hours since service >= the interval setpoint (and the interval > 0); the Service Done command COPYs 0 into hours since service.
+- Rates (e.g. Parts_Per_Min): a self-restarting 10 s timer; every 10 s shift six bucket registers, store the parts counted in the last 10 s (count minus a snapshot, negative after a count reset → 0) and sum the six buckets.
+- Batch target (setpoint, 0 = off): a batch-complete bit when target > 0 and count >= target; stop the cycle only once the last part has been handled, and block Start until the count is reset.
+- Alarm bits: one per HMI alarm. Faults latch (SET on the fault, RST on reset when the cause is gone) and stop the cycle; condition alarms (e.g. safety open) and warnings (service due) are plain OUT coils that follow the condition.
+- Status bits/words the HMI reads that are not covered above: write them from the condition their description gives.
+
+`;
+
 function systemPrompt(ctx: PlcContext): string {
+  // Rules for what this machine has: drives, analog values, HMI tags (an imported program the app only reads back
+  // gets none of the app's VFD / HMI conventions).
+  const own = !ctx.profile.readOnly;
+  const vfdRules = own && ctx.io.some((p) => VFD_IO.test(p.description ?? '')) ? VFD_RULES : '';
+  const analogRules = ctx.io.some((p) => p.signal === 'analog') ? ANALOG_RULES : '';
+  const hmiRules = own && ctx.hmi?.tags.length ? HMI_RULES : '';
   return `You are a senior controls engineer. You write ladder logic for a ${ctx.profile.vendor} ${ctx.profile.name} PLC (CPU: ${ctx.cpu.label}) that will run a real machine, so correctness and safety matter more than brevity.
 
 You also act as the maintenance engineer for this program: the user describes what the machine should do, or what is wrong with it, and you write or change the program for them. The user may never read the code, so your explanation is how they understand what you did.
@@ -73,35 +113,12 @@ How to write the program:
 - Sequences: a step register (DS) per station with step numbers 0 (idle), 10, 20, 30… so steps can be inserted later; each step's rung comment names the step ("Step 20: extend pusher, wait for extended"); a step-timeout timer and alarm on every step that waits for feedback; return to step 0 on stop or fault.
 - Rung comments in the style "<Block> – <what this rung does>"; every tag nickname in PascalCase_With_Underscores, prefixed by its role where useful (Cmd_, Sts_, Alm_, Tmr_, Cnt_, Step_).
 - Safety zones: when the machine has several safety zones (e.g. two light curtains, two pallet positions), build one safety-OK bit per zone from its safety relay status input and gate only that zone's motion with it; the E-stop bit still stops everything. Each zone needs its own reset.
-- VFDs (wired per drive: run output → FWD/DI1, reverse → REV/DI2, preset-speed outputs → DI3/DI4 (binary steps), fault relay R1 → an input that is ON when the drive is faulted, analog speed reference DF → the drive's analog input):
-  - Run output = (auto run request OR manual jog permitted) AND Safety OK AND NOT drive-fault alarm. Forward and reverse outputs are never ON together (each has NOT the other in series), and a direction change waits for the motor to stop (an off-delay timer of the decel time, e.g. 3 s).
-  - Drive fault: the fault input SETs a latched alarm bit (C1101…, with a clear alarm text like "VFD1 fault"); the alarm drops the run output; only the fault reset (HMI button or reset pushbutton) RSTs it, and only while the fault input is OFF. Reset of the drive itself is done on the drive keypad unless a reset output exists.
-  - Speed: when the I/O list has an analog speed reference (ANALOG, units Hz or %), the HMI enters the speed setpoint in a DF register (DF101–DF200) with limits; on the first scan, and whenever the setpoint is outside its limits, COPY a safe default (e.g. 30 Hz) into it; COPY / MATH it to the speed-reference DF only while running, else write 0. Clamp to the min/max with two CMP rungs before the copy. Never write a speed above the drive's upper limit (P01.10 = the reference's maximum).
-  - Preset speeds: one preset output per speed; the drive's multi-step parameters hold the actual frequencies (set on site) — say which output selects which step.
-  - No analog reference and no preset outputs: the speed is set on the drive keypad; say so in the explanation.
-- Handshakes with other equipment (robot, servo drive with indexer, other machine): request output → wait for the done / in-position input with a timeout alarm → clear the request; never assume a step finished without its feedback; handle the other machine's fault input.
+${vfdRules}- Handshakes with other equipment (robot, servo drive with indexer, other machine): request output → wait for the done / in-position input with a timeout alarm → clear the request; never assume a step finished without its feedback; handle the other machine's fault input.
 - Recipes: recipe values live in DS registers per recipe (e.g. DS1301+ recipe 1, DS1321+ recipe 2); the selected recipe is COPYed into the working setpoints only while the machine is stopped.
-- Analog I/O: analog points are DF registers (marked ANALOG in the I/O list) that already hold the value in engineering units — the PLC's analog setup scales the 4-20 mA / 0-10 V signal (CLICK: Setup > System Configuration; there is no scaling instruction in ladder), so never scale raw counts. Read analog inputs with CMP (e.g. DF1 >= DF101); write analog outputs with COPY or MATH in their engineering units (e.g. COPY DF102 → DF5 for a valve position in %, MATH DF6 = DF103 for a VFD speed in Hz). Analog setpoints and alarm limits the HMI enters are DF registers DF101–DF200 (floating point, so they compare directly with analog values); give each a default on the first scan when it is outside its range.
-- Analog alarms: high / low alarms latch with a deadband so they don't chatter: SET the alarm when value >= high limit (or <= low limit), RST it only when value < high limit − deadband (> low limit + deadband) AND the operator pressed Reset; use the same deadband for control switching (e.g. a fill valve opens below setpoint − deadband and closes at setpoint). A transmitter reading at the bottom of its range (≤ min) while the process should be running indicates a broken 4-20 mA loop: alarm it.
-- HMI tags: when the request lists HMI tags, implement every one of them exactly as described (see "Implementing the HMI tags" below); never leave an HMI tag unused or unwritten, and never move an HMI tag to another address.
+${analogRules}- HMI tags: when the request lists HMI tags, implement every one of them exactly as described (see "Implementing the HMI tags" below); never leave an HMI tag unused or unwritten, and never move an HMI tag to another address.
 - Split the program into blocks, one per machine section or station (e.g. "safety" Safety & modes, "infeed" Infeed conveyor, "pusher" Pusher station, "alarms" Alarms & HMI). List them in "blocks" in program order (id: short lower-case, name: 1–3 words, description: one sentence) and set every rung's "block" to its block id. Rungs of one block stay together. A small machine may have only 2–3 blocks. Signals passed between blocks go through internal bits so each block can be tested on its own.
 
-Implementing the HMI tags (standard ranges: commands C1001–C1100, setpoints DS1001–DS1100, status words DS1101–DS1200, alarms C1101–C1200, status bits C1201–C1300). For each kind the HMI design uses:
-- Command buttons (HMI writes, momentary): use them as commands in the logic. Start: rising edge (RISE) in parallel with the panel Start, sealed in; Stop: NC in series. Reset: clears latched alarms only when the cause is gone. Count/cycle resets: the counter's reset bit.
-- Mode select (a toggle the HMI reads and writes, e.g. HMI_Manual_Select): Manual is accepted only while the automatic cycle is not running — a rung "cycle running AND select → RST select" refuses it while running. The mode status bit (e.g. STS_Manual_Mode) = select AND NOT running. Start is blocked while Manual is active (NC of the mode status bit in the run seal-in), and the cycle drops if Manual turns on.
-- Permissive bits (status bits shown as a button's interlock, e.g. STS_Jog_Permit): compute them every scan exactly as the tag description says (typically Manual mode AND safety OK AND the conflicting actuator OFF). Hold-to-run commands (Jog/Extend …): the manual request bit = command AND its permissive; when two manual requests conflict, give one priority (NC of the other request) so they cannot both energize in the same scan. Combine the Auto and Manual requests in the Outputs block: one OUT coil per output.
-- Setpoints (DS, HMI reads/writes): use the register directly — as the timer preset (CLICK timer presets may be a DS register), counter preset or compare value. DS registers are retentive, so on the first scan (SC2) load the documented default only when the value is outside its min–max limits.
-- Machine state word (e.g. DS1101 Machine_State): must use exactly the values of the HMI state table below. Write it every scan with one COPY rung per state, ordered from the lowest to the highest priority (an SC1 rung copies the default first), so the highest applicable state wins.
-- Heartbeat (e.g. STS_Heartbeat): changes state every second: a one-scan pulse on the rising edge of SC7 (CLICK 1 s clock), then OUT heartbeat with branches (pulse AND NOT heartbeat) OR (NOT pulse AND heartbeat).
-- Counters shown on the HMI (CTD): CNT on the event (part sensor, actuator output turning ON) with the HMI reset bit as reset; CTD holds the value the HMI reads.
-- Run hours (retentive DS): an accumulating ON-delay timer, 3600 sec, enabled while the motor output is ON and reset by a one-scan "hour reached" bit; that bit adds 1 (MATH) to the run-hours register and to the hours-since-service register.
-- Service interval: warning bit ON when hours since service >= the interval setpoint (and the interval > 0); the Service Done command COPYs 0 into hours since service.
-- Rates (e.g. Parts_Per_Min): a self-restarting 10 s timer; every 10 s shift six bucket registers, store the parts counted in the last 10 s (count minus a snapshot, negative after a count reset → 0) and sum the six buckets.
-- Batch target (setpoint, 0 = off): a batch-complete bit when target > 0 and count >= target; stop the cycle only once the last part has been handled, and block Start until the count is reset.
-- Alarm bits: one per HMI alarm. Faults latch (SET on the fault, RST on reset when the cause is gone) and stop the cycle; condition alarms (e.g. safety open) and warnings (service due) are plain OUT coils that follow the condition.
-- Status bits/words the HMI reads that are not covered above: write them from the condition their description gives.
-
-When you change an existing program:
+${hmiRules}When you change an existing program:
 - Keep the "id" of every rung you keep (edited or not). Give new rungs ids like "new-1", "new-2".
 - Change only what is needed for the request; don't rewrite rungs that already work.
 - Keep the blocks and each rung's block. When the request names a block ("[Block: …]"), change only that block's rungs unless another block must change for it to work, and say so.
@@ -189,11 +206,11 @@ function normalize(program: LadderProgram): LadderProgram {
   };
 }
 
-async function run(ai: AIConfig, system: string, messages: ChatTurn[]): Promise<LadderAIResult> {
+async function run(ai: AIConfig, system: string, messages: ChatTurn[], task: AiTask = 'program'): Promise<LadderAIResult> {
   let text: string;
   let reasoning: string | null = null;
   if (ai.provider === 'anthropic') {
-    ({ text, reasoning } = await callClaude({ ...ai, task: 'program', system, messages, schema: LADDER_RESPONSE_SCHEMA }));
+    ({ text, reasoning } = await callClaude({ ...ai, task, system, messages, schema: LADDER_RESPONSE_SCHEMA }));
   } else {
     text = await callOpenAI({ ...ai, system, messages, schema: LADDER_RESPONSE_SCHEMA });
   }
@@ -212,7 +229,7 @@ async function run(ai: AIConfig, system: string, messages: ChatTurn[]): Promise<
 }
 
 export function generateLadder(ai: AIConfig, ctx: PlcContext, description: string): Promise<LadderAIResult> {
-  const content = `I/O list (address, type, category, description, field device if known):\n${ioTable(ctx)}${hmiText(ctx)}\n\nWhat the machine must do:\n${description}\n\nWrite the complete program.`;
+  const content = `I/O list (address, type, category, description, field device if known):\n${ioTable(ctx)}${hmiText(ctx)}\n\nWhat the machine must do:\n${specForAI(description, 'program')}\n\nWrite the complete program.`;
   return run(ai, systemPrompt(ctx), [{ role: 'user', content }]);
 }
 
@@ -229,9 +246,7 @@ export function reviseLadder(
   history: ChatTurn[],
   request: string,
 ): Promise<LadderAIResult> {
-  const issueText = issues.length
-    ? [...issues.slice(0, 200).map((i) => `- [${i.severity}] ${i.rungId ? `rung ${i.rungId}: ` : ''}${i.message}`), ...(issues.length > 200 ? [`- … and ${issues.length - 200} more`] : [])].join('\n')
-    : '(none)';
+  const issueText = issueList(issues);
   const hasRaw = program.rungs.some((r) => [...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW'));
   const rawNote = hasRaw ? '\n\nElements and outputs of type RAW were imported from the original PLC program and are kept as their text: copy each one back exactly as given, in its rung, unless the request is about that instruction (then change its text only). Never add a RAW.' : '';
   const content = `I/O list (address, type, category, description, field device if known):\n${ioTable(ctx)}${hmiText(ctx)}\n\nCurrent program (JSON, includes any manual edits):\n${JSON.stringify(withoutDecl(program))}\n\nIssues the app's checker found:\n${issueText}${rawNote}\n\nRequest:\n${request}`;
@@ -240,6 +255,40 @@ export function reviseLadder(
     const kept = keepRaw(program, r.program);
     return { ...r, program: kept.program, explanation: kept.note ? `${r.explanation}\n\n${kept.note}` : r.explanation };
   });
+}
+
+/**
+ * Simplify one block: the AI gets only the block's rungs (JSON), the I/O they use and the block's interface (what
+ * it must keep writing for the rest of the program and the machine, what it reads from them), and writes the block
+ * back in a simpler shape with the same behaviour. The caller checks it in the simulator before keeping it.
+ */
+export function rewriteBlockLadder(ai: AIConfig, ctx: PlcContext, block: LadderProgram, blockName: string, iface: { keep: string[]; reads: string[]; free: string }): Promise<LadderAIResult> {
+  const content = `I/O this block uses (address, type, category, description, field device if known):\n${ioTable(ctx)}
+
+Block "${blockName}" of a bigger program (JSON; only this block):
+${JSON.stringify(block)}
+
+Its interface, which must not change:
+- It must keep writing these addresses with exactly the same behaviour (other blocks, the HMI or the machine read them): ${iface.keep.join(', ') || '(none)'}
+- It reads these from the rest of the program and the machine (read them, never write them): ${iface.reads.join(', ') || '(none)'}
+- New internal addresses, if you need any: ${iface.free}
+
+Request: rewrite this block so a technician understands it at a glance, with exactly the same behaviour, scan by scan. Merge duplicate conditions, flatten needless branches, combine SET/RESET pairs into a seal-in only where it behaves the same, remove internal bits used only to pass a condition along, keep the scan order where one rung reads what another writes. Keep timers, counters and their presets (same addresses). Comment every rung. Return "program" with only this block: its rungs (block "${block.blocks?.[0]?.id ?? ''}"), the block itself and tags for any internal address. If it cannot be made simpler without changing behaviour, return "program": null and say why.`;
+  return run(ai, systemPrompt(ctx), [{ role: 'user', content }], 'simplify');
+}
+
+/** Most rung issues, and project-wide ones, a program change sends (the rest are counted). */
+export const MAX_RUNG_ISSUES = 200, MAX_PROJECT_ISSUES = 5;
+
+/** The checker's issues for a program change: the rungs' own, and the first few about the whole project. */
+export function issueList(issues: ValidationIssue[]): string {
+  const line = (i: ValidationIssue) => `- [${i.severity}] ${i.rungId ? `rung ${i.rungId}: ` : ''}${i.message}`;
+  const own = issues.filter((i) => i.rungId), wide = issues.filter((i) => !i.rungId);
+  const lines = [
+    ...own.slice(0, MAX_RUNG_ISSUES).map(line), ...(own.length > MAX_RUNG_ISSUES ? [`- … and ${own.length - MAX_RUNG_ISSUES} more on rungs`] : []),
+    ...wide.slice(0, MAX_PROJECT_ISSUES).map(line), ...(wide.length > MAX_PROJECT_ISSUES ? [`- … and ${wide.length - MAX_PROJECT_ISSUES} more about the whole project (on the Program page)`] : []),
+  ];
+  return lines.join('\n') || '(none)';
 }
 
 /**
