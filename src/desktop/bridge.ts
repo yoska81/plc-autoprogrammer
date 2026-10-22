@@ -197,6 +197,8 @@ export interface TiaBridge {
   call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
   /** Where the bridge's log is (to send it to support). */
   logPath(): Promise<string>;
+  /** Shows the log file in Explorer. Older desktop apps lack it. */
+  showLog?(): Promise<boolean>;
   /** Returns an unsubscribe. */
   onProgress(cb: (p: { id: number; text: string }) => void): () => void;
 }

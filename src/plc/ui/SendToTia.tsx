@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowPathIcon, CheckCircleIcon, ExclamationTriangleIcon, PaperAirplaneIcon, XMarkIcon } from '@heroicons/react/20/solid';
+import BridgeFailed from './BridgeFailed';
 import { desktopBridge, type TiaDetect } from '../../desktop/bridge';
 import { collectProject } from '../../deliverables/collect';
 import { tiaBlocks, tiaBlockVersion, tiaPlcRequest, tiaProjectName, tiaTagRows } from '../tia/tiaSend';
@@ -144,7 +145,7 @@ export default function SendToTia({ profileId }: { profileId: string }) {
     <>
       <button onClick={show} data-testid="send-to-tia" title="Open TIA Portal on this PC and put the program into it"
         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded border border-brand-300 bg-white text-brand-800 hover:bg-brand-50">
-        <PaperAirplaneIcon className="h-4 w-4" /> Send to TIA Portal
+        <PaperAirplaneIcon className="h-4 w-4" /> Send to PLC software
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/40 p-6" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setOpen(false); }}>
@@ -158,7 +159,7 @@ export default function SendToTia({ profileId }: { profileId: string }) {
             </div>
             <div className="space-y-4 px-5 py-4 text-sm">
               {busy && <p className="flex items-center gap-2 text-steel-600" role="status"><ArrowPathIcon className="h-4 w-4 animate-spin" /> {progress || 'Working…'}</p>}
-              {error && <p role="alert" className="rounded border border-red-200 bg-red-50 p-2 text-red-800">{error}</p>}
+              {error && <BridgeFailed error={error} logPath={logPath} logName="tia-bridge.log" showLog={tia.showLog} testId="tia" />}
 
               <section className="space-y-2" data-testid="tia-check">
                 <h3 className="font-semibold text-steel-900">1. Check this PC</h3>

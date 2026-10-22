@@ -2,7 +2,7 @@
 // one is electron/clickBridge.cjs): hidden in the browser and for other PLCs; on a CLICK project ONE click opens
 // CLICK, writes the nickname CSV, runs the set-up (new project with the CPU, the nicknames; CLICK 4's ways first)
 // and enters every rung, with live progress, then says what is left (the modules, the rungs it cannot enter); a
-// failure is one plain sentence with the log (Open folder); Stop ends a run (said: nothing saved); under Support:
+// failure is one plain sentence with the log (Open log folder); Stop ends a run (said: nothing saved); under Support:
 // the check of what CLICK has, the calibration, Record; no CLICK installed says how to get it.
 // Real CLICK is tried by hand: tools/click-bridge/README.md.
 //   npm run dev -- --port 5215 &  ;  BASE_URL=http://localhost:5215 node e2e/send-to-click.e2e.cjs
@@ -128,7 +128,7 @@ const FAKE = () => {
   check(/Still to do in CLICK:/.test(done) && /Type rung 13 from the entry sheet \(Load into PLC\) after rung 12/.test(done) && (done.match(/Type rung \d+/g) ?? []).length === 3, 'the rungs left for you, each with the rung it goes after');
   check(/save the project there \(Ctrl\+S\)/.test(done), 'done: the user saves in CLICK');
 
-  // A failure: one plain sentence, the log for support with Open folder.
+  // A failure: one plain sentence, the log for support with Open log folder.
   await page.evaluate(() => { window.__click.failAt = 2; window.__click.calls = []; });
   await dialog.getByTestId('click-send-all').click();
   await dialog.getByTestId('click-failed').waitFor({ timeout: 10000 });
@@ -138,7 +138,7 @@ const FAKE = () => {
   check(/Send this log to support: C:\\Users\\tech\\AppData\\Roaming\\ISA Auto Programmer\\logs\\click-bridge\.log/.test(failed), 'the log to send, by its path');
   check((await page.evaluate(() => window.__click.calls)).filter((c) => c.cmd === 'start').length === 0, 'CLICK opened once per dialog');
   await dialog.getByTestId('click-open-log').click();
-  check(await page.evaluate(() => window.__click.shownLog === true), 'Open folder shows the log');
+  check(await page.evaluate(() => window.__click.shownLog === true), 'Open log folder shows the log');
   await page.evaluate(() => { window.__click.failAt = 0; });
 
   // Support: the check of what CLICK has (CLICK's nickname export and a printed ladder, a PDF of the example's

@@ -53,7 +53,11 @@ namespace Studio5000Bridge
             }
             Pass();
             string resultFile = Path.Combine(dir, "result.json");
-            if (!File.Exists(resultFile)) throw new BridgeError($"The Logix Designer SDK ended without an answer (exit code {proc.ExitCode}). Close Studio 5000 and try again; if it happens again, send us the log.");
+            if (!File.Exists(resultFile))
+            {
+                Log.Write($"logix sdk ended without result.json, exit code {proc.ExitCode}");
+                throw new BridgeError("The Logix Designer SDK ended without an answer: close Studio 5000 and try again.");
+            }
             var r = Json.Parse(File.ReadAllText(resultFile)) as Dictionary<string, object> ?? throw new BridgeError("The SDK's answer could not be read: send us the log.");
             Log.Write($"logix sdk result: {Json.Write(r)}");
             if (!(r.TryGetValue("ok", out object ok) && ok is bool b && b)) throw new BridgeError(r.TryGetValue("error", out object e) && e is string s ? s : "The Logix Designer SDK reported a problem: send us the log.");

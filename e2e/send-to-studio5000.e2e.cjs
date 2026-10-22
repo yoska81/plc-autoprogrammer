@@ -157,8 +157,8 @@ const FAKE = () => {
   await dialog.getByTestId('studio5000-stop').click();
   await dialog.getByTestId('studio5000-failed').waitFor({ timeout: 5000 });
   check(/^Stopped, as you asked\. Your own Studio 5000 project was not changed\./.test((await dialog.getByTestId('studio5000-failed').innerText()).trim()), 'Stop: the user\'s project not changed, said');
-  await dialog.getByTestId('studio5000-failed').getByRole('button', { name: 'Open folder' }).click();
-  check(await page.evaluate(() => window.__s5.shownLog) && /studio5000-bridge\.log/.test(await dialog.getByTestId('studio5000-failed').innerText()), 'the log for support, Open folder');
+  await dialog.getByTestId('studio5000-failed').getByRole('button', { name: 'Open log folder' }).click();
+  check(await page.evaluate(() => window.__s5.shownLog) && /studio5000-bridge\.log/.test(await dialog.getByTestId('studio5000-failed').innerText()), 'the log for support, Open log folder');
   await page.evaluate(() => { window.__s5.importMs = 1500; window.__s5.fail = 'Import failed: Controller/Tags not found'; });
   await dialog.getByTestId('studio5000-send-button').click();
   await dialog.getByTestId('studio5000-failed').filter({ hasText: 'Import failed' }).waitFor({ timeout: 5000 });

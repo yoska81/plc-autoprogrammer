@@ -57,7 +57,7 @@ Before you start: Studio 5000 Logix Designer (v31 or newer) and the Logix Design
 SDK guide's `.venv` in the SDK's python folder); a Studio 5000 project (.ACD) with your controller; in ISA Auto
 Programmer a project on the **Logix** PLC with its program.
 
-1. PLC program page › **Send to Studio 5000**. It lists Logix Designer, the SDK and its Python client (green).
+1. PLC program page › **Send to PLC software**. It lists Logix Designer, the SDK and its Python client (green).
    Without the SDK: it says so and **Open the .L5X in Studio 5000** opens a new project from the app's L5X.
 2. Close your project in Studio 5000. **Choose my project…**, then **Put the program in**. Your `.ACD` is unchanged
    (its date too); `<name>_ISA.ACD` next to it has the program: MainProgram with its rungs, the controller tags, the
@@ -70,7 +70,7 @@ Programmer a project on the **Logix** PLC with its program.
    "The controller may be put in Program mode" are ticked. Cancel: nothing happens (no `download` in the log).
 7. **Download**: the controller goes to Program mode, gets the program, stays in Program mode (Studio 5000 online:
    the copy's rungs); with "Put it in Run mode after" ticked it goes to Run.
-8. If anything goes wrong: one sentence; **Open folder** and send us `studio5000-bridge.log`. When it says the SDK
+8. If anything goes wrong: one sentence; **Open log folder** and send us `studio5000-bridge.log`. When it says the SDK
    has no `partial_import_from_xml_file`, the log lists the names your SDK has: send it, we fit the script.
 
 Note your Logix Designer version, SDK version (its folder name or Help › About) and Python version with the result.

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowPathIcon, CheckCircleIcon, ExclamationTriangleIcon, PaperAirplaneIcon, StopIcon, XMarkIcon } from '@heroicons/react/20/solid';
+import BridgeFailed from './BridgeFailed';
 import { desktopBridge, type Studio5000Detect } from '../../desktop/bridge';
 import { collectProject } from '../../deliverables/collect';
 import { studioImport } from '../studio5000/studioSend';
@@ -95,7 +96,7 @@ export default function SendToStudio5000({ profileId }: { profileId: string }) {
     <>
       <button onClick={show} data-testid="send-to-studio5000" title="Put the program into your Studio 5000 project on this PC"
         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded border border-brand-300 bg-white text-brand-800 hover:bg-brand-50">
-        <PaperAirplaneIcon className="h-4 w-4" /> Send to Studio 5000
+        <PaperAirplaneIcon className="h-4 w-4" /> Send to PLC software
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/40 p-6" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setOpen(false); }}>
@@ -187,12 +188,7 @@ export default function SendToStudio5000({ profileId }: { profileId: string }) {
                 </section>
               )}
 
-              {error && (
-                <div role="alert" className="space-y-1 rounded border border-red-200 bg-red-50 p-3 text-red-900" data-testid="studio5000-failed">
-                  <p>{error}</p>
-                  <p className="text-xs">Send this log to support: <span className="select-all font-mono">{logPath || 'studio5000-bridge.log'}</span><button onClick={() => void s5k.showLog().catch(() => undefined)} className="ml-2 rounded border border-red-300 bg-white px-2 py-0.5 font-medium hover:bg-red-100">Open folder</button></p>
-                </div>
-              )}
+              {error && <BridgeFailed error={error} logPath={logPath} logName="studio5000-bridge.log" showLog={s5k.showLog} testId="studio5000" />}
             </div>
           </div>
         </div>

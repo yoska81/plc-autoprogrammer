@@ -113,7 +113,7 @@ static class Tests
             pc.Sdk = Answers("{\"ok\":false,\"error\":\"Import failed: Controller/Tags not found\"}");
             Eq("Import failed: Controller/Tags not found", Throws<BridgeError>(() => jobs.Run(py, new Dictionary<string, object>(), _ => { }, CancellationToken.None)).Message);
             pc.Sdk = _ => new FakeProc { ExitCode = 2 };
-            True(Throws<BridgeError>(() => jobs.Run(py, new Dictionary<string, object>(), _ => { }, CancellationToken.None)).Message.StartsWith("The Logix Designer SDK ended without an answer (exit code 2)"), "no answer");
+            True(Throws<BridgeError>(() => jobs.Run(py, new Dictionary<string, object>(), _ => { }, CancellationToken.None)).Message == "The Logix Designer SDK ended without an answer: close Studio 5000 and try again.", "no answer");
             var running = new FakeProc { Exited = false };
             pc.Sdk = _ => running;
             using (var cts = new CancellationTokenSource())

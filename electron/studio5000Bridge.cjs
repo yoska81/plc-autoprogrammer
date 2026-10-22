@@ -4,7 +4,7 @@
 // the TIA bridge (electron/tiaBridge.cjs). Contract: src/desktop/bridge.ts (Studio5000Bridge).
 // ISA_STUDIO5000_BRIDGE=<path> runs another bridge instead (a .cjs file: the tests' fake). Main process only.
 const path = require('node:path');
-const { createBridge } = require('./tiaBridge.cjs');
+const { createBridge, showLogFile } = require('./tiaBridge.cjs');
 
 /** Detect runs Python a few times; an SDK job opens a project (minutes for a big one). */
 const TIMEOUT_MS = { detect: 120000, writeL5x: 30000, open: 60000, default: 40 * 60000 };
@@ -29,7 +29,7 @@ function registerStudio5000BridgeIpc(ipcMain, app, resourcesDir, dialog) {
     catch (err) { return { ok: false, error: err instanceof Error ? err.message : String(err) }; }
   });
   ipcMain.handle('isa:studio5000-log', () => logFile);
-  ipcMain.handle('isa:studio5000-show-log', () => { require('electron').shell.showItemInFolder(logFile); return true; });
+  ipcMain.handle('isa:studio5000-show-log', () => showLogFile(logFile));
   // the user's Studio 5000 project, chosen in Windows' Open dialog (its path only: the bridge copies it)
   ipcMain.handle('isa:studio5000-pick', async () => {
     const d = dialog ?? require('electron').dialog;

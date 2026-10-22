@@ -12,15 +12,27 @@ const readline = require('node:readline');
 /** Longest a request may take before the app gives up on it (opening TIA Portal or compiling a big project is slow). */
 const TIMEOUT_MS = { detect: 60000, default: 30 * 60000 };
 
+/** "30 minutes", "1 minute", "45 seconds". */
+const duration = (ms) => (ms >= 60000 ? `${Math.round(ms / 60000)} minute${Math.round(ms / 60000) === 1 ? '' : 's'}` : `${Math.round(ms / 1000)} seconds`);
+
 /**
  * A bridge client. `exe`: the bridge program; `logFile`: where the bridge logs every call; `onProgress(id, text)`.
- * call(cmd, args) resolves with the result or rejects with the bridge's plain-English error.
+ * call(cmd, args) resolves with the result or rejects with the bridge's plain-English error. What goes wrong on the
+ * app's side (the bridge stops, cannot start, does not answer) is one plain sentence for the user; the details (exit
+ * code, the bridge's last words, the command) go into the same log, for support.
  */
 function createTiaBridge({ exe, logFile, onProgress, timeouts = TIMEOUT_MS, label = 'TIA Portal bridge', what = 'TIA Portal' }) {
   let proc = null;
   let ready = null; // promise of the "ready" line
   let nextId = 1;
   const pending = new Map(); // id → { resolve, reject, timer, cmd }
+  const log = (what) => {
+    if (!logFile) return;
+    const t = new Date();
+    const pad = (n, w = 2) => String(n).padStart(w, '0');
+    const stamp = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}.${pad(t.getMilliseconds(), 3)}`;
+    try { fs.mkdirSync(path.dirname(logFile), { recursive: true }); fs.appendFileSync(logFile, `${stamp} [app] ${what}\n`); } catch { /* no log */ }
+  };
 
   const failAll = (msg) => {
     for (const [, p] of pending) { clearTimeout(p.timer); p.reject(new Error(msg)); }
@@ -29,6 +41,7 @@ function createTiaBridge({ exe, logFile, onProgress, timeouts = TIMEOUT_MS, labe
 
   function start() {
     if (proc) return ready;
+    if (!exe || !fs.existsSync(exe)) log(`the ${label} is missing: ${exe || '(none)'}`);
     if (!exe || !fs.existsSync(exe)) return Promise.reject(new Error(`The ${label} is not in this installation (Windows desktop app only). Reinstall ISA Auto Programmer.`));
     const script = /\.c?js$/i.test(exe);
     const args = logFile ? ['--log', logFile] : [];
@@ -55,14 +68,16 @@ function createTiaBridge({ exe, logFile, onProgress, timeouts = TIMEOUT_MS, labe
       let stderr = '';
       me.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
       me.on('error', (err) => {
-        const msg = `The ${label} could not start: ${err.message}`;
+        log(`the ${label} could not start: ${err.message}`);
+        const msg = `The ${label} could not start. Reinstall ISA Auto Programmer, then try again.`;
         if (!isReady) reject(new Error(msg));
         failAll(msg);
         if (proc === me) proc = null;
       });
       me.on('exit', (code) => {
         const why = stderr.trim().split(/\r?\n/).slice(-1)[0];
-        const msg = `The ${label} stopped (exit code ${code})${why ? `: ${why}` : ''}. Try again; the log is at ${logFile || 'the app\'s logs folder'}.`;
+        log(`the ${label} stopped (exit code ${code})${why ? `: ${why}` : ''}${pending.size ? `; open requests: ${[...pending.values()].map((p) => p.cmd).join(', ')}` : ''}`);
+        const msg = `The ${label} stopped unexpectedly. Try again.`;
         if (!isReady) reject(new Error(msg));
         failAll(msg);
         if (proc === me) proc = null;
@@ -79,7 +94,8 @@ function createTiaBridge({ exe, logFile, onProgress, timeouts = TIMEOUT_MS, labe
       const timer = setTimeout(() => {
         if (!pending.has(id)) return;
         pending.delete(id);
-        reject(new Error(`${what} did not answer within ${Math.round(ms / 1000)} s (${cmd}). Check ${what} for an open dialog${what === 'TIA Portal' ? ' (e.g. the Openness access question)' : ''} and try again.`));
+        log(`no answer to ${id} ${cmd} within ${Math.round(ms / 1000)} s`);
+        reject(new Error(`${what} did not answer in ${duration(ms)}: check ${what} for an open dialog${what === 'TIA Portal' ? ' (such as the question to allow access)' : ''}, then try again.`));
       }, ms);
       pending.set(id, { resolve, reject, timer, cmd });
       proc.stdin.write(`${JSON.stringify({ id, cmd, args })}\n`);
@@ -98,6 +114,15 @@ function createTiaBridge({ exe, logFile, onProgress, timeouts = TIMEOUT_MS, labe
   return { call, stop, get running() { return proc !== null; } };
 }
 
+/** "Open log folder": the log selected in Explorer; its folder when there is no log yet (the bridge never started). */
+function showLogFile(logFile) {
+  const { shell } = require('electron');
+  if (fs.existsSync(logFile)) { shell.showItemInFolder(logFile); return true; }
+  try { fs.mkdirSync(path.dirname(logFile), { recursive: true }); } catch { /* opened below anyway */ }
+  void shell.openPath(path.dirname(logFile));
+  return true;
+}
+
 /** The 'isa:tia' IPC: (cmd, args) → { ok, value | error }; progress to the window as 'isa:tia-progress' {id, text}. */
 function registerTiaBridgeIpc(ipcMain, app, resourcesDir) {
   const exe = process.env.ISA_TIA_BRIDGE || (process.platform === 'win32' ? path.join(resourcesDir, 'tia-bridge', 'TiaBridge.exe') : null);
@@ -114,8 +139,9 @@ function registerTiaBridgeIpc(ipcMain, app, resourcesDir) {
     catch (err) { return { ok: false, error: err instanceof Error ? err.message : String(err) }; }
   });
   ipcMain.handle('isa:tia-log', () => path.join(app.getPath('logs'), 'tia-bridge.log'));
+  ipcMain.handle('isa:tia-show-log', () => showLogFile(path.join(app.getPath('logs'), 'tia-bridge.log')));
   app.on('will-quit', () => bridge.stop());
   return bridge;
 }
 
-module.exports = { createTiaBridge, createBridge: createTiaBridge, registerTiaBridgeIpc, TIMEOUT_MS };
+module.exports = { createTiaBridge, createBridge: createTiaBridge, registerTiaBridgeIpc, showLogFile, TIMEOUT_MS };
