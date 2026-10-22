@@ -94,6 +94,9 @@ export interface DwgReaderBridge {
   read(files: { name: string; bytes: Uint8Array }[]): Promise<{ ok: true; files: { name: string; text: string; version?: string | null; warnings?: string[] }[] } | { ok: false; notConfigured?: boolean; error: string }>;
 }
 
+/** electron/claudeConfig.cjs: the Claude app is installed; the helper is in its settings, as this installation has it. */
+export interface ClaudeHelperStatus { claude: boolean; connected: boolean; current: boolean; file: string; error?: string }
+
 export interface IsaDesktop {
   /** Always true inside the desktop app. */
   isDesktop?: boolean;
@@ -116,6 +119,8 @@ export interface IsaDesktop {
   modbus?: ModbusBridge;
   /** DWG import (desktop app only; older builds don't have it). */
   dwg?: DwgReaderBridge;
+  /** The ISA PLC Helper in the Claude desktop app's settings (Send from the web page; older builds don't have it). */
+  claudeHelper?: { status(): Promise<ClaudeHelperStatus>; set(on: boolean): Promise<ClaudeHelperStatus> };
   /** Send to TIA Portal through TIA Openness (Windows desktop app only; older builds don't have it). */
   tia?: TiaBridge;
   /** Send to CLICK: drives CLICK Programming Software while the user watches (Windows desktop app only). */

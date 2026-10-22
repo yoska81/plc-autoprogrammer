@@ -31,7 +31,10 @@ out) next to the bridges' logs (`%APPDATA%\ISA Auto Programmer\logs`).
 
 ## In the Claude desktop app
 
-`%APPDATA%\Claude\claude_desktop_config.json`:
+ISA Auto Programmer › **Settings › Send from the web page › Connect the Claude app** (`electron/claudeConfig.cjs`),
+then close the Claude app and open it again. It adds only this entry to `%APPDATA%\Claude\claude_desktop_config.json`
+(the user's other servers and settings are kept; the file as it was is copied to `.isa-backup` once; a file that is
+not JSON is never overwritten); **Disconnect** takes it out:
 
 ```json
 {
@@ -45,11 +48,12 @@ out) next to the bridges' logs (`%APPDATA%\ISA Auto Programmer\logs`).
 }
 ```
 
-Then restart the Claude app. The next step lets the desktop app write this entry itself.
 
 ## Tests
 
 ```bash
 node e2e/plcHelper.test.cjs                                  # MCP, jobs, Stop, refusals, Open dialog, log; fake bridges
+node e2e/claudeConfig.test.cjs                               # the Claude app's settings: connect, keep the rest, disconnect
+BASE_URL=http://localhost:5218 node e2e/plc-helper-settings.e2e.cjs   # the Settings card
 APP_DIR=release/win-unpacked node e2e/plcHelper.packaged.cjs # Windows CI: the installed helper as the Claude app starts it
 ```
