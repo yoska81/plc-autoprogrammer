@@ -115,6 +115,18 @@ assert.equal(remakeCoverage(project(), 'generic-st').errors.length, 0);
   assert.match(text, /Axis1_motion_command \(was OW8008, motion command\); Axis1_actual_position \(was IL8016, actual position \(APOS\)\)/);
   assert.deepEqual(placed.tags.filter((t) => t.native).map((t) => [t.nickname, t.native]), [['Axis1_motion_command', 'OW8008'], ['Axis1_actual_position', 'IL8016']]);
   assert.equal(withServoPlaceholders(placed, 'siemens-s7').rungs.length, placed.rungs.length, 'once per axis');
+  // The target's motion calls, commented out and marked to complete: inside the comment in the exports, never logic.
+  assert.match(text, /\nTo complete \(not active\):\n\/\/ "Axis_1_Power"\(Axis := "Axis_1", Enable := <enable>[^\n]*\);\n\/\/ "Axis_1_MoveAbs"\(Axis := "Axis_1", Execute := <start>, Position := <position>, Velocity := <speed>\);$/);
+  const scl = getProfile('siemens-s7').exporters!.find((e) => e.id === 'siemens-scl')!.build(placed, { io: [], addresses: new Map(), labels: new Map(), header: 'h', extraTags: [], cpuId: getProfile('siemens-s7').defaultCpuId, modules: [], projectName: 'servo', now: new Date(0) });
+  const open = scl.indexOf('(* TODO: SERVO AXIS 1'), close = scl.indexOf('*)', open), call = scl.indexOf('"Axis_1_MoveAbs"');
+  assert.ok(open >= 0 && open < call && call < close, 'the SCL calls are inside the TODO comment');
+  const logixNote = withServoPlaceholders(before, 'logix').rungs.at(-1)!.outputs[0];
+  assert.match(logixNote.type === 'RAW' ? logixNote.text : '', /\n\/\/ MSO\(Axis_1, Axis_1_MSO\);\n\/\/ MAM\(Axis_1, Axis_1_MAM, 0, <position>, <speed>, Units per sec, …/);
+  const l5x = getProfile('logix').exporters!.find((e) => e.id === 'logix-l5x')!.build(withServoPlaceholders(before, 'logix'), { io: [], addresses: new Map(), labels: new Map(), header: 'h', extraTags: [], cpuId: getProfile('logix').defaultCpuId, modules: [], projectName: 'servo', now: new Date(0) });
+  assert.match(l5x, /<Comment>\s*<!\[CDATA\[[^\]]*\/\/ MSO\(Axis_1, Axis_1_MSO\);[^\]]*\]\]><\/Comment>/, 'the Logix calls are in the rung comment');
+  assert.doesNotMatch(l5x, /<Text>\s*<!\[CDATA\[[^\]]*MSO\(/, 'no MSO in a rung\'s logic');
+  const plain = withServoPlaceholders(before, 'micro800').rungs.at(-1)!.outputs[0];
+  assert.doesNotMatch(plain.type === 'RAW' ? plain.text : '', /To complete \(not active\)/, 'no calls made up for PLCs without a documented one here');
   assert.match(withServoPlaceholders(before, 'logix').rungs.at(-1)!.outputs[0].type === 'RAW' ? (withServoPlaceholders(before, 'logix').rungs.at(-1)!.outputs[0] as { text: string }).text : '', /AXIS_CIP_DRIVE[\s\S]*MSO[\s\S]*MAM/);
   // Not counted as rungs of the original; the checker says "to complete", never "cannot run".
   const p2 = { ...project(), program: placed };

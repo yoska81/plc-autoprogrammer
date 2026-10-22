@@ -135,6 +135,23 @@ function axisSetup(plcId: string, label: string): string {
 }
 
 /**
+ * The target's motion calls for one axis, commented out and marked to complete (never active: the whole note is a
+ * comment in every export). Only documented instructions: TIA Portal MC_Power / MC_MoveAbsolute (instance DBs to
+ * create), Studio 5000 MSO / MAM (the MAM operands after the speed are left to its instruction help).
+ */
+function axisSkeleton(plcId: string, axis: string): string[] {
+  if (plcId === 'siemens-s7') return [
+    `// "${axis}_Power"(Axis := "${axis}", Enable := <enable>, StartMode := 1, StopMode := 0);`,
+    `// "${axis}_MoveAbs"(Axis := "${axis}", Execute := <start>, Position := <position>, Velocity := <speed>);`,
+  ];
+  if (plcId === 'logix') return [
+    `// MSO(${axis}, ${axis}_MSO);`,
+    `// MAM(${axis}, ${axis}_MAM, 0, <position>, <speed>, Units per sec, … the other operands as the MAM instruction help says);`,
+  ];
+  return [];
+}
+
+/**
  * The remade program with one placeholder block per servo axis its rungs use ("SERVO AXIS 1 — to set up on …"):
  * no logic, only notes to complete by hand (TODO_VENDOR, a comment on every PLC) naming the axis's registers by
  * their new tag names (Axis1_motion_command, was OW8008), so nothing of the original's motion is silently lost.
@@ -168,7 +185,7 @@ export function withServoPlaceholders(program: LadderProgram, plcId: string, axi
     blocks.push({ id, name: `${title} — to set up on ${label}`, description: `Placeholder, no logic: the original drove this axis through its MECHATROLINK registers. Set the axis up on the ${label} and complete this block.` });
     const list = e.tags.map((x) => `${x.name} (was ${x.reg.register}, ${x.reg.what})`).join('; ');
     rungs.push({ id: `r_servo_c${e.circuit}_a${e.axis}`, block: id, comment: `${title}: to set up on the ${label}.`, branches: [],
-      outputs: [{ type: 'RAW', vendor: TODO_VENDOR, text: `${title} — to set up on ${label}: ${axisSetup(plcId, label)}. The program's tags of this axis: ${list}.` }] });
+      outputs: [{ type: 'RAW', vendor: TODO_VENDOR, text: [`${title} — to set up on ${label}: ${axisSetup(plcId, label)}. The program's tags of this axis: ${list}.`, ...((sk) => (sk.length ? ['To complete (not active):', ...sk] : []))(axisSkeleton(plcId, `${e.circuit > 1 ? `C${e.circuit}_` : ''}Axis_${e.axis}`))].join('\n') }] });
   }
   return { ...program, tags, blocks, rungs };
 }
