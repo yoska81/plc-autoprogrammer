@@ -104,6 +104,16 @@ jobs:
           node scripts/build-click-bridge.cjs
           CLICK_BRIDGE_EXE="$PWD/resources/click-bridge/ClickBridge.exe" node e2e/clickBridge.test.cjs
 
+      # The CODESYS bridge (tools/codesys-bridge): its own tests (.NET 8, a fake CODESYS), the job script's tests
+      # (python, a fake CODESYS ScriptEngine), then the exe the installer ships, started through the app's client.
+      - name: CODESYS bridge
+        shell: bash
+        run: |
+          dotnet run --project tools/codesys-bridge/tests -c Release
+          python tools/codesys-bridge/tests/test_job.py
+          node scripts/build-codesys-bridge.cjs
+          CODESYS_BRIDGE_EXE="$PWD/resources/codesys-bridge/CodesysBridge.exe" node e2e/codesysBridge.test.cjs
+
       - name: Build installer
         run: npm run dist:win
         env:

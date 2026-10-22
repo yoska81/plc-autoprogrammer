@@ -62,6 +62,18 @@ contextBridge.exposeInMainWorld('isaDesktop', {
       return () => ipcRenderer.removeListener('isa:click-progress', h);
     },
   },
+  // Send to CODESYS (electron/codesysBridge.cjs): the same shape, and the Open dialog for the user's project.
+  codesys: {
+    call: async (cmd, args) => { const r = await ipcRenderer.invoke('isa:codesys', cmd, args); if (!r.ok) throw new Error(r.error); return r.value; },
+    logPath: () => ipcRenderer.invoke('isa:codesys-log'),
+    showLog: () => ipcRenderer.invoke('isa:codesys-show-log'),
+    pickProject: () => ipcRenderer.invoke('isa:codesys-pick'),
+    onProgress: (cb) => {
+      const h = (_e, p) => cb(p);
+      ipcRenderer.on('isa:codesys-progress', h);
+      return () => ipcRenderer.removeListener('isa:codesys-progress', h);
+    },
+  },
   modbus: {
     connect: async (o) => { const r = await ipcRenderer.invoke('isa:modbus', 'connect', [o]); return r.ok ? r.value : { ok: false, error: r.error }; },
     disconnect: () => mb('disconnect'),

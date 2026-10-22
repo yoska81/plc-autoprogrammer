@@ -120,6 +120,7 @@ export interface IsaDesktop {
   tia?: TiaBridge;
   /** Send to CLICK: drives CLICK Programming Software while the user watches (Windows desktop app only). */
   click?: ClickBridge;
+  codesys?: CodesysBridge;
 }
 
 /** The CLICK bridge (electron/clickBridge.cjs → tools/click-bridge/ClickBridge.exe): the same shape as TiaBridge. */
@@ -130,6 +131,26 @@ export interface ClickBridge {
   /** Shows the log file in Explorer (to send it to support). Older desktop apps lack it. */
   showLog?(): Promise<boolean>;
   onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** The CODESYS bridge (electron/codesysBridge.cjs → tools/codesys-bridge/CodesysBridge.exe): the same shape. */
+export interface CodesysBridge {
+  call(cmd: 'detect', args?: Record<string, never>): Promise<CodesysDetect>;
+  call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
+  logPath(): Promise<string>;
+  showLog(): Promise<boolean>;
+  /** The user's CODESYS project from Windows' Open dialog (null: cancelled). */
+  pickProject(): Promise<string | null>;
+  onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** CODESYS on this PC (tools/codesys-bridge/src/CodesysDetect.cs), newest first. */
+export interface CodesysDetect {
+  ready: boolean;
+  installs: { name: string; version: string; exe: string; profile: string }[];
+  /** Where the app's new CODESYS projects go (Documents\ISA Auto Programmer\CODESYS). */
+  projectsDir: string;
+  steps: string[];
 }
 
 /** CLICK Programming Software on this PC (tools/click-bridge/src/ClickDetect.cs), newest first. */
