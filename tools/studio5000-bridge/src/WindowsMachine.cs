@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Microsoft.Win32;
+using TiaBridge;
 
 namespace Studio5000Bridge
 {
@@ -23,9 +24,17 @@ namespace Studio5000Bridge
         {
             try
             {
-                using (var p = Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true }))
+                // no window; no input (a launcher asking "install Python 3.13?" reads the end at once: no); its output
+                // read and dropped (a full pipe would stop it)
+                var info = new ProcessStartInfo(exe, args) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                using (var p = Process.Start(info))
                 {
-                    if (!p.WaitForExit(timeoutMs)) { try { p.Kill(); } catch (InvalidOperationException) { /* gone */ } return -1; }
+                    p.StandardInput.Close();
+                    p.OutputDataReceived += (s, e) => { };
+                    p.ErrorDataReceived += (s, e) => { };
+                    p.BeginOutputReadLine();
+                    p.BeginErrorReadLine();
+                    if (!p.WaitForExit(timeoutMs)) { try { p.Kill(); } catch (InvalidOperationException) { /* gone */ } Log.Write($"detect: {exe} {args} did not end within {timeoutMs} ms"); return -1; }
                     return p.ExitCode;
                 }
             }

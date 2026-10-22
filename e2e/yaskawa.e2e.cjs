@@ -1,6 +1,6 @@
 // Yaskawa MPE720 project (.YMW7): the binary project file is read on /upgrade (controller, I/O with the
 // project's comments, drawings decoded into rungs), "Use this program" loads it, and the rungs open in the
-// ladder editor on /program, with SEE calls and unknown codes shown as boxes. The app cannot program a Yaskawa
+// ladder editor on /program: the drawing called with SEE in its place, unknown codes shown as boxes. The app cannot program a Yaskawa
 // yet: the project stays on the machine's own controller, read only (no CLICK in its place), until a PLC is
 // chosen; choosing a Siemens S7-1200 then moves it. The project is the synthetic src/plc/import/__fixtures__/demo_mp.YMW7 (tools/fixtures/make_ymw7_fixture.py).
 //   npx vite --port 5205 &  ;  BASE_URL=http://localhost:5205 node e2e/yaskawa.e2e.cjs
@@ -52,13 +52,14 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   });
   check(state.rungs >= 10, `program loaded (${state.rungs} rungs)`);
   check(state.blocks.some((b) => /H01 Demo conveyor/.test(b)) && state.blocks.some((b) => /H01\.01 Demo sub/.test(b)), 'one block per drawing');
+  check(JSON.stringify(state.blocks) === JSON.stringify(['H01 Demo conveyor', 'H01.01 Demo sub', 'H01 Demo conveyor (after H01.01)']), `the called drawing at its SEE, then the rest of the caller (${state.blocks.join(', ')})`);
 
   await page.goto(BASE + '/program');
   await page.locator('[data-rung-id]').first().waitFor({ timeout: 10000 });
   const rungs = await page.locator('[data-rung-id]').count();
   check(rungs >= 10, `rungs open in the ladder editor (${rungs})`);
   const body = await page.locator('main').innerText();
-  check(/SEE H01\.01/.test(body), 'the SEE call is shown as a box');
+  check(!/SEE H01\.01/.test(body), 'no SEE box: the called drawing is in its place');
   check(/Unknown instruction/.test(body), 'the unknown code is shown as a box');
   await page.screenshot({ path: path.join(OUT, '2-program.png'), fullPage: false });
 
@@ -81,10 +82,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(/These are the Yaskawa modules: DEMOIO\. They stay with the original\. Choose the new PLC and the app picks its modules\./.test(up), 'the modules notice says they stay with the original');
   check(/Servo axes \(1\)/.test(up), 'the servo axes as information');
   check(await page.getByTestId('upgrade-choose-plc').isVisible(), 'the "Move it to another PLC: choose one" step');
-  // The remake: per PLC how much converts, before anything moves (the demo: 10 of 11 rungs, the SEE call and the unknown code kept).
-  // (When every PLC gives the same result it is said once above the buttons.)
+  // The remake: per PLC how much converts, before anything moves (the demo: 10 of 11 rungs, the unknown code kept;
+  // its SEE call is the called drawing in its place). When every PLC gives the same result it is said once above the buttons.
   const remake = `${await page.getByTestId('upgrade-remake-siemens-s7').innerText()} ${await page.getByTestId('upgrade-remake-same').innerText().catch(() => '')}`;
-  check(/Remake for Siemens S7-1200 \/ S7-1500/.test(remake) && /10 of 11 rungs convert/.test(remake) && /1 instruction the app can't read/.test(remake), `the remake line for Siemens (${remake.replace(/\s+/g, ' ')})`);
+  check(/Remake for Siemens S7-1200 \/ S7-1500/.test(remake) && /10 of 11 rungs convert/.test(remake) && /1 instruction the app can't read/.test(remake) && !/SEE|call to another drawing/i.test(remake), `the remake line for Siemens (${remake.replace(/\s+/g, ' ')})`);
   check(await page.getByTestId('upgrade-remake').locator('li').count() >= 6, 'a remake line per PLC the app writes');
   check(await page.getByTestId('upgrade-export').count() === 0, 'no "Download for …" until a PLC is chosen');
   await page.screenshot({ path: path.join(OUT, '3-read-only.png'), fullPage: true });

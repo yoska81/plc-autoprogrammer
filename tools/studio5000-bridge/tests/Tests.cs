@@ -34,7 +34,15 @@ static class Tests
         public string Value(string path, string name, bool wow32) => Values.TryGetValue($"{wow32}|{path}|{name}", out var v) ? v : null;
         public string[] Dirs(string path) => Folders.Where(f => f.StartsWith(path + @"\") && !f.Substring(path.Length + 1).Contains('\\')).ToArray();
         public bool Exists(string file) => Present.Contains(file) || File.Exists(file);
-        public int RunQuick(string exe, string args, int timeoutMs) { Ran.Add($"{exe} {args}"); return WithSdk.Any(w => $"{exe} {args}".StartsWith(w + " ")) ? 0 : 1; }
+        /// <summary>How long each Python takes to answer (ms; 0: at once).</summary>
+        public int ProbeTakes;
+        public List<int> Timeouts = new List<int>();
+        public int RunQuick(string exe, string args, int timeoutMs)
+        {
+            Ran.Add($"{exe} {args}"); Timeouts.Add(timeoutMs);
+            if (ProbeTakes > 0) { Thread.Sleep(Math.Min(ProbeTakes, timeoutMs)); if (ProbeTakes > timeoutMs) return -1; }
+            return WithSdk.Any(w => $"{exe} {args}".StartsWith(w + " ")) ? 0 : 1;
+        }
         public IProc Start(string exe, string args, IDictionary<string, string> env) { Started.Add($"{exe} {args}"); return Sdk(args.Substring(args.LastIndexOf(" \"") + 2).TrimEnd('"')); }
         public void Open(string file) => Opened.Add(file);
 
@@ -95,6 +103,25 @@ static class Tests
             True(!f.Ready && f.Steps[0].StartsWith("The SDK's Python client is not installed") && f.Steps[0].Contains("pip install"), string.Join(" | ", f.Steps));
             f = StudioDetect.Find(new FakePc().SdkFolder());
             True(!f.Ready && f.Steps[0] == "Studio 5000 Logix Designer is not installed on this PC.", string.Join(" | ", f.Steps));
+        });
+
+        Test("detect is quick on any PC: no SDK, no Python tried; the Store's stubs never; 5 s each, 10 s in all", () =>
+        {
+            // a build server: Pythons everywhere, no Rockwell software
+            var pc = new FakePc { PathDirs = new List<string> { @"C:\Windows", @"C:\Python313", @"C:\Users\me\AppData\Local\Microsoft\WindowsApps" } };
+            pc.Present.Add(@"C:\Windows\py.exe"); pc.Present.Add(@"C:\Python313\python.exe");
+            pc.Present.Add(@"C:\Users\me\AppData\Local\Microsoft\WindowsApps\python.exe"); pc.Present.Add(@"C:\Users\me\AppData\Local\Microsoft\WindowsApps\py.exe");
+            var f = StudioDetect.Find(pc);
+            True(pc.Ran.Count == 0 && f.Python == null && !f.Ready, string.Join(" | ", pc.Ran));
+            // with the SDK: never a WindowsApps stub, each at most 5 s
+            pc.SdkFolder();
+            StudioDetect.Find(pc);
+            True(pc.Ran.Count == 3 && !pc.Ran.Any(r => r.Contains("WindowsApps")) && pc.Timeouts.All(t => t <= StudioDetect.ProbeMs), string.Join(" | ", pc.Ran));
+            // Pythons that hang: given up after 10 s in all
+            pc.Ran.Clear(); pc.Timeouts.Clear(); pc.ProbeTakes = 60000;
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            f = StudioDetect.Find(pc);
+            True(clock.ElapsedMilliseconds < StudioDetect.ProbesMs + 1500 && pc.Ran.Count == 2 && f.Python == null && f.Steps.Any(x => x.StartsWith("The SDK's Python client is not installed")), $"{clock.ElapsedMilliseconds} ms, {pc.Ran.Count} tried");
         });
 
         Test("job: the SDK's Python with the script and the job, progress passed on (not a traceback), the result; errors; Stop", () =>
