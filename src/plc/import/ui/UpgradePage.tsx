@@ -111,7 +111,7 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                 <div className="bg-brand-50 rounded-lg border border-brand-200 p-4 flex flex-wrap items-center gap-3" data-testid="upgrade-simplify">
                   <div className="flex-1 min-w-[16rem]">
                     <h3 className="text-sm font-semibold text-gray-800">Next: simplify &amp; explain this program</h3>
-                    <p className="text-xs text-gray-600">A note in plain words on every rung, dead code found, the rungs grouped by machine function. Every change is checked in the simulator and waits for your approval{readOnly ? '; the copy moved to the new PLC is the one simplified' : ''}.</p>
+                    <p className="text-xs text-gray-600">Adds a plain-words note to every rung, finds the parts of the program that do nothing, and puts the rest in a clear order. Every change is tried in the simulator first and waits for your approval{readOnly ? '; the copy for the new PLC is the one simplified, the original stays as it is' : ''}.</p>
                   </div>
                   <Link to="/program?tidy=1" className="text-sm px-4 py-2 rounded bg-brand-600 text-white font-medium hover:bg-brand-700">Simplify &amp; explain this program</Link>
                 </div>

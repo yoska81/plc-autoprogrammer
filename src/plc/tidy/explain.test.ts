@@ -125,7 +125,8 @@ const ai = { provider: 'anthropic' as const, apiKey: 'k', model: 'm', effort: 'l
   const x = explainProgram(p);
   assert.equal(x.blocks.length, new Set(p.ladder.rungs.map((r) => r.block)).size);
   assert.ok(x.blocks.some((b) => b.notRead.length), 'kept boxes listed');
-  assert.match(x.overview.join(' '), /keep instructions of the original PLC/);
+  assert.match(x.overview.join(' '), /instructions of the old PLC that the app cannot read/);
+  assert.ok(!x.blocks.some((b) => /^Imported from/.test(b.what)), 'an import\'s own description is not taken for what a block does');
 }
 
 // A synthetic 4,000-rung program: fast, and the AI in few parts within the budget.

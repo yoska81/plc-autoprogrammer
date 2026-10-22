@@ -133,7 +133,7 @@ export function explainProgram(p: ProjectSnapshot, ai: AiSummaries = {}): Progra
   const info = programInfo(p);
   const l = p.ladder;
   const blockOf = (r: Rung) => (r.block && (l.blocks ?? []).some((b) => b.id === r.block) ? r.block : GENERAL);
-  const defs = [...(l.blocks ?? []).map((b) => ({ id: b.id, name: b.name, description: `${b.called === false ? 'Never runs on the original PLC (no call names this routine). ' : ''}${b.description}` })), ...(l.rungs.some((r) => blockOf(r) === GENERAL) ? [{ id: GENERAL, name: 'General', description: '' }] : [])];
+  const defs = [...(l.blocks ?? []).map((b) => ({ id: b.id, name: b.name, description: b.description, never: b.called === false })), ...(l.rungs.some((r) => blockOf(r) === GENERAL) ? [{ id: GENERAL, name: 'General', description: '', never: false }] : [])];
   const nameOf = new Map(defs.map((b) => [b.id, b.name] as const));
   // Which blocks write and read each address.
   const writers = new Map<string, Set<string>>(), readers = new Map<string, Set<string>>();
@@ -161,10 +161,12 @@ export function explainProgram(p: ProjectSnapshot, ai: AiSummaries = {}): Progra
     const counters = rungs.flatMap((r) => r.outputs.filter((o): o is Extract<LadderOutput, { type: 'CNT' }> => o.type === 'CNT').map((o) => `${info.ref(o.address)}: counts ${o.direction === 'DOWN' ? 'down' : 'up'} to ${o.preset} when ${info.conditionText(r) || 'always'}${o.resetAddress ? `; reset by ${info.ref(o.resetAddress)}` : ''}`));
     const reg = stepRegister(rungs, l.sequence?.register);
     const fieldOuts = list(writes.filter((a) => fieldOutput(info, a)).map((a) => info.name(a) || a));
-    const what = d.description.trim()
+    // An import's own description ("Imported from … routine …") says nothing about what the block does.
+    const own = /^Imported from /.test(d.description.trim()) ? '' : d.description.trim();
+    const what = (d.never ? 'Never runs on the original PLC (no call names this routine). ' : '') + (own
       || (reg ? `Runs a step sequence (${info.ref(reg)})${fieldOuts.length ? ` driving ${fieldOuts.slice(0, 4).join(', ')}${fieldOuts.length > 4 ? ` and ${fieldOuts.length - 4} more` : ''}` : ''}.`
         : fieldOuts.length ? `Drives ${fieldOuts.slice(0, 4).join(', ')}${fieldOuts.length > 4 ? ` and ${fieldOuts.length - 4} more outputs` : ''}.`
-          : `Internal logic: ${list(rungs.map((r) => r.comment.split(/[.;]/)[0].trim()).filter(Boolean)).slice(0, 3).join('; ') || `${rungs.length} rung(s) other blocks use`}.`);
+          : `Internal logic: ${list(rungs.map((r) => r.comment.split(/[.;]/)[0].trim()).filter(Boolean)).slice(0, 3).join('; ') || `${rungs.length} ${rungs.length === 1 ? 'rung' : 'rungs'} other blocks use`}.`));
     const summary = ai[d.id];
     return {
       id: d.id, name: d.name, what, rungs: range(nums), rungCount: rungs.length,
@@ -181,7 +183,7 @@ export function explainProgram(p: ProjectSnapshot, ai: AiSummaries = {}): Progra
   const overview = [
     `${p.projectName || 'The machine'}: ${l.rungs.length} rungs in ${blocks.length} block${blocks.length === 1 ? '' : 's'} on ${p.profile.vendor} ${p.profile.name}${io ? `, ${p.io.filter((x) => x.type === 'input').length} inputs and ${p.io.filter((x) => x.type === 'output').length} outputs` : ''}.`,
     `Blocks: ${blocks.map((b) => `${b.name} (${b.rungs})`).join('; ')}.`,
-    ...(blocks.some((b) => b.notRead.length) ? [`${blocks.reduce((n, b) => n + b.notRead.length, 0)} rung(s) keep instructions of the original PLC that the app does not read; they are listed in their block and explained only by their comment.`] : []),
+    ...(blocks.some((b) => b.notRead.length) ? [(() => { const n = blocks.reduce((k, b) => k + b.notRead.length, 0); return `${n} ${n === 1 ? 'rung uses' : 'rungs use'} instructions of the old PLC that the app cannot read; ${n === 1 ? 'it is' : 'they are'} listed in ${n === 1 ? 'its block' : 'their blocks'} and explained only by ${n === 1 ? 'its comment' : 'their comments'}.`; })()] : []),
   ];
   return { title: `How the program works: ${p.projectName || 'machine'}`, overview, blocks };
 }
@@ -200,7 +202,7 @@ export function explanationText(x: ProgramExplanation): string {
     sec('Counters', b.counters);
     if (b.sequence) sec(`Steps (${b.sequence.register})`, b.sequence.steps.map((s) => `step ${s.step}: ${s.does.join('; ') || 'waits'}${s.next.length ? `; ${s.next.join('; or ')}` : ''}`));
     sec('Alarms', b.alarms);
-    sec('Not read by the app (kept as they were)', b.notRead);
+    sec('Instructions the app cannot read (kept as they were)', b.notRead);
     out.push('');
   }
   return out.filter((l, i, a) => l !== '' || a[i - 1] !== '').join('\n');

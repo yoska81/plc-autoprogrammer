@@ -41,7 +41,7 @@ import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
 import VoiceTextarea from '../../../voice/VoiceTextarea';
 import { collectProject } from '../../../deliverables/collect';
 import { addComments } from '../../tidy/comments';
-import { applyReorganize, externalAddresses, planReorganize, plcBaseline, type ReorgPlan, type SectionId } from '../../tidy/reorganize';
+import { applyReorganize, describeChanges, externalAddresses, planReorganize, plcBaseline, removalCounts, removalPreview, type ReorgPlan, type SectionId } from '../../tidy/reorganize';
 import { equivalenceSummary } from '../../tidy/equivalence';
 import { checkEquivalenceOffThread } from '../../tidy/equivalenceOffThread';
 import { explainWithAi } from '../../tidy/explain';
@@ -318,6 +318,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
 
   /** Reorganize: the transforms found (each with its checkbox), then the chosen ones checked in the simulator. */
   const [reorg, setReorg] = useState<{ plan: ReorgPlan; chosen: Set<SectionId> } | null>(null);
+  const reorgPreview = useMemo(() => (reorg ? removalPreview(useProgramStore.getState().ladder, reorg.plan, reorg.chosen) : null), [reorg]);
   const openReorganize = () => {
     const plan = planReorganize(collectProject());
     setReorg({ plan, chosen: new Set(plan.sections.filter((x) => x.defaultOn).map((x) => x.id)) });
@@ -335,13 +336,13 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       const check = await checkEquivalenceOffThread(plcBaseline(p, plan, chosen), program, { observe: [...externalAddresses(p)], plant }, {
         signal, onProgress: (done, total) => stage(`checking in the simulator, sequence ${done + 1} of ${total}`),
       });
-      return { program, check, before: p.ladder.rungs.length, titles: plan.sections.filter((x) => chosen.has(x.id)).map((x) => x.title) };
+      return { program, check, before: p.ladder.rungs.length, changes: describeChanges(plan, chosen, removalPreview(p.ladder, plan, chosen)) };
     }, (r) => {
       const st = useProgramStore.getState();
-      st.addChat({ role: 'user', text: `Reorganize the program: ${r.titles.join('; ')}.` });
+      st.addChat({ role: 'user', text: 'Reorganize the program.' });
       const said = equivalenceSummary(r.check);
-      if (r.check.differences.length) { st.addChat({ role: 'assistant', text: `${said}\nNothing is proposed: the reorganized program would not behave the same. Choose fewer changes and try again.`, outcome: 'no-change' }); return; }
-      const text = `Reorganized: ${r.titles.join('; ')} (${r.before} rungs → ${r.program.rungs.length}; a removal is kept back when a rung that stays reads it).\n${said}\nAddresses, the I/O and what the HMI reads did not move; kept instructions of the original PLC stay as they were.`;
+      if (r.check.differences.length) { st.addChat({ role: 'assistant', text: `Nothing was changed: with these choices the program would not behave the same in the simulator. Untick some changes and try again.\n\n${said}`, outcome: 'no-change' }); return; }
+      const text = `Reorganized (${r.before.toLocaleString('en-US')} rungs → ${r.program.rungs.length.toLocaleString('en-US')}):\n${r.changes.map((c) => `- ${c}`).join('\n')}\n\nChecked in the simulator: ${said}\n\nThe wiring, the I/O addresses and what the screen shows did not move; instructions kept from the old PLC stay as they were. Approve to keep it; the program before it stays in History.`;
       st.addChat({ role: 'assistant', text });
       st.setProposal({ program: r.program, explanation: text, reasoning: null });
     }, false);
@@ -631,13 +632,14 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             )}
             {reorg && !proposal && (
               <div className="rounded border border-gray-200 bg-gray-50 p-2 text-xs space-y-1.5" role="group" aria-label="Reorganize">
-                <p className="text-gray-600">Choose the changes. They are checked together in the simulator before they are proposed; nothing changes until you approve.</p>
+                <p className="text-gray-600">Choose what to change. Everything you tick is tried together in the simulator first, and nothing changes until you approve.</p>
                 {reorg.plan.sections.map((sec) => (
                   <label key={sec.id} className="flex items-start gap-2">
                     <input type="checkbox" className="mt-0.5" checked={reorg.chosen.has(sec.id)} disabled={!sec.items.length && sec.id !== 'comment' && sec.id !== 'reorder'}
                       onChange={(e) => { const c = new Set(reorg.chosen); if (e.target.checked) c.add(sec.id); else c.delete(sec.id); setReorg({ ...reorg, chosen: c }); }} />
                     <span><span className="font-medium text-gray-800">{sec.title}</span><br /><span className="text-gray-500">{sec.note}</span>
-                      {sec.items.length > 0 && sec.id !== 'reorder' && <span className="block text-gray-500">{sec.items.slice(0, 4).join(' · ')}{sec.items.length > 4 ? ` · and ${sec.items.length - 4} more` : ''}</span>}</span>
+                      {sec.items.length > 0 && sec.id !== 'reorder' && <span className="block text-gray-500">{sec.items.slice(0, 4).join(' · ')}{sec.items.length > 4 ? ` · and ${(sec.items.length - 4).toLocaleString('en-US')} more` : ''}</span>}
+                      {reorgPreview && reorg.chosen.has(sec.id) && (() => { const c = removalCounts(reorg.plan, reorgPreview, sec.id); return c.keptBack ? <span className="block text-amber-800" data-testid="reorg-kept-back">{c.removed.toLocaleString('en-US')} will go; {c.keptBack.toLocaleString('en-US')} {c.keptBack === 1 ? 'stays because a rung you keep still uses what it sets' : 'stay because a rung you keep still uses what they set'}{sec.id === 'remove-internal' && reorg.plan.sections.some((x) => x.id === 'remove-registers') && !reorg.chosen.has('remove-registers') ? ' (tick the data-register removal below to take those too)' : ''}.</span> : null; })()}</span>
                   </label>
                 ))}
                 {reorg.plan.findings.length > 0 && (
@@ -687,7 +689,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
         {review ? (
           <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-200 flex items-center gap-3">
             <div className="flex-1 text-sm text-indigo-900">
-              <span className="font-semibold">Review AI change:</span> {review.summary}.
+              <span className="font-semibold">Review the proposed change:</span> {review.summary}.
               {review.issues.some((i) => i.severity === 'error') && <span className="text-red-700"> The checker found errors in this change.</span>}
               {proposal?.note && <span className="block text-xs text-indigo-900 mt-0.5" data-testid="proposal-note">{proposal.note}</span>}
               <span className="block text-xs text-indigo-700 mt-0.5">Green = added, amber = changed, red = removed.</span>
