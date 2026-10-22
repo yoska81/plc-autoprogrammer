@@ -13,7 +13,10 @@ interface Built {
   notes: string[];
 }
 
+interface Downloaded { state: string; full: boolean; started: boolean; ip: string }
+
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
 
 /**
  * "Send to CODESYS": the Windows desktop app puts the project's Structured Text into a CODESYS project and builds it,
@@ -22,7 +25,10 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * project: a new one for CODESYS Control Win V3 (the soft PLC on this PC), or the user's own; theirs is never
  * changed (the app saves its copy next to it, <name>_ISA.project). 3. Put the program in (each POU, DUT and GVL
  * created or replaced, the main program in the MainTask) and build: the errors and warnings, each with its object
- * and line; then Open in CODESYS.
+ * and line; then Open in CODESYS. 4. Download, after a build without errors and only from the confirm screen: the
+ * PLC's IP address, "it is safe" ticked; an online change only (the program keeps running; nothing changes when one
+ * is not possible) unless the user lets the PLC stop for a full download; start only when ticked. The bridge
+ * refuses a download without that confirm.
  */
 export default function SendToCodesys({ profileId }: { profileId: string }) {
   const codesys = desktopBridge()?.codesys;
@@ -37,6 +43,14 @@ export default function SendToCodesys({ profileId }: { profileId: string }) {
   const [built, setBuilt] = useState<Built | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [logPath, setLogPath] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const [ip, setIp] = useState('');
+  const [safe, setSafe] = useState(false);
+  const [stopAllowed, setStopAllowed] = useState(false);
+  const [startAfter, setStartAfter] = useState(false);
+  const [user, setUser] = useState('');
+  const [password, setPassword] = useState('');
+  const [downloaded, setDownloaded] = useState<Downloaded | null>(null);
 
   useEffect(() => (open && codesys ? codesys.onProgress((p) => setProgress(p.text)) : undefined), [open, codesys]);
 
@@ -54,13 +68,21 @@ export default function SendToCodesys({ profileId }: { profileId: string }) {
 
   const program = codesysProgram(stCode ?? '');
   const name = tiaProjectName(projectName);
+  const closeConfirm = () => { setConfirming(false); setSafe(false); setStopAllowed(false); setStartAfter(false); setPassword(''); };
   const send = async () => {
-    setBuilt(null);
+    setBuilt(null); setDownloaded(null); closeConfirm();
     const r = await step('build', () => codesys.call('build', { project: useMine ? mine : undefined, name, objects: program.objects, main: program.main || undefined }) as Promise<Built>);
     if (r) setBuilt(r);
   };
   const stop = () => { void codesys.call('stop').catch(() => undefined); setProgress('Stopping…'); };
   const openIt = () => void step('open', () => codesys.call('open', { project: built!.project }));
+  const askDownload = () => { setDownloaded(null); closeConfirm(); setConfirming(true); };
+  const download = async () => {
+    if (!built || !safe || !IPV4.test(ip.trim())) return;
+    const r = await step('download', () => codesys.call('download', { confirmed: true, project: built.project, ip: ip.trim(), stopAllowed, startAfter, user: user.trim() || undefined, password: password || undefined }) as Promise<Downloaded>);
+    setPassword('');
+    if (r) { setDownloaded(r); setConfirming(false); setSafe(false); }
+  };
 
   const sub = 'rounded border border-steel-300 px-2.5 py-1 text-xs font-medium text-steel-800 hover:bg-steel-50 disabled:opacity-40';
   return (
@@ -83,7 +105,7 @@ export default function SendToCodesys({ profileId }: { profileId: string }) {
               {busy && (
                 <div className="flex items-center gap-3">
                   <p className="flex flex-1 items-center gap-2 text-steel-600" role="status"><ArrowPathIcon className="h-4 w-4 animate-spin" /> {progress || 'Working…'}</p>
-                  {busy === 'build' && <button onClick={stop} data-testid="codesys-stop" className="inline-flex items-center gap-1 rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"><StopIcon className="h-4 w-4" /> Stop</button>}
+                  {(busy === 'build' || busy === 'download') && <button onClick={stop} data-testid="codesys-stop" className="inline-flex items-center gap-1 rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"><StopIcon className="h-4 w-4" /> Stop</button>}
                 </div>
               )}
 
@@ -132,6 +154,43 @@ export default function SendToCodesys({ profileId }: { profileId: string }) {
                       {built.notes.length > 0 && <ul className="ml-5 list-disc text-amber-900">{built.notes.map((n) => <li key={n}>{n}</li>)}</ul>}
                       <button onClick={openIt} disabled={Boolean(busy)} data-testid="codesys-open" className={sub}>Open in CODESYS</button>
                     </div>
+                  )}
+                </section>
+              )}
+
+              {built && (
+                <section className="space-y-2" data-testid="codesys-download">
+                  <h3 className="font-semibold text-steel-900">4. Download to the PLC</h3>
+                  {built.errors > 0
+                    ? <p className="text-steel-500">Fix the build errors first (step 3), then download.</p>
+                    : !confirming && <button onClick={askDownload} disabled={Boolean(busy)} data-testid="codesys-download-button" className="rounded border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-800 hover:bg-red-50 disabled:opacity-40">Download to the PLC…</button>}
+                  {confirming && (
+                    <div className="space-y-2 rounded border-2 border-red-300 bg-red-50 p-3 text-red-950" data-testid="codesys-confirm">
+                      <p className="font-semibold">Download <span className="font-mono text-xs">{built.project}</span> to the PLC?</p>
+                      <p className="text-xs">The PLC then runs this program. Outputs can switch as soon as it runs. CODESYS reaches the PLC through its Gateway on this PC.</p>
+                      <label className="block text-xs">The PLC's IP address{' '}
+                        <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="192.168.0.10" aria-label="PLC IP address" className="ml-1 w-36 rounded border border-red-300 bg-white px-1.5 py-0.5 font-mono" />
+                        {ip.trim() && !IPV4.test(ip.trim()) && <span className="ml-1 text-red-700">not an IP address</span>}
+                      </label>
+                      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={safe} onChange={(e) => setSafe(e.target.checked)} data-testid="codesys-safe" />
+                        <span>I am at the machine, and it is safe for the PLC to run this program (nobody in the machine, moving parts and outputs checked).</span></label>
+                      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={stopAllowed} onChange={(e) => setStopAllowed(e.target.checked)} data-testid="codesys-stop-allowed" />
+                        <span>The PLC may be stopped for a full download. Unticked: only an online change, the program keeps running (when one is not possible, nothing is changed).</span></label>
+                      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={startAfter} onChange={(e) => setStartAfter(e.target.checked)} data-testid="codesys-start-after" />
+                        <span>Start the program after the download.</span></label>
+                      <div className="flex flex-wrap gap-3 text-xs">
+                        <label>PLC user, if it has one <input value={user} onChange={(e) => setUser(e.target.value)} autoComplete="off" aria-label="PLC user" className="ml-1 w-28 rounded border border-red-300 bg-white px-1.5 py-0.5" /></label>
+                        <label>password <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" aria-label="PLC password" className="ml-1 w-28 rounded border border-red-300 bg-white px-1.5 py-0.5" /></label>
+                        <span className="text-red-900/70">(for this download only, not kept)</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => void download()} disabled={Boolean(busy) || !safe || !IPV4.test(ip.trim())} data-testid="codesys-download-now" className="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-800 disabled:opacity-40">Download now</button>
+                        <button onClick={closeConfirm} disabled={Boolean(busy)} className="rounded border border-steel-300 bg-white px-3 py-1.5 text-xs font-medium text-steel-800 hover:bg-steel-50 disabled:opacity-40">Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                  {downloaded && (
+                    <p className="text-steel-700" data-testid="codesys-downloaded"><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />{downloaded.full ? 'Downloaded' : 'Online change done'} to the PLC at {downloaded.ip}; the program is {downloaded.state === 'run' ? 'running' : 'stopped'}{downloaded.started ? ' (started)' : ''}.{downloaded.state !== 'run' ? ' Start it from CODESYS (Debug › Start) when you are ready.' : ''}</p>
                   )}
                 </section>
               )}

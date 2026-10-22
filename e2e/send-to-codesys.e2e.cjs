@@ -37,6 +37,7 @@ const FAKE = () => {
           return t.result ?? { project: args.project ? args.project.replace(/\.project$/, '_ISA.project') : `C:\\Users\\tech\\Documents\\ISA Auto Programmer\\CODESYS\\${args.name}\\${args.name}.project`, objects: args.objects.map((o) => ({ name: o.name, kind: o.kind, action: 'created' })), errors: 0, warnings: 0, messages: [], notes: [] };
         }
         if (cmd === 'open') return { opened: args.project };
+        if (cmd === 'download') return t.download ?? { state: args.startAfter ? 'run' : 'stop', full: Boolean(args.stopAllowed), started: Boolean(args.startAfter), ip: args.ip };
         return null;
       },
       logPath: async () => 'C:\\Users\\tech\\AppData\\Roaming\\ISA Auto Programmer\\logs\\codesys-bridge.log',
@@ -125,6 +126,40 @@ END_PROGRAM`;
   await page.waitForTimeout(300);
   check((await page.evaluate(() => window.__cs.calls)).some((c) => c.cmd === 'open' && /Conveyor_Cell_example\.project$/.test(c.args.project)), 'Open in CODESYS: the project built');
 
+  // Download: only from the confirm screen, with the safety tick and a valid address
+  await dialog.getByTestId('codesys-download-button').click();
+  const confirm = dialog.getByTestId('codesys-confirm');
+  await confirm.waitFor({ timeout: 5000 });
+  check(/Download C:\\Users\\tech\\Documents\\ISA Auto Programmer\\CODESYS\\Conveyor_Cell_example\\Conveyor_Cell_example\.project to the PLC\?/.test(await confirm.innerText()), 'confirm screen: which project');
+  check(!(await page.evaluate(() => window.__cs.calls)).some((c) => c.cmd === 'download'), 'nothing downloaded before the confirm');
+  check(await dialog.getByTestId('codesys-download-now').isDisabled(), 'Download now off until safe and an address');
+  await dialog.getByLabel('PLC IP address').fill('192.168.0.300');
+  await dialog.getByTestId('codesys-safe').check();
+  check(await dialog.getByTestId('codesys-download-now').isDisabled() && /not an IP address/.test(await confirm.innerText()), 'a wrong address: said, still off');
+  await dialog.getByLabel('PLC IP address').fill('192.168.0.10');
+  await dialog.getByLabel('PLC user').fill('admin');
+  await dialog.getByLabel('PLC password').fill('s3cret');
+  await dialog.getByTestId('codesys-download-now').click();
+  await dialog.getByTestId('codesys-downloaded').waitFor({ timeout: 10000 });
+  let dl = (await page.evaluate(() => window.__cs.calls)).filter((c) => c.cmd === 'download');
+  log('download:', JSON.stringify({ ...dl[0].args, password: dl[0].args.password ? '***' : undefined }));
+  check(dl.length === 1 && dl[0].args.confirmed === true && dl[0].args.ip === '192.168.0.10' && dl[0].args.stopAllowed === false && dl[0].args.startAfter === false && dl[0].args.user === 'admin' && dl[0].args.password === 's3cret' && /Conveyor_Cell_example\.project$/.test(dl[0].args.project), 'one download: the project built, the address, an online change only, the credentials');
+  check(/Online change done to the PLC at 192\.168\.0\.10; the program is stopped\. Start it from CODESYS/.test(await dialog.getByTestId('codesys-downloaded').innerText()), 'online change done, said');
+  await dialog.getByTestId('codesys-download-button').click();
+  await confirm.waitFor({ timeout: 5000 });
+  check(!(await dialog.getByTestId('codesys-safe').isChecked()) && !(await dialog.getByTestId('codesys-stop-allowed').isChecked()) && await dialog.getByLabel('PLC password').inputValue() === '', 'each confirm starts unticked, no password kept');
+  await dialog.getByTestId('codesys-safe').check();
+  await dialog.getByTestId('codesys-stop-allowed').check();
+  await dialog.getByTestId('codesys-start-after').check();
+  await dialog.getByTestId('codesys-download-now').click();
+  await dialog.getByTestId('codesys-downloaded').filter({ hasText: 'running' }).waitFor({ timeout: 10000 });
+  dl = (await page.evaluate(() => window.__cs.calls)).filter((c) => c.cmd === 'download');
+  check(dl.length === 2 && dl[1].args.stopAllowed === true && dl[1].args.startAfter === true && /^Downloaded to the PLC at 192\.168\.0\.10; the program is running \(started\)\.$/.test((await dialog.getByTestId('codesys-downloaded').innerText()).trim()), 'a full download allowed, started, said');
+  await dialog.getByTestId('codesys-download-button').click();
+  await dialog.getByTestId('codesys-safe').check();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  check(await dialog.getByTestId('codesys-confirm').count() === 0 && (await page.evaluate(() => window.__cs.calls)).filter((c) => c.cmd === 'download').length === 2, 'Cancel: nothing downloaded');
+
   // the user's project (picked), with build errors
   await page.evaluate(() => { window.__cs.calls = []; window.__cs.result = { project: 'D:\\Lines\\Line_ISA.project', objects: [{ name: 'Mode', kind: 'dut', action: 'replaced' }, { name: 'Main', kind: 'program', action: 'created' }], errors: 1, warnings: 1, messages: [{ severity: 'error', text: "Identifier 'Start_PB2' not defined", object: 'Main', line: 2 }, { severity: 'warning', text: 'Unused variable r', object: 'SealIn', line: null }], notes: ['The project has no MainTask: call Main from a task of yours in CODESYS.'] }; });
   await dialog.getByTestId('codesys-pick').click();
@@ -139,6 +174,7 @@ END_PROGRAM`;
   check(/1 created, 1 replaced/.test(builtText) && /Built with 1 error and 1 warning/.test(builtText), 'counts of objects and messages');
   check(/Main, line 2: Identifier 'Start_PB2' not defined/.test(builtText) && /SealIn: Unused variable r/.test(builtText), 'each message with its object and line');
   check(/no MainTask: call Main from a task of yours/.test(builtText), 'the MainTask note');
+  check(/Fix the build errors first/.test(await dialog.getByTestId('codesys-download').innerText()) && await dialog.getByTestId('codesys-download-button').count() === 0, 'no download while the build has errors');
   await page.evaluate(() => { window.__cs.result = null; });
 
   // Stop while it builds; an error in one sentence with the log
