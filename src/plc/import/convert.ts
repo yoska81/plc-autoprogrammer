@@ -231,7 +231,7 @@ export function convertForeign(fp: ForeignProgram, fileName: string): ImportedPr
     let id = `b_${slug(r.name)}`;
     while (blocks.some((b) => b.id === id)) id += '_';
     if (r.origin) blockOrigin[id] = r.origin;
-    blocks.push({ id, name: r.name, description: `Imported from ${fp.vendor} ${r.language === 'ladder' ? 'ladder' : r.language.toUpperCase()} routine "${r.name}"` });
+    blocks.push({ id, name: r.name, description: `Imported from ${fp.vendor} ${r.language === 'ladder' ? 'ladder' : r.language.toUpperCase()} routine "${r.name}"`, ...(r.called === false ? { called: false } : {}) });
     for (const g of r.rungs) {
       const n = r.rungNumbers?.[g.id];
       for (const x of [...g.branches.flat(), ...g.outputs]) if (x.type === 'RAW') notConverted.push({ where: r.name, text: `${n ? `Rung ${n}: ` : ''}${x.text}`, kept: true });

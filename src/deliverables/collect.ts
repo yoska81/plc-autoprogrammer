@@ -25,7 +25,7 @@ import { noTouchPanelNow } from '../hmi/projectPanel';
 export function collectProject() {
   const program = useProgramStore.getState();
   const io = useIOStore.getState().projectIO;
-  const { plcId, cpuId, modules, recommendation, info } = useProjectStore.getState();
+  const { plcId, cpuId, modules, recommendation, info, yaskawaMemory, networkAxes } = useProjectStore.getState();
   const spec = useSpecStore.getState().sections;
   const electrical = useElectricalStore.getState();
   const hmiState = useHmiStore.getState();
@@ -64,10 +64,12 @@ export function collectProject() {
     projectName: program.projectName,
     fileBase: program.projectName.trim().replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'plc_project',
     profile, cpu, modules, spec, io, addresses, labels,
+    /** Yaskawa: the app's memory areas in this project, and the servo axes on the motion network. */
+    yaskawaMemory, networkAxes,
     ladder: program.ladder,
     stCode: program.generatedCode,
     // The neutral ladder is checked against the selected PLC (every vendor exports from it) and the project's HMI.
-    issues: program.ladder.rungs.length ? validateProgram(program.ladder, profile, ioAddressSet, hmi.design ?? undefined, { noPanel: noHmi, ...(profile.id === 'click' ? { pulseOutputs: ptoPointsFor(cpu.id, modules) } : {}) }) : [],
+    issues: program.ladder.rungs.length ? validateProgram(program.ladder, profile, ioAddressSet, hmi.design ?? undefined, { noPanel: noHmi, yaskawaMemory, ...(profile.id === 'click' ? { pulseOutputs: ptoPointsFor(cpu.id, modules) } : {}) }) : [],
     electrical: electrical.design,
     drawingCtx,
     // the panel part number the project uses, also when the HMI design was made without one

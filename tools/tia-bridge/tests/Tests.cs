@@ -65,6 +65,36 @@ static class Tests
             }
             return created;
         }
+        public List<string> Imported = new List<string>();
+        public CompileResult Compiled = new CompileResult();
+        public void ImportBlocks(IList<BlockFile> files, Action<string> progress, Action<string, string> failed)
+        {
+            foreach (var f in files)
+            {
+                progress($"Importing {f.Name}…");
+                if (f.Text.Contains("BROKEN")) failed(f.Name, "The XML does not match the schema of this TIA Portal version.");
+                else Imported.Add($"{f.Kind}:{f.Name}");
+            }
+        }
+        public CompileResult Compile() { Calls.Add("compile"); return Compiled; }
+        public List<PcInterfaceInfo> Interfaces = new List<PcInterfaceInfo> { new PcInterfaceInfo { Name = "Intel(R) Ethernet Connection I219-LM", Number = 1, Targets = { "1 X1" } } };
+        public IList<PcInterfaceInfo> DownloadInterfaces() { Calls.Add("interfaces"); return Interfaces; }
+        public string PlcAddress() => "192.168.0.1";
+        public List<KeyValuePair<string, string>> Blocks = new List<KeyValuePair<string, string>>();
+        public IList<KeyValuePair<string, string>> ExportBlocks(Action<string> progress, Action<string, string> failed)
+        {
+            Calls.Add("export");
+            failed("Secret_FB", "know-how protected: TIA Portal does not give its content to other programs");
+            return Blocks;
+        }
+        public IList<TagRow> ReadTags() { Calls.Add("readTags"); return Tags.Values.ToList(); }
+        public DownloadChoices Downloaded;
+        public DownloadOutcome Download(string pc, int number, string target, DownloadChoices c, Action<string> progress)
+        {
+            Calls.Add($"download {pc} {number} {target}");
+            Downloaded = c;
+            return new DownloadOutcome { State = "success", Answers = { "StopModules: StopAll" } };
+        }
         public void Save() => Calls.Add("save");
     }
 
@@ -92,6 +122,9 @@ static class Tests
         foreach (var l in lines) if (!p.Handle(l)) break;
         return output.ToString().Split('\n').Where(l => l.Trim().Length > 0).Select(l => (Dictionary<string, object>)Json.Parse(l)).ToList();
     }
+
+    /// <summary>The answer (not a progress line) to request id.</summary>
+    static Dictionary<string, object> Answer(List<Dictionary<string, object>> m, int id) => m.First(x => x.TryGetValue("id", out object v) && Equals(v, (double)id) && x.ContainsKey("ok"));
 
     static int Main()
     {
@@ -279,6 +312,126 @@ static class Tests
             Eq("6ES7 214-1AG40-0XB0", Openness.TypeOrder("6ES7 214-1AG40-0XB0"));
             Eq("V4.10|V4.9|V4.2", string.Join("|", new[] { "V4.2", "V4.10", "V4.9" }.OrderByDescending(v => v, Openness.Firmware_)));
             Eq("Line_ A_B", Commands.Safe("Line: A/B"));
+        });
+
+        Test("blocks: imported in the order sent (SCL source, then the XML blocks); a refused one is listed with TIA's reason", () =>
+        {
+            var output = new StringWriter();
+            var tia = new FakeTia();
+            var p = Commands.Register(new Protocol(output), ReadyPc(), api => tia);
+            var m = Talk(p, output, "{\"id\":1,\"cmd\":\"open\",\"args\":{\"name\":\"L\"}}",
+                "{\"id\":2,\"cmd\":\"blocks\",\"args\":{\"files\":[{\"name\":\"Machine_tia_helpers.scl\",\"kind\":\"scl\",\"text\":\"FUNCTION x\"},{\"name\":\"Machine_DB.xml\",\"kind\":\"xml\",\"text\":\"<Document/>\"},{\"name\":\"Conveyor.xml\",\"kind\":\"xml\",\"text\":\"BROKEN\"},{\"name\":\"Main.xml\",\"text\":\"<Document/>\"}]}}",
+                "{\"id\":3,\"cmd\":\"blocks\",\"args\":{\"files\":[]}}");
+            Eq("scl:Machine_tia_helpers.scl|xml:Machine_DB.xml|xml:Main.xml", string.Join("|", tia.Imported));
+            var r = (Dictionary<string, object>)m.First(x => Equals(x.GetValueOrDefault("id"), 2.0) && x.ContainsKey("result"))["result"];
+            Eq(3.0, Convert.ToDouble(r["imported"]));
+            Eq("Conveyor.xml", ((Dictionary<string, object>)((List<object>)r["failed"]).Single())["name"]);
+            True(m.Any(x => Equals(x.GetValueOrDefault("progress"), "Importing Main.xml…")), "progress per file");
+            True(((string)m.Last()["error"]).Contains("no program files"), "nothing to import");
+        });
+
+        Test("compile: counts and messages with their block and network", () =>
+        {
+            var output = new StringWriter();
+            var tia = new FakeTia();
+            tia.Compiled = new CompileResult { Errors = 1, Warnings = 1 };
+            tia.Compiled.Messages.Add(CompileText.Message("error", "PLC_1 > Program blocks > Conveyor (FC1) > Network 3", "Operand \"Start_PB\" not defined."));
+            tia.Compiled.Messages.Add(CompileText.Message("warning", "PLC_1 > Program blocks > Main (OB1)", "Network 2: The block call is never reached."));
+            var p = Commands.Register(new Protocol(output), ReadyPc(), api => tia);
+            var m = Talk(p, output, "{\"id\":1,\"cmd\":\"open\",\"args\":{\"name\":\"L\"}}", "{\"id\":2,\"cmd\":\"compile\"}");
+            var r = (Dictionary<string, object>)m.Last()["result"];
+            Eq(1.0, r["errors"]); Eq(1.0, r["warnings"]);
+            var msgs = ((List<object>)r["messages"]).Cast<Dictionary<string, object>>().ToList();
+            Eq("Conveyor", msgs[0]["block"]); Eq(3.0, msgs[0]["network"]);
+            Eq("Main", msgs[1]["block"]); Eq(2.0, msgs[1]["network"]);
+            True(Json.Write(r).Contains("\"network\":3"), Json.Write(r));
+        });
+
+        Test("compile message paths: German TIA, a message about a tag table, no network", () =>
+        {
+            var de = CompileText.Message("error", "PLC_1 > Programmbausteine > Pusher (FC2) > Netzwerk 5", "x");
+            Eq("Pusher", de.Block); Eq(5, de.Network);
+            var tags = CompileText.Message("warning", "PLC_1 > PLC tags > ISA Auto Programmer", "Address overlaps");
+            Eq("ISA Auto Programmer", tags.Block); Eq(null, tags.Network);
+            var none = CompileText.Message("error", "", "Compiling finished with errors");
+            Eq(null, none.Block); Eq(null, none.Network);
+        });
+
+        Test("download: never without the confirm screen", () =>
+        {
+            var output = new StringWriter();
+            var tia = new FakeTia();
+            var p = Commands.Register(new Protocol(output), ReadyPc(), api => tia);
+            var m = Talk(p, output, "{\"id\":1,\"cmd\":\"open\",\"args\":{\"name\":\"L\"}}",
+                "{\"id\":2,\"cmd\":\"download\",\"args\":{\"pcInterface\":\"Intel(R) Ethernet Connection I219-LM\"}}",
+                "{\"id\":3,\"cmd\":\"download\",\"args\":{\"pcInterface\":\"Intel(R) Ethernet Connection I219-LM\",\"confirmed\":\"yes\"}}");
+            var a2 = Answer(m, 2); Eq(false, a2["ok"]); True(((string)a2["error"]).Contains("confirm screen"), (string)a2["error"]);
+            Eq(false, Answer(m, 3)["ok"], "only a real true confirms");
+            True(!tia.Calls.Any(c => c.StartsWith("download")), string.Join(",", tia.Calls));
+        });
+
+        Test("download: the targets, then the download with the user's choices", () =>
+        {
+            var output = new StringWriter();
+            var tia = new FakeTia { Plc = new PlcInfo { Name = "PLC_1", OrderNumber = "6ES7 214-1AG40-0XB0", Firmware = "V4.6" } };
+            var p = Commands.Register(new Protocol(output), ReadyPc(), api => tia);
+            var m = Talk(p, output, "{\"id\":1,\"cmd\":\"open\",\"args\":{\"name\":\"L\"}}", "{\"id\":2,\"cmd\":\"downloadTargets\"}",
+                "{\"id\":3,\"cmd\":\"download\",\"args\":{\"confirmed\":true,\"pcInterface\":\"Intel(R) Ethernet Connection I219-LM\",\"number\":1,\"target\":\"1 X1\",\"stopAllowed\":true}}");
+            var t = (Dictionary<string, object>)Answer(m, 2)["result"];
+            Eq("192.168.0.1", t["address"]);
+            var i = ((List<object>)t["interfaces"]).Cast<Dictionary<string, object>>().Single();
+            Eq("1 X1", ((List<object>)i["targets"])[0]);
+            var r = (Dictionary<string, object>)Answer(m, 3)["result"];
+            Eq("success", r["state"]);
+            True(tia.Calls.Contains("download Intel(R) Ethernet Connection I219-LM 1 1 X1"), string.Join(",", tia.Calls));
+            Eq(true, tia.Downloaded.StopAllowed); Eq(false, tia.Downloaded.StartAfter); Eq(null, tia.Downloaded.Password);
+        });
+
+        Test("the log never keeps a password", () =>
+        {
+            var file = Path.Combine(Path.GetTempPath(), $"tia-log-{Guid.NewGuid():N}.log");
+            Log.Open(file);
+            var output = new StringWriter();
+            var p = Commands.Register(new Protocol(output), ReadyPc(), api => new FakeTia());
+            Talk(p, output, "{\"id\":1,\"cmd\":\"open\",\"args\":{\"name\":\"L\"}}", "{\"id\":2,\"cmd\":\"download\",\"args\":{\"confirmed\":true,\"pcInterface\":\"Intel(R) Ethernet Connection I219-LM\",\"password\":\"s3cret-pw\"}}");
+            string text = File.ReadAllText(file);
+            True(!text.Contains("s3cret-pw") && text.Contains("\"password\":\"***\"") && text.Contains("password given"), text);
+            Eq("***", Protocol.ForLog(new Dictionary<string, object> { ["password"] = "x" })["password"]);
+            Eq(null, Protocol.ForLog(new Dictionary<string, object> { ["password"] = null })["password"]);
+        });
+
+        Test("read back: the blocks as SimaticML, the tags, what TIA kept back; nothing saved", () =>
+        {
+            var output = new StringWriter();
+            var tia = new FakeTia { Plc = new PlcInfo { Name = "PLC_1", OrderNumber = "6ES7 214-1AG40-0XB0", Firmware = "V4.6" } };
+            tia.Blocks.Add(new KeyValuePair<string, string>("Main", "<Document><SW.Blocks.OB ID=\"0\"/></Document>"));
+            tia.Tags["Start"] = new TagRow { Name = "Start", DataType = "Bool", Address = "%I0.0", Comment = "Start button" };
+            var p = Commands.Register(new Protocol(output), ReadyPc(), api => tia);
+            var m = Talk(p, output, "{\"id\":1,\"cmd\":\"open\",\"args\":{\"name\":\"L\"}}", "{\"id\":2,\"cmd\":\"readBack\"}");
+            var r = (Dictionary<string, object>)Answer(m, 2)["result"];
+            var b = ((List<object>)r["blocks"]).Cast<Dictionary<string, object>>().Single();
+            Eq("Main", b["name"]); True(((string)b["xml"]).Contains("SW.Blocks.OB"), (string)b["xml"]);
+            Eq("Secret_FB", ((Dictionary<string, object>)((List<object>)r["failed"])[0])["name"]);
+            var t = ((List<object>)r["tags"]).Cast<Dictionary<string, object>>().Single();
+            Eq("%I0.0", t["address"]); Eq("Start button", t["comment"]);
+            Eq(0, tia.Calls.Count(c => c == "save"), "read only");
+        });
+
+        Test("download questions: answered from the user's choices, anything else stops it", () =>
+        {
+            var c = new DownloadChoices();
+            var stop = DownloadPolicy.Decide("StopModules", new[] { "NoAction", "StopAll" }, null, c);
+            Eq("refuse", stop.Kind); True(stop.Why.Contains("may be stopped"), stop.Why);
+            Eq("StopAll", DownloadPolicy.Decide("StopModules", new[] { "NoAction", "StopAll" }, null, new DownloadChoices { StopAllowed = true }).Value);
+            Eq("NoAction", DownloadPolicy.Decide("StartModules", new[] { "NoAction", "StartModule" }, null, c).Value);
+            Eq("StartModule", DownloadPolicy.Decide("StartModules", new[] { "NoAction", "StartModule" }, null, new DownloadChoices { StartAfter = true }).Value);
+            Eq("ConsistentDownload", DownloadPolicy.Decide("ConsistentBlocksDownload", new[] { "ConsistentDownload" }, null, c).Value);
+            Eq("Overwrite", DownloadPolicy.Decide("OverwriteSystemData", new[] { "NoAction", "Overwrite" }, null, c).Value);
+            Eq("refuse", DownloadPolicy.Decide("DownloadPasswordConfiguration", new string[0], null, c).Kind);
+            Eq("password", DownloadPolicy.Decide("DownloadPasswordConfiguration", new string[0], null, new DownloadChoices { Password = "x" }).Kind);
+            var odd = DownloadPolicy.Decide("CheckBeforeDownload", new string[0], "Differences in the hardware", c);
+            Eq("refuse", odd.Kind); True(odd.Why.Contains("CheckBeforeDownload: Differences in the hardware") && odd.Why.Contains("TIA Portal itself"), odd.Why);
+            Eq("refuse", DownloadPolicy.Decide("ConsistentBlocksDownload", new[] { "Something" }, null, c).Kind, "a selection it does not know");
         });
 
         Console.WriteLine($"TiaBridge tests: all passed ({_passed})");

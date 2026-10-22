@@ -1,7 +1,7 @@
 # TIA Portal bridge
 
 `TiaBridge.exe` lets the ISA Auto Programmer desktop app drive the user's own **Siemens TIA Portal**
-(V16–V20) through **TIA Openness**: the "Send to TIA Portal" button on the PLC program page.
+(V16–V20) through **TIA Openness**: the "Send to PLC software" button on the PLC program page (a Siemens project).
 
 - C#, .NET Framework 4.8 (what TIA Portal Openness V16–V20 runs on). Built by
   `node scripts/build-tia-bridge.cjs` into `resources/tia-bridge/`, shipped next to the app
@@ -38,10 +38,11 @@ on (`BridgeError`), or "TIA Portal reported: …" with the innermost cause.
 | `firmware` `{orderNumber}` | `{versions: ["V4.6", …]}` from TIA Portal's hardware catalog, newest first. Openness cannot read the firmware of a connected PLC: the user picks it (the CPU's label, or Accessible devices). |
 | `plc` `{orderNumber, firmware?, name, modules: [{orderNumber, slot}]}` | Adds the CPU (newest firmware unless given) and its local modules. A project that already has this CPU keeps it; another CPU is refused in words. `{plc, added, problems}` (a module not in the catalog or not fitting its slot is a problem, not a failure). Saves. |
 | `tags` `{tags: [{name, dataType, logicalAddress, comment}]}` | Writes them into the app's own tag table "ISA Auto Programmer" (created when missing; the user's tables are not touched): new ones created, existing ones updated. `{table, created, updated, failed: [{name, error}]}`. Saves. |
-
-Coming next (one pull request each): LAD blocks (SimaticML from the program export), with SCL as the fallback;
-compile with the messages mapped to rungs; download to the PLC from a confirm screen only; read the program back
-for the Upgrade page.
+| `blocks` `{files: [{name, kind: "xml" \| "scl", text}]}` | Imports the program's files in the order sent (the app sends the global DB, the SCL helpers, the FCs, OB 1): a SimaticML block replaces the block of the same name; an SCL source replaces the external source of the same name and generates its blocks. `{imported, failed: [{name, error}]}`. Saves. |
+| `compile` | Compiles the PLC software. `{errors, warnings, messages: [{severity, path, text, block, network}]}`: `block` and `network` read from the message's place in TIA's tree (the app maps them to rungs). Saves. |
+| `downloadTargets` | `{plc, address, interfaces: [{name, number, targets}]}`: the PLC, its IP address in the project, and this PC's network cards (PN/IE) that reach it. |
+| `download` `{confirmed: true, pcInterface, number, target, stopAllowed, startAfter, password?}` | Downloads hardware and software. **Refused without `confirmed: true`** (the app sends it only from its confirm screen). TIA Portal's questions are answered by `src/DownloadPolicy.cs` from the user's choices: stop the PLC only when `stopAllowed`, start it only when `startAfter`, the password only when given (not kept, not logged); any question it does not know **stops the download** and names it. `{state: success \| warning \| error \| refused, errors, warnings, messages, answers}`. |
+| `readBack` | **Read only.** Every program block of the open project exported as SimaticML (`PlcBlock.Export`, all block groups) and every PLC tag of every tag table: `{plc, blocks: [{name, xml}], failed: [{name, error}], tags: [{name, dataType, address, comment}]}`. A know-how protected block, or one TIA does not export (not compiled), is listed in `failed`. Nothing is saved. TIA Openness cannot read a PLC itself: a program only in the PLC is uploaded in TIA Portal first (Online › Upload device as new station). |
 
 ## Build and test
 
@@ -67,7 +68,7 @@ the app.
 
 Run on each TIA Portal version we support (V16 … V20) before a release; note the version and the result.
 
-1. **No Openness**: TIA Portal installed without "TIA Openness" → Send to TIA Portal → the check says
+1. **No Openness**: TIA Portal installed without "TIA Openness" → Send to PLC software → the check says
    TIA Openness is not installed and how to add it (setup → Modify → Options).
 2. **Not in the group**: Openness installed, the Windows user not in "Siemens TIA Openness" → the check names the
    user, the group, the `net localgroup` command and "sign out". Add the user, sign out and in → Check again
@@ -76,7 +77,7 @@ Run on each TIA Portal version we support (V16 … V20) before a release; note t
 4. **Log**: the path shown exists and has the `detect` request with the versions found.
 5. **Bridge missing**: rename `resources\tia-bridge\TiaBridge.exe` → the dialog says the bridge is not in this
    installation (no crash); rename it back.
-6. **Browser**: the web version (preview) has no Send to TIA Portal button; a CLICK project has none either.
+6. **Browser**: in the web version (preview), Send to PLC software says it works in the desktop app for Windows.
 7. **New project**: no TIA Portal running → Open TIA Portal → TIA Portal starts, asks to allow ISA Auto Programmer
    (answer Yes), and the project appears in Documents\ISA Auto Programmer\TIA\<project>. Answer No once: the
    dialog says TIA Portal did not allow it.
@@ -86,5 +87,27 @@ Run on each TIA Portal version we support (V16 … V20) before a release; note t
    view); a module TIA does not know is listed as a problem; the project is saved.
 10. **Tags**: the table "ISA Auto Programmer" has every tag of the .sdf export with address and comment; run it
     again → 0 new, all updated; a tag on an address the CPU does not have is listed with TIA's reason.
-11. **Running TIA Portal**: open a project with another CPU in TIA Portal → Send to TIA Portal offers that
+11. **Running TIA Portal**: open a project with another CPU in TIA Portal → Send to PLC software offers that
     TIA Portal first; after Open it says the project already has another PLC and changes nothing.
+12. **Program**: after the tags, **Put the program in and compile** → Program blocks has Machine_DB, the FCs of the
+    program's blocks and Main (OB 1), all in LAD (each network's comment names its rung); External source files has
+    Machine_tia_helpers.scl and the small FCs it generated. The dialog says all files were imported and "Compiled: no
+    errors". Run it again: the blocks are replaced, not doubled.
+13. **Compile errors**: in TIA Portal, delete a PLC tag the program uses, then run step 12 again → the dialog counts
+    the errors and names each with its rung (e.g. "Rung 7 (Conveyor, network 3): …"); the same as TIA Portal's Info
+    › Compile tab.
+14. **Download, confirm**: after a compile without errors, **Download to the PLC…** shows the PLC, its address and
+    the network cards; **Download … now** stays off until "I am at the machine…" is ticked. Cancel: nothing happens
+    (the log has no `download` request).
+15. **Download, PLC in RUN**: leave "The PLC may be stopped" unticked → "Not downloaded" and why; tick it → the PLC
+    stops, the download runs, the PLC stays in STOP unless "Start the PLC after the download" was ticked. The log
+    lists each question TIA Portal asked and its answer (no password).
+16. **Download, password**: a PLC with an access password → without it: "protected by a password"; with it: the
+    download runs. **Something new**: when TIA Portal asks a question the app does not know, the dialog names it and
+    nothing is downloaded; download that one from TIA Portal itself and send us the log.
+17. **Read back (Upgrade page)**: open a machine's project in TIA Portal → Upgrade › the machine's PLC program ›
+    **Find TIA Portal** lists it → **Read the program**: "What the program shows" has its blocks, rungs and I/O with
+    the tag table's addresses. TIA Portal's project is unchanged (no "modified" mark). A know-how protected block is
+    named as not read. With no project open: it says to open one first.
+18. **Something goes wrong** (close TIA Portal while the program goes in, for example): the dialog says it in one
+    sentence; **Open log folder** shows `tia-bridge.log` in Explorer: send it to us.

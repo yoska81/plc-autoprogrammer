@@ -24,6 +24,8 @@ import { and, el, not, or, toBranches, toRungs, TRUE, type Cond, type Driven } f
 import type { CompareOp, LadderOutput } from '../core/ladder';
 import type { ForeignProgram, ForeignRoutine, ForeignTag, ForeignType, NetworkAxisImport } from './types';
 import { hmiNotes, type HmiProject } from './emtp';
+import { servoAxesUsed, servoComment, servoRegister } from './mpServo';
+import { networkNotes, readEthernetConnections, readSvcStations, type EthernetConnection, type MechatrolinkAxis } from './mpe720Network';
 
 export const YASKAWA_VENDOR = 'yaskawa-mp';
 
@@ -358,7 +360,7 @@ function asciiRuns(b: Uint8Array, min = 3): string[] {
 }
 
 /** An axis in plain words: "axis 1 (line 1): SGD7S-… with motor SGM7J-…", "axis 3 (line 1): virtual". */
-export const axisText = (a: NetworkAxisImport) => `axis ${a.axis} (line ${a.line}): ${a.kind === 'virtual' ? 'virtual' : a.drive ?? 'amplifier ?'}${a.motor ? ` with motor ${a.motor}` : ''}`;
+export const axisText = (a: NetworkAxisImport) => `axis ${a.axis} (line ${a.line}${a.station ? `, station ${a.station}` : ''}): ${a.kind === 'virtual' ? 'virtual' : a.drive ?? 'amplifier ?'}${a.motor ? ` with motor ${a.motor}` : ''}`;
 
 /** "$GH01_02" → "H01.02", "$GL" → "L". */
 const drawingId = (file: string) => file.replace(/^\$G/, '').replace(/_/g, '.');
@@ -402,6 +404,19 @@ export function readYmw7(bytes: Uint8Array, fileName = 'project.YMW7', hmi?: Hmi
     // No drive named: a virtual axis (SVR), unless the file says it is a servo some other way.
     const virtual = !drive && (runs.some((r) => /SVR|VIRTUAL/i.test(r)) || !motor);
     axisList.push({ line: Number(m[1]), axis: Number(m[2]), ...(drive ? { drive } : {}), ...(motor ? { motor } : {}), kind: virtual ? 'virtual' : 'servo' });
+  }
+  // The SVC / 218IFD set-up, as far as the files say it for certain (src/plc/import/mpe720Network.ts).
+  const stations: MechatrolinkAxis[] = [], connections: EthernetConnection[] = [];
+  for (const [path, f] of [...files].sort(([a], [b]) => a.localeCompare(b))) {
+    if (!/^PRG\/IOMAP\/\$SLT\d+$/.test(path)) continue;
+    if (!stations.length) stations.push(...readSvcStations(f.data));
+    if (!connections.length) connections.push(...readEthernetConnections(f.data));
+  }
+  // Each axis on the first circuit gets its station (record n = axis n).
+  const circuit = Math.min(...axisList.map((x) => x.line));
+  for (const s of stations) {
+    const x = axisList.find((a) => a.line === circuit && a.axis === s.axis);
+    if (x) { x.station = s.station; x.stationAxis = s.stationAxis; }
   }
   const axes = axisList.map(axisText);
 
@@ -463,21 +478,90 @@ export function readYmw7(bytes: Uint8Array, fileName = 'project.YMW7', hmi?: Hmi
     if (seen.has(name)) return;
     seen.add(name);
     const addr = name.replace(/^[AHIL](\d\d)?(_\d\d)?_/, '').replace(/[ij]$/, '');
-    tags.push({ name, dataType, address: addr, comment: comments.get(addr) ?? '', ...(dataType === 'TIMER' ? { rawType: 'TON' } : {}), ...io(addr) });
+    const servo = servoRegister(addr);
+    tags.push({ name, dataType, address: addr, comment: comments.get(addr) || (servo ? servoComment(servo) : ''), ...(dataType === 'TIMER' ? { rawType: 'TON' } : {}), ...io(addr) });
   };
   for (const [name, t] of used) addTag(name, t);
   for (const [addr, c] of comments) if (c && (/^[IO][BW]/.test(addr) && Object.keys(io(addr)).length)) addTag(addr, typeOf(addr));
 
   const summary: Ymw7Summary = { drawings: routines.filter((r) => r.language === 'ladder').length, steps: total, decoded, unknownOps, axes };
+  const calls = spliceCalls(routines);
+  routines.splice(0, routines.length, ...calls.routines);
   notes.unshift(
     `MPE720 project: ${summary.drawings} ladder drawings, ${total} steps; ${decoded} read into rungs (${total ? Math.round((decoded / total) * 1000) / 10 : 0} %).${Object.keys(unknownOps).length ? ` Not read (shown as "Unknown instruction" boxes): ${Object.entries(unknownOps).map(([k, n]) => `${k} ×${n}`).join(', ')}.` : ''}`,
-    'Drawings call each other with SEE (kept as boxes); every drawing is a block of the program, in scan order. Local registers (D) and the compiler\'s work bits carry their drawing in the name (H01_02_DB000090).',
+    `Drawings call each other with SEE.${calls.spliced ? ` ${calls.spliced} call${calls.spliced === 1 ? '' : 's'} on a rung that always runs: the called drawing is placed at the call (the caller's block continues after it), so the scan order stays.` : ''}${calls.kept ? ` ${calls.kept} conditional or repeated call${calls.kept === 1 ? ' is' : 's are'} kept as boxes (rewrite by hand).` : ''} Every drawing is a block of the program, in scan order. Local registers (D) and the compiler's work bits carry their drawing in the name (H01_02_DB000090).`,
     'Function calls (FUNC) and the servo / motion registers (IW/OW 8000 and up) are kept as written; check them against the new PLC.',
+    ...servoAxesUsed(used.keys()).map((a) => `Servo axis ${a.axis} (circuit ${a.circuit}): the program uses ${a.registers.map((r) => `${r.register} (${r.what})`).join(', ')}. On another PLC these are the axis itself: set the axis up there and connect them.`),
     ...(axes.length ? [`Servo axes (MECHATROLINK): ${axes.join('; ')}.`] : []),
+    ...networkNotes(stations, connections),
     ...(hmi ? hmiNotes(hmi, (a) => comments.get(a), (a) => used.has(a)) : []),
   );
   return {
     format: 'yaskawa-mpe720', vendor: 'Yaskawa', controller: cpu, modules, ...(axisList.length ? { axes: axisList } : {}), ...(hmi ? { panel: { vendor: 'weintek', software: `EasyBuilder Pro ${hmi.version}`.trim(), screens: hmi.screens } } : {}), projectName: fileName.replace(/\.[^.]+$/, ''),
     tags, routines, notes, outside, summary,
   };
+}
+
+const SEE = /^SEE ([AHIL]\d\d(?:\.\d\d)*)$/;
+const seeOf = (o: LadderOutput): string | null => (o.type === 'RAW' ? SEE.exec(o.text.trim())?.[1] ?? null : null);
+
+/**
+ * SEE calls a drawing at that point of the caller's scan. A call on a rung with no condition, the only call of
+ * that drawing, becomes the drawing itself at that point: the caller's block ends before the call, the called
+ * drawing's block follows, then the rest of the caller (its own block, "… (after H01.01)"). So the program runs in
+ * the same order on any PLC, with no call instruction. A conditional call, or a drawing called from several
+ * places, keeps its SEE box.
+ */
+export function spliceCalls(routines: ForeignRoutine[]): { routines: ForeignRoutine[]; spliced: number; kept: number } {
+  const ladder = routines.filter((r) => r.language === 'ladder');
+  const idOf = (r: ForeignRoutine) => r.origin?.routine ?? r.name.split(' ')[0];
+  const byId = new Map(ladder.map((r) => [idOf(r), r] as const));
+  const refs = new Map<string, { always: number; other: number }>();
+  for (const r of ladder) for (const g of r.rungs) for (const o of g.outputs) {
+    const id = seeOf(o);
+    if (!id) continue;
+    const n = refs.get(id) ?? { always: 0, other: 0 };
+    if (g.branches.length) n.other++; else n.always++;
+    refs.set(id, n);
+  }
+  const inline = new Set([...refs].filter(([id, n]) => n.always === 1 && n.other === 0 && byId.has(id)).map(([id]) => id));
+  const out: ForeignRoutine[] = [];
+  const placed = new Set<ForeignRoutine>();
+  let spliced = 0;
+  const emit = (r: ForeignRoutine, stack: Set<ForeignRoutine>) => {
+    placed.add(r);
+    let part: ForeignRoutine['rungs'] = [];
+    let seg = 0, after = '';
+    const flush = () => {
+      if (part.length) {
+        const nums = r.rungNumbers ? Object.fromEntries(part.flatMap((g) => (r.rungNumbers![g.id] !== undefined ? [[g.id, r.rungNumbers![g.id]]] : []))) : undefined;
+        out.push({ ...r, name: seg ? `${r.name} (after ${after})` : r.name, rungs: part, untranslated: seg ? [] : r.untranslated, ...(nums ? { rungNumbers: nums } : {}), ...(seg ? { origin: undefined } : {}) });
+        seg++;
+      }
+      part = [];
+    };
+    for (const g of r.rungs) {
+      const child = (o: LadderOutput) => { const id = seeOf(o); const c = id && inline.has(id) ? byId.get(id)! : null; return c && !placed.has(c) && !stack.has(c) ? c : null; };
+      if (g.branches.length || !g.outputs.some((o) => child(o))) { part.push(g); continue; }
+      // An always-true rung: its outputs in order, the call taking its place between them.
+      let outs: LadderOutput[] = [], k = 0;
+      const put = () => { if (outs.length) part.push({ ...g, id: k++ ? `${g.id}_${k}` : g.id, outputs: outs }); outs = []; };
+      for (const o of g.outputs) {
+        const c = child(o);
+        if (!c) { outs.push(o); continue; }
+        put();
+        flush();
+        if (!seg) seg = 1; // the caller's next part is a continuation even when nothing came before the call
+        emit(c, new Set([...stack, r]));
+        spliced++;
+        after = idOf(c);
+      }
+      put();
+    }
+    flush();
+  };
+  for (const r of ladder) if (!inline.has(idOf(r)) && !placed.has(r)) emit(r, new Set());
+  for (const r of ladder) if (!placed.has(r)) emit(r, new Set());
+  const kept = [...refs].reduce((n, [id, x]) => n + (inline.has(id) ? 0 : x.always + x.other), 0);
+  return { routines: [...out, ...routines.filter((r) => r.language !== 'ladder')], spliced, kept };
 }

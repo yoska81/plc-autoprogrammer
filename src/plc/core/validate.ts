@@ -1,6 +1,7 @@
 import { elementAddresses, motionWrites, rungAddresses, rungWrites, type LadderProgram, type RawInstruction, type Rung } from './ladder';
 import type { PlcProfile } from './profile';
 import { deletedAddress, isDeletedOperand } from './remapProgram';
+import { YASKAWA_PROFILE_ID, layoutFor, memoryOverlaps, type MemoryLayout } from './profiles/yaskawa';
 
 export interface ValidationIssue {
   rungId: string | null;
@@ -24,7 +25,7 @@ export function validateProgram(
    * pulseOutputs: the outputs that can carry a pulse train on this CPU / option module (electrical/highSpeedIo.ts);
    * a motion axis whose pulse is elsewhere is an error.
    */
-  opts: { noPanel?: boolean; pulseOutputs?: string[] } = {},
+  opts: { noPanel?: boolean; pulseOutputs?: string[]; yaskawaMemory?: MemoryLayout } = {},
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const outCoils = new Map<string, number>();
@@ -203,6 +204,8 @@ export function validateProgram(
       issues.push({ rungId: null, severity: 'warning', message: `${address} is driven by OUT coils in ${count} rungs; only the last one wins (double coil).` });
     }
   }
+  // Yaskawa: the app's memory never shares a register with the program's own (an imported MPE720 program keeps them).
+  if (profile.id === YASKAWA_PROFILE_ID) for (const message of memoryOverlaps(program, layoutFor(program, opts.yaskawaMemory))) issues.push({ rungId: null, severity: 'error', message });
   return issues;
 }
 

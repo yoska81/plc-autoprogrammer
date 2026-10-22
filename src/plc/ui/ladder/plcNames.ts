@@ -7,6 +7,7 @@ import { plcNameLookup, type PlcNameOf } from '../../core/plcNames';
 import { usePlc } from '../../core/usePlc';
 import { useHmiStore } from '../../../store/useHmiStore';
 import { useProgramStore } from '../../../store/useProgramStore';
+import { useProjectStore } from '../../../store/useProjectStore';
 
 export { plcNameLookup };
 
@@ -15,9 +16,10 @@ export function usePlcNames(program: LadderProgram): PlcNameOf | undefined {
   const plc = usePlc();
   const hmiTags = useHmiStore((s) => s.design?.tags);
   const projectName = useProgramStore((s) => s.projectName);
+  const yaskawaMemory = useProjectStore((s) => s.yaskawaMemory);
   return useMemo(() => plcNameLookup(plc.profile, program, {
-    io: plc.io, addresses: plc.addresses, labels: plc.labels, header: '', cpuId: plc.cpu.id, modules: plc.modules, projectName,
+    io: plc.io, addresses: plc.addresses, labels: plc.labels, header: '', cpuId: plc.cpu.id, modules: plc.modules, projectName, yaskawaMemory,
     // The HMI's tag names become the PLC's tag names in the export: the same here.
     extraTags: (hmiTags ?? []).map((t) => ({ address: t.address, nickname: t.name, comment: `HMI: ${t.description}` })),
-  }), [plc, program, hmiTags, projectName]);
+  }), [plc, program, hmiTags, projectName, yaskawaMemory]);
 }

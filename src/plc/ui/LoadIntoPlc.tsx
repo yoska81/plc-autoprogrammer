@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDownTrayIcon, CpuChipIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import { collectProject } from '../../deliverables/collect';
-import { programFiles, saveBlob } from '../../deliverables/files';
+import { downloadBlob, programDownloads, programFiles, saveBlob, type ProgramDownload } from '../../deliverables/files';
 import { loadGuide, type LoadStep } from '../deploy/loadGuide';
 
 const MIME: Record<string, string> = { html: 'text/html', csv: 'text/csv', json: 'application/json', L5X: 'application/xml', st: 'text/plain', scl: 'text/plain', sdf: 'text/plain', txt: 'text/plain' };
@@ -13,25 +13,27 @@ const MIME: Record<string, string> = { html: 'text/html', csv: 'text/csv', json:
  */
 export default function LoadIntoPlc({ className = '' }: { className?: string }) {
   const [open, setOpen] = useState(false);
-  const [state, setState] = useState<{ steps: LoadStep[]; files: Map<string, string>; title: string; empty: boolean; readOnly?: boolean } | null>(null);
+  const [state, setState] = useState<{ steps: LoadStep[]; files: Map<string, ProgramDownload>; title: string; empty: boolean; readOnly?: boolean } | null>(null);
   const [done, setDone] = useState<Set<number>>(new Set());
   const show = () => {
     const p = collectProject();
     // Read only (a program kept on the machine's own PLC): there is nothing to load until a PLC is chosen.
     if (p.profile.readOnly) { setState({ steps: [], files: new Map(), title: `${p.profile.vendor} ${p.cpu.id}`, empty: false, readOnly: true }); setDone(new Set()); setOpen(true); return; }
-    const files = programFiles(p);
+    // A folder of files (the TIA Portal ladder blocks) is one ZIP download.
+    const files = programDownloads(programFiles(p));
     const steps = loadGuide({
       profileId: p.profile.id, profileName: p.profile.name, vendor: p.profile.vendor, cpuId: p.cpu.id, modules: p.modules, fileBase: p.fileBase,
       files: files.map((f) => f.name), importSteps: p.profile.importSteps, errors: p.issues.filter((x) => x.severity === 'error').length,
     });
-    setState({ steps, files: new Map(files.map((f) => [f.name, f.content])), title: `${p.profile.vendor} ${p.profile.name} ${p.cpu.id}`, empty: !p.ladder.rungs.length });
+    setState({ steps, files: new Map(files.map((f) => [f.name, f])), title: `${p.profile.vendor} ${p.profile.name} ${p.cpu.id}`, empty: !p.ladder.rungs.length });
     setDone(new Set());
     setOpen(true);
   };
-  const download = (name: string) => {
-    const content = state?.files.get(name);
-    if (content === undefined) return;
-    saveBlob(name, new Blob([content], { type: MIME[name.split('.').pop() ?? ''] ?? 'text/plain' }));
+  const download = async (name: string) => {
+    const d = state?.files.get(name);
+    if (!d) return;
+    const blob = await downloadBlob(d);
+    saveBlob(name, name.endsWith('.zip') ? blob : new Blob([blob], { type: MIME[name.split('.').pop() ?? ''] ?? 'text/plain' }));
   };
   return (
     <>
@@ -64,7 +66,7 @@ export default function LoadIntoPlc({ className = '' }: { className?: string }) 
                     {(s.files?.length || s.link || s.online) && (
                       <div className="flex flex-wrap gap-2 pt-1">
                         {s.files?.map((f) => (
-                          <button key={f} onClick={() => download(f)} disabled={!state.files.has(f)}
+                          <button key={f} onClick={() => { void download(f); }} disabled={!state.files.has(f)}
                             className="inline-flex items-center gap-1 rounded border border-steel-300 bg-white px-2.5 py-1 text-xs font-medium text-steel-800 hover:bg-brand-50 disabled:opacity-40">
                             <ArrowDownTrayIcon className="h-3.5 w-3.5" /> {f}
                           </button>

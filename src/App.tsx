@@ -243,6 +243,9 @@ export default function App() {
           <MenuItem onClick={() => navigate('/settings')}>Settings (AI provider, keys)…</MenuItem>
           <MenuItem onClick={() => navigate('/settings#voice')}>Voice (microphone, language, read aloud)…</MenuItem>
         </Menu>
+        <Menu label="Help">
+          <MenuItem onClick={() => navigate('/test-card')}>Test card (Send to PLC software)…</MenuItem>
+        </Menu>
       </div>
 
       {/* Toolbar */}

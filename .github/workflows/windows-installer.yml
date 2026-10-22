@@ -84,6 +84,7 @@ jobs:
           for t in $(find src -name '*.test.ts' ! -name 'catalog.test.ts' | sort); do echo "== $t"; npx tsx "$t"; done
           node e2e/modbus.test.cjs
           node e2e/tiaBridge.test.cjs
+          node e2e/clickBridge.test.cjs
 
       # The TIA Portal bridge (tools/tia-bridge): its own tests (.NET 8), then the .NET Framework 4.8 exe the
       # installer ships, tried through the app's bridge client (no TIA Portal on the build server: detect says so).
@@ -93,6 +94,35 @@ jobs:
           dotnet run --project tools/tia-bridge/tests -c Release
           node scripts/build-tia-bridge.cjs
           TIA_BRIDGE_EXE="$PWD/resources/tia-bridge/TiaBridge.exe" node e2e/tiaBridge.test.cjs
+
+      # The CLICK bridge (tools/click-bridge): its own tests (.NET 8, a fake CLICK), then the exe the installer ships,
+      # started through the app's client (no CLICK Programming Software on the build server: detect says so).
+      - name: CLICK bridge
+        shell: bash
+        run: |
+          dotnet run --project tools/click-bridge/tests -c Release
+          node scripts/build-click-bridge.cjs
+          CLICK_BRIDGE_EXE="$PWD/resources/click-bridge/ClickBridge.exe" node e2e/clickBridge.test.cjs
+
+      # The CODESYS bridge (tools/codesys-bridge): its own tests (.NET 8, a fake CODESYS), the job script's tests
+      # (python, a fake CODESYS ScriptEngine), then the exe the installer ships, started through the app's client.
+      - name: CODESYS bridge
+        shell: bash
+        run: |
+          dotnet run --project tools/codesys-bridge/tests -c Release
+          python tools/codesys-bridge/tests/test_job.py
+          node scripts/build-codesys-bridge.cjs
+          CODESYS_BRIDGE_EXE="$PWD/resources/codesys-bridge/CodesysBridge.exe" node e2e/codesysBridge.test.cjs
+
+      # The Studio 5000 bridge (tools/studio5000-bridge): its own tests (.NET 8, a fake PC and SDK), the job script's
+      # tests (python, a fake Logix Designer SDK), then the exe the installer ships, started through the app's client.
+      - name: Studio 5000 bridge
+        shell: bash
+        run: |
+          dotnet run --project tools/studio5000-bridge/tests -c Release
+          python tools/studio5000-bridge/tests/test_job.py
+          node scripts/build-studio5000-bridge.cjs
+          STUDIO5000_BRIDGE_EXE="$PWD/resources/studio5000-bridge/Studio5000Bridge.exe" node e2e/studio5000Bridge.test.cjs
 
       - name: Build installer
         run: npm run dist:win

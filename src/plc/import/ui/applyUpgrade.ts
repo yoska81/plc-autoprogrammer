@@ -13,6 +13,7 @@ import type { SpecSectionId } from '../../../spec/types';
 import type { LadderProgram } from '../../core/ladder';
 import { panelTags, programRoles } from '../hmiRoles';
 import type { UpgradeRoles } from '../../../hmi/engine/upgradeHmi';
+import type { NetworkAxis } from '../../core/networkAxes';
 import type { VendorGroup } from '../../../electrical/catalogs';
 import type { VendorId } from '../../../electrical/types';
 
@@ -28,6 +29,8 @@ export function applyUpgrade(imp: ImportedProgram, fileText?: string, planned?: 
   project.setPlc(plan.plcId, plan.cpuId);
   machineBrands(imp);
   project.setModules(plan.modules);
+  // The servo axes the file defines (MECHATROLINK): the electrical design, the program and the HMI number them from this list.
+  project.setNetworkAxes(networkAxesFrom(imp.source.axes ?? []));
   useIOStore.getState().importPoints(plan.io, true);
   const s = imp.source;
   // A project still on the default name takes the machine's.
@@ -49,6 +52,15 @@ export function applyUpgrade(imp: ImportedProgram, fileText?: string, planned?: 
   // The original file goes with the project (compressed) so the download can write the changes into it.
   if (fileText && canPatch(plan.original, plan.plcId)) void keepFile(fileText, plan.original.importedAt);
   return plan;
+}
+
+/** An imported program's axes as the project's network axes (line → circuit; two axes on one station are one drive). */
+export function networkAxesFrom(axes: NonNullable<ImportedProgram['source']['axes']>): NetworkAxis[] {
+  return axes.map((a) => ({
+    key: `ax${a.line}_${a.axis}`, name: `Axis ${a.axis}${a.line > 1 ? ` (line ${a.line})` : ''}`, circuit: a.line, axis: a.axis, kind: a.kind,
+    ...(a.drive ? { drivePartNumber: a.drive } : {}), ...(a.motor ? { motorPartNumber: a.motor } : {}),
+    ...(a.station ? { station: a.station, stationAxis: a.stationAxis ?? 0 } : {}), source: 'import' as const,
+  }));
 }
 
 /**

@@ -20,6 +20,31 @@ import ProgramImport from './ProgramImport';
 import { getProfile, PLC_PROFILES } from '../../core/profiles';
 import { choosePlcBrand } from '../../core/choosePlc';
 import { notify } from '../../../store/useNoticeStore';
+import { useHmiStore } from '../../../store/useHmiStore';
+import { remakeCoverageAll, remakeCoverageText } from '../remake';
+
+/** A kept instruction in plain words ("1 call to another drawing"). */
+function keptPhrase(what: string, n: number): string {
+  const w = what.toUpperCase();
+  const [one, many] = w === 'SEE' ? ['call to another drawing', 'calls to other drawings']
+    : w === 'UNKNOWN INSTRUCTION' ? ["instruction the app can't read", "instructions the app can't read"]
+      : w === 'JSR' || w === 'CALL' ? ['subroutine call', 'subroutine calls']
+        : w === 'MSG' ? ['message (communication) instruction', 'message (communication) instructions']
+          : w === 'SERVO REGISTER' ? ['rung that moves a servo axis (set the axis up on the new PLC)', 'rungs that move a servo axis (set the axes up on the new PLC)']
+          : [`${what} instruction`, `${what} instructions`];
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** How much converts on one PLC, in plain words. */
+function coverageText(c: { percent: number; converted: number; rungs: number; kept: { what: string; count: number }[]; errors: { message: string }[] }, withPercent: boolean): string {
+  const parts = [`${c.converted} of ${c.rungs} rungs convert${withPercent ? ` (${c.percent}%)` : ''}`];
+  if (c.kept.length) parts.push(`to redo by hand: ${c.kept.map((k) => keptPhrase(k.what, k.count)).join(', ')}`);
+  if (c.errors.length) parts.push(`${c.errors.length} ${c.errors.length === 1 ? 'rung needs' : 'rungs need'} a fix for this PLC (${c.errors[0].message})`);
+  return `${parts.join('; ')}.`;
+}
+
+/** A PLC's name on a button ("Generic Structured Text (any IEC PLC)" rather than the profile's vendor + name). */
+const plcLabel = (id: string, label: string) => (id === 'generic-st' ? 'Generic Structured Text (any IEC PLC)' : label);
 
 /**
  * "Upgrade existing program" (Import → Program; /upgrade leads there): read the machine's program, then compare
@@ -43,6 +68,16 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
   const findings = useMemo(() => programFindings(ladder, labels), [ladder, labels]);
   // A program kept read only on the machine's own PLC (the app cannot program it): no download until a PLC is chosen.
   const readOnly = Boolean(profile.readOnly);
+  const hmi = useHmiStore((s) => s.design);
+  // Per target PLC, how much of the program converts (worked out without moving anything).
+  const coverage = useMemo(() => (readOnly && ladder.rungs.length ? remakeCoverageAll({ io, plcId: profile.id, cpuId: cpu.id, modules, program: ladder, hmi }) : []), [readOnly, io, profile.id, cpu.id, modules, ladder, hmi]);
+  // The coverage as text to share (counts and instruction kinds only): to the clipboard, and shown to select by hand.
+  const [coverageShown, setCoverageShown] = useState('');
+  const copyCoverage = async () => {
+    const text = remakeCoverageText({ io, plcId: profile.id, cpuId: cpu.id, modules, program: ladder, hmi }, coverage);
+    setCoverageShown(text);
+    try { await navigator.clipboard.writeText(text); notify('Coverage numbers copied: paste them in a message.'); } catch { notify('Select the coverage numbers below and copy them.'); }
+  };
   const fromReadOnly = Boolean(original && getProfile(original.plcId).readOnly && !readOnly);
   const moveTo = (plcId: string) => {
     const notes = choosePlcBrand(plcId);
@@ -107,15 +142,49 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                 </div>
               </div>
 
-              {readOnly && (
-                <div className="bg-white rounded-lg border-2 border-brand-300 p-5 space-y-3" data-testid="upgrade-choose-plc">
-                  <h3 className="text-sm font-semibold text-gray-800">Move it to another PLC: choose one</h3>
-                  <p className="text-xs text-gray-600">The app cannot write {profile.vendor} files yet. Choose the PLC the machine will have: the I/O gets its addresses, the program and the HMI follow, the app picks its CPU and modules, and the download is made for it. Until then the program, the I/O list and the simulator work on the original's registers.</p>
-                  <div className="flex flex-wrap gap-2">
-                    {PLC_PROFILES.filter((p) => p.available).map((p) => (
-                      <button key={p.id} data-testid={`upgrade-move-${p.id}`} onClick={() => moveTo(p.id)} className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:border-brand-400 hover:bg-brand-50 text-gray-700">{p.vendor} {p.name}</button>
-                    ))}
+              {ladder.rungs.length > 0 && (
+                <div className="bg-brand-50 rounded-lg border border-brand-200 p-4 flex flex-wrap items-center gap-3" data-testid="upgrade-simplify">
+                  <div className="flex-1 min-w-[16rem]">
+                    <h3 className="text-sm font-semibold text-gray-800">Next: simplify &amp; explain this program</h3>
+                    <p className="text-xs text-gray-600">Adds a plain-words note to every rung, finds the parts of the program that do nothing, and puts the rest in a clear order. Every change is tried in the simulator first and waits for your approval{readOnly ? '; the copy for the new PLC is the one simplified, the original stays as it is' : ''}.</p>
                   </div>
+                  <Link to="/program?tidy=1" className="text-sm px-4 py-2 rounded bg-brand-600 text-white font-medium hover:bg-brand-700">Simplify &amp; explain this program</Link>
+                </div>
+              )}
+
+              {readOnly && (
+                <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3" data-testid="upgrade-choose-plc">
+                  <h3 className="text-sm font-semibold text-gray-800">Remake it for another PLC: choose one</h3>
+                  <p className="text-xs text-gray-600">The app cannot write {profile.vendor} files yet, so choose the PLC the machine will get. The I/O gets that PLC's addresses, the program and the screens follow, and the app picks its CPU and modules. Until you choose, everything keeps working on the original's registers.</p>
+                  {coverage.length > 0 ? (() => {
+                    // The same result on every PLC: said once, then just the buttons.
+                    const key = (c: (typeof coverage)[number]) => JSON.stringify([c.converted, c.rungs, c.kept, c.errors.length]);
+                    const same = coverage.every((c) => key(c) === key(coverage[0]));
+                    return (
+                      <>
+                        {same && <p className="text-xs text-gray-700" data-testid="upgrade-remake-same">On every PLC: {coverageText(coverage[0], false)}</p>}
+                        <ul className={same ? 'flex flex-wrap gap-2' : 'space-y-1.5'} data-testid="upgrade-remake">
+                          {coverage.map((c) => (
+                            <li key={c.plcId} className="flex flex-wrap items-center gap-2 text-xs" data-testid={`upgrade-remake-${c.plcId}`}>
+                              <button data-testid={`upgrade-move-${c.plcId}`} onClick={() => moveTo(c.plcId)} className="px-3 py-1.5 rounded border border-gray-300 hover:border-brand-400 hover:bg-brand-50 text-gray-700 font-medium">Remake for {plcLabel(c.plcId, c.label)}</button>
+                              {!same && <span className={c.percent === 100 ? 'text-green-700' : 'text-gray-700'}>{coverageText(c, true)}</span>}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="text-xs text-gray-500">
+                          <button data-testid="upgrade-remake-copy" onClick={() => void copyCoverage()} className="underline hover:text-brand-700">Copy coverage numbers</button>
+                          {' '}(counts only, no names or values: paste them in a message to help improve the conversion)
+                        </p>
+                        {coverageShown && <textarea readOnly data-testid="upgrade-remake-text" value={coverageShown} onFocus={(e) => e.currentTarget.select()} className="w-full h-28 text-xs font-mono border border-gray-200 rounded p-2" />}
+                      </>
+                    );
+                  })() : (
+                    <div className="flex flex-wrap gap-2">
+                      {PLC_PROFILES.filter((p) => p.available).map((p) => (
+                        <button key={p.id} data-testid={`upgrade-move-${p.id}`} onClick={() => moveTo(p.id)} className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:border-brand-400 hover:bg-brand-50 text-gray-700">{p.vendor} {p.name}</button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

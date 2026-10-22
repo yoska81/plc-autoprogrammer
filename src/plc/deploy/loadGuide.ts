@@ -92,14 +92,18 @@ const VENDOR_STEPS: Record<string, (i: LoadGuideInput) => LoadStep[]> = {
     { title: 'Download and run', text: ['Communications > Who Active: select the controller over Ethernet, Download, then switch to Run (Remote Run or the key switch). Keep the machine safe.'] },
   ],
   micro800: (i) => [
-    { title: 'Create the program in Connected Components Workbench', text: ['CCW has no program import for Micro800: add a Structured Text program to the project and paste the .st file into it.'], files: has(i, '_micro800.st') },
+    { title: 'Create the program in Connected Components Workbench', text: ['CCW has no documented ladder import for Micro800 (its exchange files are not a published format): add a Structured Text program to the project and paste the .st file into it, or redraw it in ladder from the printed ladder.'], files: has(i, '_micro800.st') },
     { title: 'Declare the variables', text: ['Enter the variables from the variable list in the program\'s variable grid (name, data type, comment).'], files: has(i, '_micro800_variables.csv') },
     { title: 'Download and run', text: ['Build, connect to the controller over Ethernet, download and switch to Run. Keep the machine safe.'] },
   ],
   'siemens-s7': (i) => [
-    { title: 'Import the source into TIA Portal', text: ['In the PLC: External source files > Add new external file, choose the .scl file, then right-click it > Generate blocks from source (FB "Machine", its instance DB and OB "Main").'], files: has(i, '_s7.scl') },
-    { title: 'Import the PLC tags', text: ['PLC tags > Import, choose the .sdf file. Module addresses marked "check against Device configuration" depend on the slots in your device configuration.'], files: has(i, '_PLCTags.sdf') },
-    { title: 'Download and run', text: ['Compile, Download to device over Ethernet, then RUN. Keep the machine safe.'] },
+    { title: 'Import the PLC tags first', text: ['TIA Portal V17 or newer. In the PLC: PLC tags > Import, choose the .sdf file. Module addresses marked "check against Device configuration" depend on the slots in your device configuration.'], files: has(i, '_PLCTags.sdf') },
+    { title: 'Add the ladder blocks', text: [
+      'Unzip the ladder (LAD) blocks and take the folder of your TIA Portal version (V16 … V20; Help > Installed software). In the Project tree: Version control interface > Add new workspace, point it at that folder, then drag the blocks into the PLC\'s Program blocks (no scripting needed): the DB "Machine_DB", one FC per program block and OB "Main". Without the Version control interface: import the block files with TIA Portal Openness.',
+      'Then External source files > Add new external file, choose Machine_tia_helpers.scl from the same folder, right-click it > Generate blocks from source: the few SCL functions the ladder calls (the README lists them and why).',
+      'Prefer one text file? The SCL source (text) does the whole program instead: External source files > Add new external file, then Generate blocks from source.',
+    ], files: [...has(i, '_TIA_LAD.zip'), ...has(i, '_s7.scl')] },
+    { title: 'Compile, download and run', text: ['Compile the PLC (software, rebuild all), Download to device over Ethernet, then RUN. Keep the machine safe.'] },
   ],
 };
 

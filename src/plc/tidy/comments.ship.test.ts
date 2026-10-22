@@ -24,7 +24,7 @@ import { buildScl } from '../core/profiles/siemens';
 import { buildL5x } from '../core/profiles/l5x';
 import { clickNicknameCsv, clickRungListing } from '../core/clickExport';
 import { mpe720CommentCsv } from '../core/mpe720Csv';
-import { addComments, PART_CHARS, rulesComments, sameLogic } from './comments';
+import { addComments, PART_CHARS, PART_KEYS, rulesComments, sameLogic } from './comments';
 import type { LadderProgram } from '../core/ladder';
 
 const warn = console.warn;
@@ -37,15 +37,16 @@ const blankAll = (l: LadderProgram): LadderProgram => ({ ...l, rungs: l.rungs.ma
 // ── AI budget on a synthetic ~2,000-rung program: few calls of about PART_CHARS, small answers, no program JSON ──
 {
   await clearAiCache();
-  const { program: imp } = importProgramFiles([{ name: 'big.L5X', text: bigL5x(40, 120) }]);
+  const { program: imp } = importProgramFiles([{ name: 'big.L5X', text: bigL5x(40, 128) }]);
   applyUpgrade(imp);
   useProgramStore.getState().setGeneratedLadder(blankAll(useProgramStore.getState().ladder), 'x', null);
   const p = collectProject();
-  const calls: { inChars: number; maxTokens?: number; task?: string; schemaKeys: string[]; json: boolean }[] = [];
+  const calls: { inChars: number; keys: number; maxTokens?: number; task?: string; schemaKeys: string[]; json: boolean }[] = [];
   let outChars = 0;
   setClaudeInterceptor(async (o: ClaudeOptions) => {
     const content = o.messages.map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('');
-    calls.push({ inChars: o.system.length + content.length, maxTokens: o.maxTokens, task: o.task, schemaKeys: Object.keys((o.schema as { properties: Record<string, unknown> }).properties), json: /"branches"|"outputs"/.test(content) });
+    const asked = (/Write comments for: (.*)$/.exec(content)?.[1] ?? '').split(', ').filter(Boolean).length;
+    calls.push({ inChars: o.system.length + content.length, keys: asked, maxTokens: o.maxTokens, task: o.task, schemaKeys: Object.keys((o.schema as { properties: Record<string, unknown> }).properties), json: /"branches"|"outputs"/.test(content) });
     const keys = [...content.matchAll(/^(rung:[^\s]+)/gm)].map((m) => m[1]).slice(0, 3);
     const text = JSON.stringify({ items: keys.map((key) => ({ key, text: 'A comment.' })) });
     outChars += text.length;
@@ -54,9 +55,14 @@ const blankAll = (l: LadderProgram): LadderProgram => ({ ...l, rungs: l.rungs.ma
   const r = await addComments(p, { ai });
   setClaudeInterceptor(null);
   const totalIn = calls.reduce((n, c) => n + c.inChars, 0);
-  console.log(`  budget: ${p.ladder.rungs.length} rungs → ${calls.length} calls, input ${totalIn} characters (largest ${Math.max(...calls.map((c) => c.inChars))}), output ${outChars} characters, max_tokens ${[...new Set(calls.map((c) => c.maxTokens))].join('/')}`);
+  const totalKeys = calls.reduce((n, c) => n + c.keys, 0);
+  // About 35 tokens a comment: the answer the largest part expects, against its cap.
+  const expect = (c: (typeof calls)[number]) => 35 * c.keys;
+  console.log(`  budget: ${p.ladder.rungs.length} rungs → ${calls.length} calls, input ${totalIn} characters (largest ${Math.max(...calls.map((c) => c.inChars))}), ${totalKeys} comments asked (most in one call ${Math.max(...calls.map((c) => c.keys))}, ≈${Math.max(...calls.map(expect))} answer tokens), output ${outChars} characters, max_tokens ${[...new Set(calls.map((c) => c.maxTokens))].join('/')}`);
+  assert.ok(calls.every((c) => c.keys <= PART_KEYS), 'at most PART_KEYS comments asked in a call');
+  assert.ok(calls.every((c) => c.maxTokens !== undefined && expect(c) * 2 <= c.maxTokens), 'the answer fits under its cap with room to think: no retry at 64 000');
   assert.ok(p.ladder.rungs.length >= 1900, `${p.ladder.rungs.length} rungs`);
-  assert.ok(calls.length <= Math.ceil(totalIn / (PART_CHARS * 0.7)), `${calls.length} calls for ${totalIn} characters: parts of about ${PART_CHARS}`);
+  assert.ok(calls.length <= Math.max(Math.ceil(totalIn / (PART_CHARS * 0.7)), Math.ceil(totalKeys / (PART_KEYS * 0.7))), `${calls.length} calls for ${totalIn} characters, ${totalKeys} comments: parts as big as allowed`);
   assert.ok(calls.every((c) => c.inChars <= PART_CHARS * 1.2), 'no part much over PART_CHARS');
   assert.ok(calls.every((c) => c.maxTokens !== undefined && c.maxTokens <= 16_000), 'small answers, never 64 000 tokens');
   assert.ok(calls.every((c) => c.task === 'comments'), 'the comments task (low effort)');

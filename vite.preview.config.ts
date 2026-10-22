@@ -12,6 +12,7 @@ const stub = fileURLToPath(new URL('./src/preview/DrawingSetStub.tsx', import.me
 const whisperStub = fileURLToPath(new URL('./src/preview/localWhisperStub.ts', import.meta.url))
 // Nor the parse worker (a single file has no worker file beside it; parsing runs on the page).
 const parseWorkerStub = fileURLToPath(new URL('./src/preview/parseWorkerSpawnStub.ts', import.meta.url))
+const equivalenceWorkerStub = fileURLToPath(new URL('./src/preview/equivalenceWorkerSpawnStub.ts', import.meta.url))
 
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
 
@@ -23,6 +24,7 @@ export default defineConfig({
       ...(existsSync(drawingSet) ? [] : [{ find: /^.*\/electrical\/drawings\/DrawingSet$/, replacement: stub }]),
       { find: /^\.\/localWhisperModel$/, replacement: whisperStub },
       { find: /^\.\/parseWorkerSpawn$/, replacement: parseWorkerStub },
+      { find: /^\.\/equivalenceWorkerSpawn$/, replacement: equivalenceWorkerStub },
     ],
   },
   build: { outDir: 'dist-preview' },

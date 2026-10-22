@@ -118,6 +118,73 @@ export interface IsaDesktop {
   dwg?: DwgReaderBridge;
   /** Send to TIA Portal through TIA Openness (Windows desktop app only; older builds don't have it). */
   tia?: TiaBridge;
+  /** Send to CLICK: drives CLICK Programming Software while the user watches (Windows desktop app only). */
+  click?: ClickBridge;
+  codesys?: CodesysBridge;
+  studio5000?: Studio5000Bridge;
+}
+
+/** The CLICK bridge (electron/clickBridge.cjs → tools/click-bridge/ClickBridge.exe): the same shape as TiaBridge. */
+export interface ClickBridge {
+  call(cmd: 'detect', args?: Record<string, never>): Promise<ClickDetect>;
+  call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
+  logPath(): Promise<string>;
+  /** Shows the log file in Explorer (to send it to support). Older desktop apps lack it. */
+  showLog?(): Promise<boolean>;
+  onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** The CODESYS bridge (electron/codesysBridge.cjs → tools/codesys-bridge/CodesysBridge.exe): the same shape. */
+export interface CodesysBridge {
+  call(cmd: 'detect', args?: Record<string, never>): Promise<CodesysDetect>;
+  call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
+  logPath(): Promise<string>;
+  showLog(): Promise<boolean>;
+  /** The user's CODESYS project from Windows' Open dialog (null: cancelled). */
+  pickProject(): Promise<string | null>;
+  onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** The Studio 5000 bridge (electron/studio5000Bridge.cjs → tools/studio5000-bridge/Studio5000Bridge.exe): the same shape. */
+export interface Studio5000Bridge {
+  call(cmd: 'detect', args?: Record<string, never>): Promise<Studio5000Detect>;
+  call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
+  logPath(): Promise<string>;
+  showLog(): Promise<boolean>;
+  /** The user's Studio 5000 project (.ACD) from Windows' Open dialog (null: cancelled). */
+  pickProject(): Promise<string | null>;
+  onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** Studio 5000 and the Logix Designer SDK on this PC (tools/studio5000-bridge/src/StudioDetect.cs). */
+export interface Studio5000Detect {
+  /** Logix Designer and the SDK's Python client are there. */
+  ready: boolean;
+  logix: { name: string; version: string }[];
+  /** The SDK's folder (null: not installed). */
+  sdk: string | null;
+  /** Which Python has the SDK's client (null: none). */
+  python: string | null;
+  projectsDir: string;
+  steps: string[];
+}
+
+/** CODESYS on this PC (tools/codesys-bridge/src/CodesysDetect.cs), newest first. */
+export interface CodesysDetect {
+  ready: boolean;
+  installs: { name: string; version: string; exe: string; profile: string }[];
+  /** Where the app's new CODESYS projects go (Documents\ISA Auto Programmer\CODESYS). */
+  projectsDir: string;
+  steps: string[];
+}
+
+/** CLICK Programming Software on this PC (tools/click-bridge/src/ClickDetect.cs), newest first. */
+export interface ClickDetect {
+  ready: boolean;
+  installs: { name: string; version: string; exe: string }[];
+  /** It is open now (the run uses the open one). */
+  running: boolean;
+  steps: string[];
 }
 
 /**
@@ -130,6 +197,8 @@ export interface TiaBridge {
   call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
   /** Where the bridge's log is (to send it to support). */
   logPath(): Promise<string>;
+  /** Shows the log file in Explorer. Older desktop apps lack it. */
+  showLog?(): Promise<boolean>;
   /** Returns an unsubscribe. */
   onProgress(cb: (p: { id: number; text: string }) => void): () => void;
 }

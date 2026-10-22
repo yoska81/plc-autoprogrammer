@@ -100,6 +100,8 @@ export interface TagDefinition {
   address: string;
   nickname: string;
   comment: string;
+  /** The PLC's own register for this operand when the program came from that PLC and keeps it (Yaskawa MB012340). */
+  native?: string;
 }
 
 /** A machine block (station / section) used to split big programs. */
@@ -107,6 +109,8 @@ export interface ProgramBlock {
   id: string;
   name: string;
   description: string;
+  /** false: an imported routine the original PLC never runs (no call names it); the app's simulator runs every block. */
+  called?: boolean;
 }
 
 export interface LadderProgram {

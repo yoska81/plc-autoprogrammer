@@ -99,9 +99,18 @@ export function readL5k(input: string): ForeignProgram {
     const qualify = (op: string) => (rename.size ? op.replace(/(^|[^\w.:#])([A-Za-z_]\w*)(?!\w*\s*\()/g, (_m, pre: string, n: string) => pre + (rename.get(n.toLowerCase()) ?? n)) : op);
     const mapOps = <T,>(x: T): T => JSON.parse(JSON.stringify(x), (k, v) => (typeof v === 'string' && OPERAND_KEYS.includes(k) ? qualify(v) : v));
     const rname = (n: string) => (programs.length > 1 ? `${pname} / ${n}` : n);
+    // Which routines run: the main and fault routines, and every routine a JSR names (called below).
+    const first = routines.length;
+    // The program's attributes: (MAIN := "…", FAULT := "…", …), possibly over several lines.
+    const header = /^[^)]*/.exec(pm[0])?.[0] ?? '';
+    const main = /MAIN\s*:=\s*"(\w+)"/i.exec(header)?.[1];
+    const runs = new Set([main, /FAULT\s*:=\s*"(\w+)"/i.exec(header)?.[1]].filter(Boolean).map((n) => n!.toLowerCase()));
+    for (const m of body.matchAll(/\bJSR\(\s*(\w+)/gi)) runs.add(m[1].toLowerCase());
+    const bare = new Map<ForeignRoutine, string>();
     for (const rm of body.matchAll(/\n\s*ROUTINE\s+(\w+)[^\n]*\n([\s\S]*?)\n\s*END_ROUTINE/g)) {
       const name = rname(rm[1]);
       const routine: ForeignRoutine = { name, language: 'ladder', rungs: [], untranslated: [] };
+      bare.set(routine, rm[1]);
       let comment = '';
       let i = 0;
       for (const st of statements(rm[2])) {
@@ -139,6 +148,7 @@ export function readL5k(input: string): ForeignProgram {
     for (const fm of body.matchAll(/\n\s*(FBD_ROUTINE|SFC_ROUTINE)\s+(\w+)/g)) {
       routines.push({ name: rname(fm[2]), language: fm[1].startsWith('FBD') ? 'fbd' : 'sfc', rungs: [], untranslated: [`${fm[1].slice(0, 3)} routine: not converted (only ladder and Structured Text are read).`] });
     }
+    if (main) for (const r of routines.slice(first)) r.called = runs.has((bare.get(r) ?? r.name.split(' / ').pop()!).toLowerCase());
   }
   if (calls.length) notes.push(`${calls.length} subroutine call${calls.length === 1 ? '' : 's'} (JSR): each routine becomes a block of the program; all blocks run every scan.`);
   for (const op of ioRefs) {

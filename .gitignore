@@ -75,3 +75,25 @@ tools/tia-bridge/obj/
 tools/tia-bridge/tests/bin/
 tools/tia-bridge/tests/obj/
 resources/tia-bridge/
+
+# CLICK bridge: built by scripts/build-click-bridge.cjs into resources/click-bridge for the installer
+tools/click-bridge/bin/
+tools/click-bridge/obj/
+tools/click-bridge/tests/bin/
+tools/click-bridge/tests/obj/
+resources/click-bridge/
+
+# CODESYS bridge: built by scripts/build-codesys-bridge.cjs into resources/codesys-bridge for the installer
+tools/codesys-bridge/bin/
+tools/codesys-bridge/obj/
+tools/codesys-bridge/tests/bin/
+tools/codesys-bridge/tests/obj/
+resources/codesys-bridge/
+
+# Studio 5000 bridge: built by scripts/build-studio5000-bridge.cjs into resources/studio5000-bridge for the installer
+tools/studio5000-bridge/bin/
+tools/studio5000-bridge/obj/
+tools/studio5000-bridge/tests/bin/
+tools/studio5000-bridge/tests/obj/
+tools/studio5000-bridge/tests/fake_sdk/**/__pycache__/
+resources/studio5000-bridge/

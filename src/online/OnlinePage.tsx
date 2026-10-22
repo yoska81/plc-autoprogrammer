@@ -24,7 +24,7 @@ import { useDraft } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
 
 import TroubleshootPanel from '../troubleshoot/TroubleshootPanel';
-import ManualCommands from './ManualCommands';
+import ManualCommands from './ManualCommandsPanel';
 import FollowRung from './FollowRung';
 import { hmiCommands, isStale } from './manualCommands';
 

@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "build:desktop": "tsc -b && vite build --outDir dist-desktop --emptyOutDir && node scripts/desktop-prepare.cjs",
     "desktop": "npm run build:desktop && electron .",
-    "dist:win": "npm run build:desktop && node scripts/fetch-libredwg.cjs && node scripts/build-tia-bridge.cjs && electron-builder --win nsis --x64 --publish never"
+    "dist:win": "npm run build:desktop && node scripts/fetch-libredwg.cjs && node scripts/build-tia-bridge.cjs && node scripts/build-click-bridge.cjs && node scripts/build-codesys-bridge.cjs && node scripts/build-studio5000-bridge.cjs && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
@@ -87,6 +87,35 @@
         "filter": [
           "TiaBridge.exe",
           "TiaBridge.exe.config",
+          "README.md"
+        ]
+      },
+      {
+        "from": "resources/click-bridge",
+        "to": "click-bridge",
+        "filter": [
+          "ClickBridge.exe",
+          "ClickBridge.exe.config",
+          "README.md"
+        ]
+      },
+      {
+        "from": "resources/codesys-bridge",
+        "to": "codesys-bridge",
+        "filter": [
+          "CodesysBridge.exe",
+          "CodesysBridge.exe.config",
+          "isa_job.py",
+          "README.md"
+        ]
+      },
+      {
+        "from": "resources/studio5000-bridge",
+        "to": "studio5000-bridge",
+        "filter": [
+          "Studio5000Bridge.exe",
+          "Studio5000Bridge.exe.config",
+          "isa_logix_job.py",
           "README.md"
         ]
       }

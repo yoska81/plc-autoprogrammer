@@ -126,7 +126,7 @@ await test('Update all on a program read from the machine: the equipment is kept
   await runUpdateAll(['equipment'], (r) => rs.push(r));
   setClaudeInterceptor(null);
   assert.equal(asked, 0);
-  assert.match(rs.at(-1)?.message ?? '', /Kept the machine's own CPU-301.*the AI was not asked/);
+  assert.match(rs.at(-1)?.message ?? '', /Kept the machine's own (CPU-301|JAPMC-CP3301-1-E).*the AI was not asked/);
 });
 
 console.log(`tokens.test: all passed (${passed})`);
