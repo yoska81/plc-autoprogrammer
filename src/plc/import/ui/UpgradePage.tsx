@@ -23,6 +23,28 @@ import { notify } from '../../../store/useNoticeStore';
 import { useHmiStore } from '../../../store/useHmiStore';
 import { remakeCoverageAll } from '../remake';
 
+/** A kept instruction in plain words ("1 call to another drawing"). */
+function keptPhrase(what: string, n: number): string {
+  const w = what.toUpperCase();
+  const [one, many] = w === 'SEE' ? ['call to another drawing', 'calls to other drawings']
+    : w === 'UNKNOWN INSTRUCTION' ? ["instruction the app can't read", "instructions the app can't read"]
+      : w === 'JSR' || w === 'CALL' ? ['subroutine call', 'subroutine calls']
+        : w === 'MSG' ? ['message (communication) instruction', 'message (communication) instructions']
+          : [`${what} instruction`, `${what} instructions`];
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** How much converts on one PLC, in plain words. */
+function coverageText(c: { percent: number; converted: number; rungs: number; kept: { what: string; count: number }[]; errors: { message: string }[] }, withPercent: boolean): string {
+  const parts = [`${c.converted} of ${c.rungs} rungs convert${withPercent ? ` (${c.percent}%)` : ''}`];
+  if (c.kept.length) parts.push(`to redo by hand: ${c.kept.map((k) => keptPhrase(k.what, k.count)).join(', ')}`);
+  if (c.errors.length) parts.push(`${c.errors.length} ${c.errors.length === 1 ? 'rung needs' : 'rungs need'} a fix for this PLC (${c.errors[0].message})`);
+  return `${parts.join('; ')}.`;
+}
+
+/** A PLC's name on a button ("Generic Structured Text (any IEC PLC)" rather than the profile's vendor + name). */
+const plcLabel = (id: string, label: string) => (id === 'generic-st' ? 'Generic Structured Text (any IEC PLC)' : label);
+
 /**
  * "Upgrade existing program" (Import → Program; /upgrade leads there): read the machine's program, then compare
  * the program now with the original and export it again (same PLC, original names; or the PLC chosen on the PLC
@@ -123,23 +145,27 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
               )}
 
               {readOnly && (
-                <div className="bg-white rounded-lg border-2 border-brand-300 p-5 space-y-3" data-testid="upgrade-choose-plc">
+                <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3" data-testid="upgrade-choose-plc">
                   <h3 className="text-sm font-semibold text-gray-800">Remake it for another PLC: choose one</h3>
-                  <p className="text-xs text-gray-600">The app cannot write {profile.vendor} files yet. Choose the PLC the machine will have: the I/O gets its addresses, the program and the HMI follow, the app picks its CPU and modules, and the download is made for it. Until then the program, the I/O list and the simulator work on the original's registers.</p>
-                  {coverage.length > 0 ? (
-                    <ul className="space-y-1.5" data-testid="upgrade-remake">
-                      {coverage.map((c) => (
-                        <li key={c.plcId} className="flex flex-wrap items-center gap-2 text-xs" data-testid={`upgrade-remake-${c.plcId}`}>
-                          <button data-testid={`upgrade-move-${c.plcId}`} onClick={() => moveTo(c.plcId)} className="px-3 py-1.5 rounded border border-gray-300 hover:border-brand-400 hover:bg-brand-50 text-gray-700 font-medium">Remake for {c.label}</button>
-                          <span className={c.percent === 100 ? 'text-green-700' : 'text-gray-700'}>
-                            <b>{c.percent}%</b> converts ({c.converted} of {c.rungs} rungs)
-                            {c.kept.length > 0 && <>; kept to rewrite by hand: {c.kept.map((k) => `${k.what} ×${k.count}`).join(', ')}</>}
-                            {c.errors.length > 0 && <>; {c.errors.length} rung{c.errors.length === 1 ? '' : 's'} the {c.label} checker rejects ({c.errors[0].message})</>}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
+                  <p className="text-xs text-gray-600">The app cannot write {profile.vendor} files yet, so choose the PLC the machine will get. The I/O gets that PLC's addresses, the program and the screens follow, and the app picks its CPU and modules. Until you choose, everything keeps working on the original's registers.</p>
+                  {coverage.length > 0 ? (() => {
+                    // The same result on every PLC: said once, then just the buttons.
+                    const key = (c: (typeof coverage)[number]) => JSON.stringify([c.converted, c.rungs, c.kept, c.errors.length]);
+                    const same = coverage.every((c) => key(c) === key(coverage[0]));
+                    return (
+                      <>
+                        {same && <p className="text-xs text-gray-700" data-testid="upgrade-remake-same">On every PLC: {coverageText(coverage[0], false)}</p>}
+                        <ul className={same ? 'flex flex-wrap gap-2' : 'space-y-1.5'} data-testid="upgrade-remake">
+                          {coverage.map((c) => (
+                            <li key={c.plcId} className="flex flex-wrap items-center gap-2 text-xs" data-testid={`upgrade-remake-${c.plcId}`}>
+                              <button data-testid={`upgrade-move-${c.plcId}`} onClick={() => moveTo(c.plcId)} className="px-3 py-1.5 rounded border border-gray-300 hover:border-brand-400 hover:bg-brand-50 text-gray-700 font-medium">Remake for {plcLabel(c.plcId, c.label)}</button>
+                              {!same && <span className={c.percent === 100 ? 'text-green-700' : 'text-gray-700'}>{coverageText(c, true)}</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    );
+                  })() : (
                     <div className="flex flex-wrap gap-2">
                       {PLC_PROFILES.filter((p) => p.available).map((p) => (
                         <button key={p.id} data-testid={`upgrade-move-${p.id}`} onClick={() => moveTo(p.id)} className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:border-brand-400 hover:bg-brand-50 text-gray-700">{p.vendor} {p.name}</button>
