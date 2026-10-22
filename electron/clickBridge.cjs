@@ -27,6 +27,8 @@ function registerClickBridgeIpc(ipcMain, app, resourcesDir) {
     catch (err) { return { ok: false, error: err instanceof Error ? err.message : String(err) }; }
   });
   ipcMain.handle('isa:click-log', () => path.join(app.getPath('logs'), 'click-bridge.log'));
+  // "Open folder" for support: the log selected in Explorer (only this file: the path is the app's own)
+  ipcMain.handle('isa:click-show-log', () => { require('electron').shell.showItemInFolder(path.join(app.getPath('logs'), 'click-bridge.log')); return true; });
   app.on('will-quit', () => bridge.stop());
   return bridge;
 }

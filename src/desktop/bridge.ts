@@ -127,6 +127,8 @@ export interface ClickBridge {
   call(cmd: 'detect', args?: Record<string, never>): Promise<ClickDetect>;
   call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
   logPath(): Promise<string>;
+  /** Shows the log file in Explorer (to send it to support). Older desktop apps lack it. */
+  showLog?(): Promise<boolean>;
   onProgress(cb: (p: { id: number; text: string }) => void): () => void;
 }
 

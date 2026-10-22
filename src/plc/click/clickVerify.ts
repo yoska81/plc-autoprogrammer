@@ -9,7 +9,7 @@
  */
 import { clickEntryBlocks } from '../core/clickEntrySheet';
 import type { LadderProgram } from '../core/ladder';
-import { CLICK_MAIN, type ClickStep } from './clickPlan';
+import { addressPickerPlan, CLICK_MAIN, type ClickStep } from './clickPlan';
 import { value } from './clickRungs';
 
 /** The bridge's folder joined with a file name (Windows path). */
@@ -17,12 +17,16 @@ export const inFolder = (folder: string, name: string) => `${folder.replace(/[\\
 
 /** The nicknames exported from the Address Picker to `folder\name`; the user presses Save. */
 export function exportNicknamesPlan(folder: string, name: string): ClickStep[] {
+  const picker: ClickStep = { do: 'window', title: '^Address Picker' };
+  const saveCame: ClickStep = { do: 'window', title: '(Save As|Export)', timeoutMs: 8000 };
   return [
-    { do: 'window', title: CLICK_MAIN },
-    { do: 'menu', path: ['View', 'Address Picker'], say: 'Address Picker' },
-    { do: 'window', title: '^Address Picker' },
-    { do: 'menu', path: ['File', 'Export', 'Nick ?Names?'], say: 'Exporting the nicknames' },
-    { do: 'window', title: '(Save As|Export)' },
+    ...addressPickerPlan(),
+    {
+      do: 'oneOf', what: 'the nickname export', say: 'Exporting the nicknames', options: [
+        { label: 'its Export button', steps: [picker, { do: 'click', find: { type: 'Button', name: '^Export' }, timeoutMs: 3000 }, { do: 'click', find: { type: 'MenuItem', name: 'Nick ?Name' }, timeoutMs: 2000, optional: true }, saveCame] },
+        { label: 'its File menu', steps: [picker, { do: 'menu', path: ['File', 'Export', 'Nick ?Names?'] }, saveCame] },
+      ],
+    },
     { do: 'setText', find: { type: 'Edit', name: '^File name' }, text: inFolder(folder, name) },
     { do: 'waitGone', title: '(Save As|Export)', say: 'Your turn: press Save in the dialog (the file name is filled in)' },
     { do: 'window', title: '^(Export|CLICK|Address Picker)', timeoutMs: 3000, optional: true },
@@ -32,10 +36,16 @@ export function exportNicknamesPlan(folder: string, name: string): ClickStep[] {
 
 /** The ladder printed to a PDF at `folder\name` (CLICK's Print, the Microsoft Print to PDF printer); the user presses Save. */
 export function printLadderPlan(folder: string, name: string): ClickStep[] {
+  const printCame: ClickStep = { do: 'window', title: '^Print', timeoutMs: 8000 };
+  const main: ClickStep = { do: 'window', title: CLICK_MAIN };
   return [
-    { do: 'window', title: CLICK_MAIN },
-    { do: 'menu', path: ['File', 'Print'], say: 'Printing the ladder to a PDF' },
-    { do: 'window', title: '^Print' },
+    main,
+    {
+      do: 'oneOf', what: 'Print', say: 'Printing the ladder to a PDF', options: [
+        { label: 'Ctrl+P', steps: [main, { do: 'keys', keys: '^p' }, printCame] },
+        { label: 'the File menu', steps: [main, { do: 'menu', path: ['File', 'Print'] }, printCame] },
+      ],
+    },
     { do: 'check', find: { name: '^Ladder' }, optional: true },
     { do: 'select', find: { type: 'ComboBox', name: 'Printer|Name' }, item: 'Microsoft Print to PDF', optional: true },
     { do: 'click', find: { type: 'Button', name: '^(OK|Print)$' } },
