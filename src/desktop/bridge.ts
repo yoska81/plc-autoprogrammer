@@ -94,11 +94,16 @@ export interface DwgReaderBridge {
   read(files: { name: string; bytes: Uint8Array }[]): Promise<{ ok: true; files: { name: string; text: string; version?: string | null; warnings?: string[] }[] } | { ok: false; notConfigured?: boolean; error: string }>;
 }
 
+/** electron/claudeConfig.cjs: the Claude app is installed; the helper is in its settings, as this installation has it. */
+export interface ClaudeHelperStatus { claude: boolean; connected: boolean; current: boolean; file: string; error?: string }
+
 export interface IsaDesktop {
   /** Always true inside the desktop app. */
   isDesktop?: boolean;
   /** App version (package.json). */
   version?: string;
+  /** Updates of the desktop app (electron/updater.cjs). */
+  update?: UpdateBridge;
   print(job: DesktopPrintJob): Promise<DesktopPrintResult>;
   listPrinters?(): Promise<DesktopPrinter[]>;
   /** Native Save dialog, then write the file. */
@@ -117,6 +122,8 @@ export interface IsaDesktop {
   modbus?: ModbusBridge;
   /** DWG import (desktop app only; older builds don't have it). */
   dwg?: DwgReaderBridge;
+  /** The ISA PLC Helper in the Claude desktop app's settings (Send from the web page; older builds don't have it). */
+  claudeHelper?: { status(): Promise<ClaudeHelperStatus>; set(on: boolean): Promise<ClaudeHelperStatus> };
   /** Send to TIA Portal through TIA Openness (Windows desktop app only; older builds don't have it). */
   tia?: TiaBridge;
   /** Send to CLICK: drives CLICK Programming Software while the user watches (Windows desktop app only). */
@@ -228,4 +235,26 @@ declare global {
 /** The desktop bridge, when running inside the Windows app. */
 export function desktopBridge(): IsaDesktop | null {
   return typeof window !== 'undefined' && window.isaDesktop ? window.isaDesktop : null;
+}
+
+/** Where the desktop app's update stands. 'off': not a packaged app (development) and no test feed. */
+export interface UpdateState {
+  status: 'off' | 'idle' | 'checking' | 'none' | 'downloading' | 'ready' | 'error';
+  /** Version running now. */
+  current: string;
+  /** Version found / downloaded. */
+  version?: string | null;
+  percent?: number;
+  /** Plain-words reason (status 'error'). */
+  message?: string;
+  /** The last check was asked for by the user ("Check for updates"): say the result even when there is none. */
+  manual?: boolean;
+}
+
+export interface UpdateBridge {
+  state(): Promise<UpdateState>;
+  check(): Promise<UpdateState>;
+  /** Closes the app (its usual save checks) and installs; false when the user called it off. */
+  install(): Promise<boolean>;
+  onState(cb: (s: UpdateState) => void): () => void;
 }
