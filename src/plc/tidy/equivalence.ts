@@ -10,6 +10,7 @@
 import { createSimulator, isBitAddress, isWordAddress, type SimOptions, type Simulator } from '../sim/engine';
 import { rungWrites, type LadderProgram } from '../core/ladder';
 import { rungDeps } from './deps';
+import { getProfile } from '../core/profiles';
 import { buildMachineModel, machineInputs, stepMachine, type MachineModel, type SimIOPoint } from '../sim/machineModel';
 
 export interface Difference { sequence: string; scan: number; timeMs: number; address: string; original: boolean | number; reorganized: boolean | number }
@@ -47,6 +48,11 @@ export interface EquivalenceOptions {
   /** Extra sequences: each step sets inputs, then runs dtMs. */
   sequences?: { name: string; steps: { set?: Record<string, boolean | number>; dtMs: number }[] }[];
   sim?: SimOptions;
+  /**
+   * The project's PLC: its scan rules (system bits, memory kept through a power cut) when `sim` is not given. An id,
+   * not the rules themselves, so the options can go to the worker.
+   */
+  profileId?: string;
   /**
    * The I/O list for the plant model: closed-loop sequences where the machine answers the outputs (cylinders reach
    * their sensors, conveyors carry parts) while seeded random operator actions press buttons, turn selectors,
@@ -119,7 +125,14 @@ function longestTimer(p: LadderProgram): number {
   return Math.min(max, 24 * 3_600_000);
 }
 
+/** The simulator options for a PLC: its scan rules (CLICK's when the profile has none of its own). */
+export function simOptionsFor(profileId?: string): SimOptions | undefined {
+  const semantics = profileId ? getProfile(profileId).simSemantics : undefined;
+  return semantics ? { semantics } : undefined;
+}
+
 export function checkEquivalence(original: LadderProgram, reorganized: LadderProgram, o: EquivalenceOptions = {}): EquivalenceResult {
+  const sim = o.sim ?? simOptionsFor(o.profileId);
   const scanMs = o.scanMs ?? 10;
   const maxDiff = o.maxDifferences ?? 5;
   const started = Date.now();
@@ -140,7 +153,7 @@ export function checkEquivalence(original: LadderProgram, reorganized: LadderPro
     if (differences.length >= maxDiff) return;
     if (Date.now() - started > budget) { stoppedEarly = true; return; }
     o.onProgress?.(begun++, total);
-    const a = createSimulator(original, { ...o.sim, lean: true }), b = createSimulator(reorganized, { ...o.sim, lean: true });
+    const a = createSimulator(original, { ...sim, lean: true }), b = createSimulator(reorganized, { ...sim, lean: true });
     // The machine, one per program (the same devices in the same state while the programs agree).
     const models: [MachineModel, MachineModel] | null = withPlant && o.plant ? [buildMachineModel(o.plant, []), buildMachineModel(o.plant, [])] : null;
     if (models) { for (const [k, v] of machineInputs(models[0])) a.setInput(k, v); for (const [k, v] of machineInputs(models[1])) b.setInput(k, v); }

@@ -333,7 +333,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
       const plant = p.io.map((x) => ({ address: p.addresses.get(x.id) ?? '', description: x.description, type: x.type, category: x.category }));
       // In a worker: the page stays free, the job bar shows how far it got, Cancel stops it.
       // Against the program as the original PLC runs it (without the code it never runs, when that is removed).
-      const check = await checkEquivalenceOffThread(plcBaseline(p, plan, chosen), program, { observe: [...externalAddresses(p)], plant }, {
+      const check = await checkEquivalenceOffThread(plcBaseline(p, plan, chosen), program, { observe: [...externalAddresses(p)], plant, profileId: p.profile.id }, {
         signal, onProgress: (done, total) => stage(`checking in the simulator, sequence ${done + 1} of ${total}`),
       });
       return { program, check, before: p.ladder.rungs.length, changes: describeChanges(plan, chosen, removalPreview(p.ladder, plan, chosen)) };

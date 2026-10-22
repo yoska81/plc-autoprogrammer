@@ -53,7 +53,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
     const { l5x } = await appImport('/src/plc/import/__fixtures__/bigPrograms.ts');
     const { importProgramFiles } = await appImport('/src/plc/import/index.ts');
     const { applyUpgrade } = await appImport('/src/plc/import/ui/applyUpgrade.ts');
-    applyUpgrade(importProgramFiles([{ name: 'big.L5X', text: l5x(80, 120) }]).program);
+    applyUpgrade(importProgramFiles([{ name: 'big.L5X', text: l5x(80, 128) }]).program);
   });
   const big = await page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.length);
   check(big === 4000, `the synthetic program has ${big} rungs`);

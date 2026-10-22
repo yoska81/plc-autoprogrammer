@@ -37,7 +37,7 @@ const blankAll = (l: LadderProgram): LadderProgram => ({ ...l, rungs: l.rungs.ma
 // ── AI budget on a synthetic ~2,000-rung program: few calls of about PART_CHARS, small answers, no program JSON ──
 {
   await clearAiCache();
-  const { program: imp } = importProgramFiles([{ name: 'big.L5X', text: bigL5x(40, 120) }]);
+  const { program: imp } = importProgramFiles([{ name: 'big.L5X', text: bigL5x(40, 128) }]);
   applyUpgrade(imp);
   useProgramStore.getState().setGeneratedLadder(blankAll(useProgramStore.getState().ladder), 'x', null);
   const p = collectProject();

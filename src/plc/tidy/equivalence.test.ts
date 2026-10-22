@@ -8,7 +8,8 @@ import assert from 'node:assert/strict';
 import { LADDER, seedSampleProject } from '../../preview/sampleProject';
 import { collectProject } from '../../deliverables/collect';
 import type { LadderProgram } from '../core/ladder';
-import { checkEquivalence, equivalenceSummary, programInputs } from './equivalence';
+import { checkEquivalence, equivalenceSummary, programInputs, simOptionsFor } from './equivalence';
+import { getProfile } from '../core/profiles';
 import { reorder, rungDeps } from './deps';
 
 const warn = console.warn;
@@ -88,6 +89,18 @@ const quick = { random: 60, steps: 40, plant, plantSequences: 40 };
     assert.deepEqual([...lean.state.bits].sort(), [...full.state.bits].sort(), `bits at step ${k}`);
     assert.deepEqual([...lean.state.words].sort(), [...full.state.words].sort(), `words at step ${k}`);
   }
+}
+
+// The project's PLC: its scan rules go to the simulators by profile id (an id can go to the worker; rules cannot).
+{
+  for (const id of ['click', 'logix', 'siemens-s7', 'yaskawa-mp']) {
+    assert.equal(getProfile(id).id, id, `a real profile: ${id}`);
+    const sem = getProfile(id).simSemantics;
+    assert.equal(simOptionsFor(id)?.semantics, sem, id);
+  }
+  assert.equal(simOptionsFor(undefined), undefined);
+  const r = checkEquivalence(LADDER, LADDER, { random: 5, steps: 10, profileId: 'logix' });
+  assert.deepEqual(r.differences, []);
 }
 
 console.log('tidy equivalence tests passed');
