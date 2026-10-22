@@ -50,6 +50,7 @@ import ExplainPanel from './ExplainPanel';
 import { rewriteCandidates, simplifyBlocks, type RewriteCandidate } from '../../tidy/rewrite';
 import SpeakButton from '../../../voice/SpeakButton';
 import { usePlcNames } from '../ladder/plcNames';
+import { withPlcNamesAndIo, type PlcNameOf } from '../../core/plcNames';
 import { useProjectStore } from '../../../store/useProjectStore';
 import { ptoPointsFor } from '../../../electrical/highSpeedIo';
 
@@ -83,7 +84,7 @@ function mergeBlock(full: LadderProgram, blockId: string, edited: LadderProgram)
   return { ...full, tags: edited.tags, rungs: [...rest.slice(0, at), ...mine, ...rest.slice(at)] };
 }
 
-function IssueList({ issues, rungNumber, plcName, onRebuild }: { issues: ValidationIssue[]; rungNumber: (id: string) => number; plcName: string; onRebuild?: () => void }) {
+function IssueList({ issues, rungNumber, plcName, onRebuild, names, users }: { issues: ValidationIssue[]; rungNumber: (id: string) => number; plcName: string; onRebuild?: () => void; names?: PlcNameOf; users?: string[] }) {
   const [open, setOpen] = useState(false);
   const errors = issues.filter((i) => i.severity === 'error').length;
   const warnings = issues.length - errors;
@@ -108,7 +109,7 @@ function IssueList({ issues, rungNumber, plcName, onRebuild }: { issues: Validat
         <ul className="px-4 pb-2 space-y-0.5 max-h-40 overflow-y-auto">
           {issues.map((i, k) => (
             <li key={k} className={i.severity === 'error' ? 'text-red-700' : 'text-amber-700'}>
-              {i.rungId ? `Rung ${rungNumber(i.rungId)}: ` : ''}{i.message}
+              {i.rungId ? `Rung ${rungNumber(i.rungId)}: ` : ''}{withPlcNamesAndIo(i.message, names, users)}
             </li>
           ))}
         </ul>
@@ -698,7 +699,9 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             <button onClick={() => { const fromSpec = proposal?.specUpdate; store.applyProposal(); if (fromSpec) recordSource(); }} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700">Approve</button>
           </div>
         ) : (
-          ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} plcName={ctx.profile.name} onRebuild={ctx.profile.readOnly ? undefined : () => handleGenerate(false)} />
+          ladder.rungs.length > 0 && <IssueList issues={issues} rungNumber={rungNumber} plcName={ctx.profile.name}
+            // Yaskawa: the MPE720 registers only (MW00011, not DS2); the user's own words stay as written.
+            names={ctx.profile.id === 'yaskawa-mp' ? plcNames : undefined} users={ctx.profile.id === 'yaskawa-mp' ? [...ctx.io.map((x) => x.description), ...ladder.rungs.map((r) => r.comment)].filter(Boolean) : undefined} onRebuild={ctx.profile.readOnly ? undefined : () => handleGenerate(false)} />
         )}
 
         {!review && ladder.rungs.length > 0 && (

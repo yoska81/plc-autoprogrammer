@@ -312,7 +312,7 @@ export function planReorganize(p: ProjectSnapshot): ReorgPlan {
     if (!s) { findings.push(`Rung ${num.get(r.id)}: ${r.outputs.length} outputs, ${r.branches.length} paths — not split (it needs internal bits this PLC's memory has no free ones the app knows).`); continue; }
     splits.add(r.id);
     spent += s.used.length;
-    splitItems.push(`rung ${num.get(r.id)}: ${r.outputs.length} outputs, ${r.branches.length} paths → ${s.rungs.length} rungs${s.used.length ? ` (internal bit${s.used.length === 1 ? '' : 's'} ${s.used.join(', ')})` : ''}`);
+    splitItems.push(`rung ${num.get(r.id)}: ${r.outputs.length} outputs, ${r.branches.length} paths → ${s.rungs.length} rungs${s.used.length ? ` (internal bit${s.used.length === 1 ? '' : 's'} ${s.used.map((a) => info.shown(a)).join(', ')})` : ''}`);
   }
 
   // Merge: neighbours with the same conditions and only coils, the second not reading what the first writes.
@@ -340,7 +340,8 @@ export function planReorganize(p: ProjectSnapshot): ReorgPlan {
     const from = r.comment.trim() ? r.comment.split(/[.:;(]/)[0] : [...rungDeps(r).reads].filter((x) => x !== a).map(name).find(Boolean) ?? '';
     const kind = /^T\d/.test(a) ? 'Timer' : /^CT\d/.test(a) ? 'Counter' : WORD.test(a) ? 'Value' : 'Flag';
     const words = from.replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !/^(the|and|when|with|turns|sets|latches|resets|used|rung|rungs)$/i.test(w)).slice(0, 3).join('_');
-    names.set(a, logixName(words ? `${words}_${kind}` : `${kind}_${a}`, used, `${kind}_${a}`).slice(0, 24));
+    const at = info.shown(a);
+    names.set(a, logixName(words ? `${words}_${kind}` : `${kind}_${at}`, used, `${kind}_${at}`).slice(0, 24));
   }
 
   const list = (ids: Set<string>) => [...ids].map((id) => `rung ${num.get(id)}: ${rungWrites(l.rungs.find((r) => r.id === id)!).map((a) => info.ref(a)).join(', ')}`);
@@ -351,13 +352,13 @@ export function planReorganize(p: ProjectSnapshot): ReorgPlan {
     { id: 'remove-never', title: `Remove ${count(never.size, 'rung')} that can never switch on`, note: 'Off by default: each waits for a signal nothing in this program sets (another device might set it).', items: list(never), defaultOn: false },
     ...(nr.uncalled.size ? [{ id: 'remove-uncalled' as const, title: `Remove ${count(nr.uncalled.size, 'rung')} the old PLC never runs (routines nothing calls)`, note: 'Off by default. The old PLC runs a routine only when another routine calls it, and nothing calls these. Checked against the program as the old PLC really runs it.', items: [...nr.uncalled].map(([id, why]) => `rung ${num.get(id)}: ${why}`), defaultOn: false }] : []),
     ...(nr.jumped.size ? [{ id: 'remove-jumped' as const, title: `Remove ${count(nr.jumped.size, 'rung')} that a jump always skips`, note: 'Off by default. The old PLC always jumps over them. Checked against the program as the old PLC really runs it.', items: [...nr.jumped].map(([id, why]) => `rung ${num.get(id)}: ${why}`), defaultOn: false }] : []),
-    ...(unusedTags.size ? [{ id: 'remove-tags' as const, title: `Remove ${count(unusedTags.size, 'unused name')}`, note: 'Names and comments of bits, timers and counters that nothing uses. Data registers and saved memory keep theirs (another device may read them).', items: [...unusedTags].map((a) => `${a}${l.tags.find((t) => t.address.trim().toUpperCase() === a)?.nickname ? ` ${l.tags.find((t) => t.address.trim().toUpperCase() === a)!.nickname}` : ''}: no rung reads or writes it`), defaultOn: true }] : []),
+    ...(unusedTags.size ? [{ id: 'remove-tags' as const, title: `Remove ${count(unusedTags.size, 'unused name')}`, note: 'Names and comments of bits, timers and counters that nothing uses. Data registers and saved memory keep theirs (another device may read them).', items: [...unusedTags].map((a) => `${info.shown(a)}${l.tags.find((t) => t.address.trim().toUpperCase() === a)?.nickname ? ` ${l.tags.find((t) => t.address.trim().toUpperCase() === a)!.nickname}` : ''}: no rung reads or writes it`), defaultOn: true }] : []),
     ...(flatten.size ? [{ id: 'flatten' as const, title: `Simplify the conditions of ${count(flatten.size, 'rung')}`, note: 'Repeated contacts and paths, paths that can never be true, and paths already covered by a shorter one are taken out.', items: [...flatten].map((id) => { const r = l.rungs.find((x) => x.id === id)!; return `rung ${num.get(id)}: ${r.branches.length} paths → ${flattenRung(r)!.branches.length}`; }), defaultOn: true }] : []),
     ...(seals.length ? [{ id: 'seal' as const, title: `Turn ${count(seals.length, 'latch', 'latches')} (SET / RESET) into one self-holding rung`, note: 'Only where it works the same: the bit is set and reset in neighbouring rungs, nothing else writes it, and it is not kept through a power cut.', items: seals.map((x) => `${info.ref(x.address)}: rungs ${num.get(x.setId)} and ${num.get(x.rstId)} → one rung`), defaultOn: true }] : []),
     ...(splits.size ? [{ id: 'split' as const, title: `Split ${count(splits.size, 'long rung')} into shorter ones`, note: `Rungs with ${MANY_OUTPUTS} or more outputs or ${MANY_BRANCHES} or more paths, a few at a time. Off by default.`, items: splitItems, defaultOn: false }] : []),
     { id: 'merge', title: `Combine ${count(merges.length, 'pair')} of neighbouring rungs that have the same conditions`, note: 'One rung with all their outputs.', items: merges.map(([a, b]) => `rungs ${num.get(a)} and ${num.get(b)}`), defaultOn: true },
     { id: 'reorder', title: keepBlocks ? 'Put the rungs in order by machine part, inside each drawing' : 'Group the rungs by machine part (safety, modes, each station, alarms, screen)', note: `${keepBlocks ? 'The drawings and their order stay: the program stays on its original PLC. ' : ''}Rungs that depend on each other keep their order; instructions kept from the old PLC do not move.`, items: [...FUNCS], defaultOn: true },
-    { id: 'rename', title: `Give names to ${count(names.size, 'unnamed value')}`, note: 'Only names change; addresses stay.', items: [...names].map(([a, n]) => `${a} → ${n}`), defaultOn: true },
+    { id: 'rename', title: `Give names to ${count(names.size, 'unnamed value')}`, note: 'Only names change; addresses stay.', items: [...names].map(([a, n]) => `${info.shown(a)} → ${n}`), defaultOn: true },
     { id: 'comment', title: `Write ${count(blanks, 'missing description')}`, note: 'Rung comments, block descriptions and tag comments, in plain words.', items: [], defaultOn: true },
   ];
   // Only what has something to do (grouping is always offered; descriptions when some are missing).
