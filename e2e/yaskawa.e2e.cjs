@@ -81,6 +81,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(/These are the Yaskawa modules: DEMOIO\. They stay with the original\. Choose the new PLC and the app picks its modules\./.test(up), 'the modules notice says they stay with the original');
   check(/Servo axes \(1\)/.test(up), 'the servo axes as information');
   check(await page.getByTestId('upgrade-choose-plc').isVisible(), 'the "Move it to another PLC: choose one" step');
+  // The remake: per PLC how much converts, before anything moves (the demo: 10 of 11 rungs, the SEE call and the unknown code kept).
+  const remake = await page.getByTestId('upgrade-remake-siemens-s7').innerText();
+  check(/Remake for Siemens S7-1200 \/ S7-1500/.test(remake) && /90% converts \(10 of 11 rungs\)/.test(remake) && /SEE ×1/.test(remake), `the remake line for Siemens (${remake.replace(/\s+/g, ' ')})`);
+  check(await page.getByTestId('upgrade-remake').locator('li').count() >= 6, 'a remake line per PLC the app writes');
   check(await page.getByTestId('upgrade-export').count() === 0, 'no "Download for …" until a PLC is chosen');
   await page.screenshot({ path: path.join(OUT, '3-read-only.png'), fullPage: true });
   await noClick('/io');

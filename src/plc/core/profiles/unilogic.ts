@@ -164,7 +164,7 @@ export const unistreamProfile: PlcProfile = {
     return m ? `slot ${p.slot} ${m.partNumber} ${kind} ${p.index}` : null;
   },
   importSteps: [
-    'In UniLogic, right-click a Ladder module in Solution Explorer › Import ST Code From File, and pick the _unilogic.st file: it creates the global tags and the ST function Machine_Logic. UniLogic has no ladder import; this ST file is the only program import it offers.',
+    'In UniLogic, right-click a Ladder module in Solution Explorer › Import ST Code From File, and pick the _unilogic.st file: it creates the global tags and the ST function Machine_Logic. UniLogic has no documented ladder import (its own ladder export files are not a published format): keep this ST function, or redraw it in ladder from the printed ladder.',
     'Call Machine_Logic from the Main ladder function on an unconditional rung, so it runs every scan.',
     'In Hardware Configuration, link each I/O tag to the module channel in the I/O link list (imported ST names I/O by name only), and set the analog channels\' range and scaling.',
     'The global-tag grammar of an imported file is not published by Unitronics (this file uses standard IEC VAR_GLOBAL): check the import messages and the TODO tab, then build, download and test every step with the machine in a safe state.',

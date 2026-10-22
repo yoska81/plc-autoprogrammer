@@ -20,6 +20,8 @@ import ProgramImport from './ProgramImport';
 import { getProfile, PLC_PROFILES } from '../../core/profiles';
 import { choosePlcBrand } from '../../core/choosePlc';
 import { notify } from '../../../store/useNoticeStore';
+import { useHmiStore } from '../../../store/useHmiStore';
+import { remakeCoverageAll } from '../remake';
 
 /**
  * "Upgrade existing program" (Import → Program; /upgrade leads there): read the machine's program, then compare
@@ -43,6 +45,9 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
   const findings = useMemo(() => programFindings(ladder, labels), [ladder, labels]);
   // A program kept read only on the machine's own PLC (the app cannot program it): no download until a PLC is chosen.
   const readOnly = Boolean(profile.readOnly);
+  const hmi = useHmiStore((s) => s.design);
+  // Per target PLC, how much of the program converts (worked out without moving anything).
+  const coverage = useMemo(() => (readOnly && ladder.rungs.length ? remakeCoverageAll({ io, plcId: profile.id, cpuId: cpu.id, modules, program: ladder, hmi }) : []), [readOnly, io, profile.id, cpu.id, modules, ladder, hmi]);
   const fromReadOnly = Boolean(original && getProfile(original.plcId).readOnly && !readOnly);
   const moveTo = (plcId: string) => {
     const notes = choosePlcBrand(plcId);
@@ -119,13 +124,28 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
 
               {readOnly && (
                 <div className="bg-white rounded-lg border-2 border-brand-300 p-5 space-y-3" data-testid="upgrade-choose-plc">
-                  <h3 className="text-sm font-semibold text-gray-800">Move it to another PLC: choose one</h3>
+                  <h3 className="text-sm font-semibold text-gray-800">Remake it for another PLC: choose one</h3>
                   <p className="text-xs text-gray-600">The app cannot write {profile.vendor} files yet. Choose the PLC the machine will have: the I/O gets its addresses, the program and the HMI follow, the app picks its CPU and modules, and the download is made for it. Until then the program, the I/O list and the simulator work on the original's registers.</p>
-                  <div className="flex flex-wrap gap-2">
-                    {PLC_PROFILES.filter((p) => p.available).map((p) => (
-                      <button key={p.id} data-testid={`upgrade-move-${p.id}`} onClick={() => moveTo(p.id)} className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:border-brand-400 hover:bg-brand-50 text-gray-700">{p.vendor} {p.name}</button>
-                    ))}
-                  </div>
+                  {coverage.length > 0 ? (
+                    <ul className="space-y-1.5" data-testid="upgrade-remake">
+                      {coverage.map((c) => (
+                        <li key={c.plcId} className="flex flex-wrap items-center gap-2 text-xs" data-testid={`upgrade-remake-${c.plcId}`}>
+                          <button data-testid={`upgrade-move-${c.plcId}`} onClick={() => moveTo(c.plcId)} className="px-3 py-1.5 rounded border border-gray-300 hover:border-brand-400 hover:bg-brand-50 text-gray-700 font-medium">Remake for {c.label}</button>
+                          <span className={c.percent === 100 ? 'text-green-700' : 'text-gray-700'}>
+                            <b>{c.percent}%</b> converts ({c.converted} of {c.rungs} rungs)
+                            {c.kept.length > 0 && <>; kept to rewrite by hand: {c.kept.map((k) => `${k.what} ×${k.count}`).join(', ')}</>}
+                            {c.errors.length > 0 && <>; {c.errors.length} rung{c.errors.length === 1 ? '' : 's'} the {c.label} checker rejects ({c.errors[0].message})</>}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {PLC_PROFILES.filter((p) => p.available).map((p) => (
+                        <button key={p.id} data-testid={`upgrade-move-${p.id}`} onClick={() => moveTo(p.id)} className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:border-brand-400 hover:bg-brand-50 text-gray-700">{p.vendor} {p.name}</button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
