@@ -16,6 +16,8 @@ interface ProgramDone {
   lad: number; viaScl: number; rungs: number;
   compile: { errors: number; warnings: number; messages: (CompileMessage & { rung: number | null })[] } | null;
 }
+interface DownloadTargets { plc: { name: string; orderNumber: string; firmware: string } | null; address: string | null; interfaces: { name: string; number: number; targets: string[] }[] }
+interface Downloaded { state: 'success' | 'warning' | 'error' | 'refused'; errors: number; warnings: number; messages: string[]; answers: string[] }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -26,7 +28,10 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * 2. Open TIA Portal: a running one (with its project) or a new one with a new project. 3. The PLC (its firmware:
  * the newest TIA knows, or the one chosen) and its modules, and the PLC tags. 4. The program: the LAD export's
  * blocks for the open TIA Portal's version (the DB, the SCL helpers, the FCs, OB 1), then a compile; each compile
- * message is shown with the rung it is about (block and network → rung).
+ * message is shown with the rung it is about (block and network → rung). 5. Download, after a compile without
+ * errors and only from the confirm screen: the PLC, its address and the PC's network card are shown, the user
+ * ticks that the machine is safe (and whether the PLC may be stopped, and started after); the bridge refuses a
+ * download without that confirm and stops at any question of TIA Portal's it does not know.
  */
 export default function SendToTia({ profileId }: { profileId: string }) {
   const tia = desktopBridge()?.tia;
@@ -44,6 +49,13 @@ export default function SendToTia({ profileId }: { profileId: string }) {
   const [plcDone, setPlcDone] = useState<PlcDone | null>(null);
   const [tagsDone, setTagsDone] = useState<TagsDone | null>(null);
   const [programDone, setProgramDone] = useState<ProgramDone | null>(null);
+  const [targets, setTargets] = useState<DownloadTargets | null>(null);
+  const [via, setVia] = useState('');
+  const [safe, setSafe] = useState(false);
+  const [stopAllowed, setStopAllowed] = useState(false);
+  const [startAfter, setStartAfter] = useState(false);
+  const [password, setPassword] = useState('');
+  const [downloaded, setDownloaded] = useState<Downloaded | null>(null);
 
   const cpu = useProjectStore((st) => st.cpuId);
   const projectName = useProgramStore((st) => st.projectName);
@@ -91,8 +103,9 @@ export default function SendToTia({ profileId }: { profileId: string }) {
     setTagsDone(await step('send', () => tia.call('tags', { tags: tiaTagRows(p) }) as Promise<TagsDone>));
   };
 
+  const closeConfirm = () => { setTargets(null); setSafe(false); setStopAllowed(false); setStartAfter(false); setPassword(''); };
   const sendProgram = async () => {
-    setProgramDone(null);
+    setProgramDone(null); setDownloaded(null); closeConfirm();
     const version = tiaBlockVersion(opened?.version ?? '');
     if (!version) { setError(`TIA Portal ${opened?.version ?? ''} is older than the oldest version the app writes blocks for (V16). Use the SCL source from the download instead.`); return; }
     const b = tiaBlocks(collectProject(), version);
@@ -104,6 +117,24 @@ export default function SendToTia({ profileId }: { profileId: string }) {
       return { ...done, compile: { ...c, messages: c.messages.map((m) => ({ ...m, rung: b.rungOf(m.block, m.network) })) } };
     });
     if (r) setProgramDone(r);
+  };
+
+  /** The confirm screen: what the download goes to, and through which network card. Nothing is downloaded here. */
+  const askDownload = async () => {
+    setDownloaded(null);
+    const t = await step('download', () => tia.call('downloadTargets') as Promise<DownloadTargets>);
+    if (!t) return;
+    if (!t.interfaces.length) { setError('No network card of this PC reaches the PLC. Connect the PC to the PLC\'s network (Ethernet), then try again.'); return; }
+    setSafe(false); setStopAllowed(false); setStartAfter(false); setPassword('');
+    setVia(`${t.interfaces[0].name}|${t.interfaces[0].number}`);
+    setTargets(t);
+  };
+  const download = async () => {
+    const i = targets?.interfaces.find((x) => `${x.name}|${x.number}` === via);
+    if (!i || !safe) return;
+    const r = await step('download', () => tia.call('download', { confirmed: true, pcInterface: i.name, number: i.number, target: i.targets[0], stopAllowed, startAfter, password: password || undefined }) as Promise<Downloaded>);
+    setPassword('');
+    if (r) { setDownloaded(r); setTargets(null); setSafe(false); }
   };
 
   const newProject = tiaProjectName(projectName);
@@ -231,6 +262,53 @@ export default function SendToTia({ profileId }: { profileId: string }) {
                           )}
                         </div>
                       )}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {programDone?.compile && (
+                <section className="space-y-2" data-testid="tia-download">
+                  <h3 className="font-semibold text-steel-900">5. Download to the PLC</h3>
+                  {programDone.compile.errors > 0
+                    ? <p className="text-steel-500">Fix the compile errors first (step 4), then download.</p>
+                    : !targets && <button onClick={() => void askDownload()} disabled={Boolean(busy)} data-testid="tia-download-button"
+                      className="rounded border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-800 hover:bg-red-50 disabled:opacity-40">Download to the PLC…</button>}
+                  {targets && (
+                    <div className="space-y-2 rounded border-2 border-red-300 bg-red-50 p-3 text-red-950" data-testid="tia-confirm">
+                      <p className="font-semibold">Download to {targets.plc ? `${targets.plc.name} (${targets.plc.orderNumber}, firmware ${targets.plc.firmware})` : 'the PLC'}{targets.address ? ` at ${targets.address}` : ''}?</p>
+                      <p className="text-xs">The PLC then runs this program and its hardware configuration. Outputs can switch as soon as it runs.</p>
+                      <label className="block text-xs">Through this PC's network card{' '}
+                        <select value={via} onChange={(e) => setVia(e.target.value)} disabled={Boolean(busy)} aria-label="Network card" className="ml-1 rounded border border-red-300 bg-white px-1.5 py-0.5">
+                          {targets.interfaces.map((x) => <option key={`${x.name}|${x.number}`} value={`${x.name}|${x.number}`}>{x.name}</option>)}
+                        </select>
+                      </label>
+                      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={safe} onChange={(e) => setSafe(e.target.checked)} data-testid="tia-safe" />
+                        <span>I am at the machine, and it is safe for the PLC to stop and to run this program (nobody in the machine, moving parts and outputs checked).</span></label>
+                      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={stopAllowed} onChange={(e) => setStopAllowed(e.target.checked)} data-testid="tia-stop-allowed" />
+                        <span>The PLC may be stopped for the download (if it is in RUN).</span></label>
+                      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={startAfter} onChange={(e) => setStartAfter(e.target.checked)} data-testid="tia-start-after" />
+                        <span>Start the PLC after the download.</span></label>
+                      <label className="block text-xs">PLC password, if it has one{' '}
+                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" aria-label="PLC password" className="ml-1 rounded border border-red-300 bg-white px-1.5 py-0.5" />
+                        <span className="ml-1 text-red-900/70">(used for this download only, not kept)</span>
+                      </label>
+                      <div className="flex gap-2">
+                        <button onClick={() => void download()} disabled={Boolean(busy) || !safe || !via} data-testid="tia-download-now"
+                          className="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-800 disabled:opacity-40">Download to {targets.plc?.name ?? 'the PLC'} now</button>
+                        <button onClick={closeConfirm} disabled={Boolean(busy)} className="rounded border border-steel-300 bg-white px-3 py-1.5 text-xs font-medium text-steel-800 hover:bg-steel-50 disabled:opacity-40">Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                  {downloaded && (
+                    <div className="space-y-1 text-steel-700" data-testid="tia-downloaded">
+                      <p>{downloaded.state === 'success' || downloaded.state === 'warning'
+                        ? <><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />Downloaded{downloaded.warnings ? `, ${downloaded.warnings} warning${downloaded.warnings === 1 ? '' : 's'}` : ''}. {startAfter ? '' : 'Start the PLC from TIA Portal (Online › Start CPU) or its switch when you are ready.'}</>
+                        : downloaded.state === 'refused'
+                          ? <><ExclamationTriangleIcon className="mr-1 inline h-4 w-4 text-amber-600" />Not downloaded: nothing was changed in the PLC.</>
+                          : <><ExclamationTriangleIcon className="mr-1 inline h-4 w-4 text-red-600" />The download failed ({downloaded.errors} error{downloaded.errors === 1 ? '' : 's'}).</>}</p>
+                      {downloaded.messages.length > 0 && <ul className="ml-5 list-disc text-amber-900">{downloaded.messages.slice(0, 20).map((x, i) => <li key={i}>{x}</li>)}</ul>}
+                      {downloaded.answers.length > 0 && <p className="text-xs text-steel-500">TIA Portal asked: {downloaded.answers.join('; ')}.</p>}
                     </div>
                   )}
                 </section>
