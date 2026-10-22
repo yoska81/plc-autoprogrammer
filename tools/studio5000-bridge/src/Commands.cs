@@ -1,7 +1,8 @@
 // The commands of the Studio 5000 bridge:
 //   ping · detect (Studio 5000 Logix Designer, the Logix Designer SDK and its Python) · writeL5x (the app's L5X into
 //   the projects folder) · import (the L5X's parts into the app's copy of the user's .ACD: theirs never changed)
-//   · info (the copy's communication path) · open (an .ACD or .L5X with Studio 5000, for the user)
+//   · info (the copy's communication path) · download (only with the app's confirm screen: confirmed, and leave to
+//   put the controller in Program mode) · open (an .ACD or .L5X with Studio 5000, for the user)
 //   · stop (urgent: ends a running job).
 using System;
 using System.Collections.Generic;
@@ -77,6 +78,18 @@ namespace Studio5000Bridge
                 string file = Str(a, "project") ?? throw new BridgeError("No project.");
                 if (!pc.Exists(file)) throw new BridgeError($"There is no Studio 5000 project at {file}.");
                 return Job(new Dictionary<string, object> { ["cmd"] = "info", ["project"] = file }, pr);
+            });
+            p.On("download", (a, pr) =>
+            {
+                // A download changes what runs on the machine: only from the app's confirm screen.
+                if (!(a.TryGetValue("confirmed", out object c) && c is bool yes && yes)) throw new BridgeError("A download needs the confirm screen in the app (nothing was sent to the controller).");
+                bool Flag(string k) => a.TryGetValue(k, out object v) && v is bool b && b;
+                if (!Flag("programAllowed")) throw new BridgeError("A Logix download needs the controller in Program mode (it stops): tick \"The controller may be put in Program mode\" if that is safe.");
+                string file = Str(a, "project") ?? throw new BridgeError("Put the program in first: there is no project to download.");
+                if (!pc.Exists(file)) throw new BridgeError($"There is no Studio 5000 project at {file}: put the program in again.");
+                string path = Str(a, "commPath") ?? throw new BridgeError("Enter the path to the controller (as in Studio 5000's Who Active, e.g. AB_ETH-1\\192.168.1.10\\Backplane\\0).");
+                Log.Write($"download confirmed: {file} to {path}, program mode allowed, run after {Flag("runAfter")}");
+                return Job(new Dictionary<string, object> { ["cmd"] = "download", ["confirmed"] = true, ["programAllowed"] = true, ["runAfter"] = Flag("runAfter"), ["project"] = file, ["commPath"] = path }, pr);
             });
             p.On("open", (a, pr) =>
             {

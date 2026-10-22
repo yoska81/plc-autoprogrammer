@@ -33,6 +33,8 @@ const FAKE = () => {
         if (cmd === 'detect') return t.detect;
         if (cmd === 'writeL5x') return { path: `C:\\Users\\tech\\Documents\\ISA Auto Programmer\\Studio 5000\\${args.name}.L5X` };
         if (cmd === 'open') return { opened: args.file };
+        if (cmd === 'info') return { commPath: 'AB_ETH-1\\192.168.1.10\\Backplane\\0' };
+        if (cmd === 'download') return { mode: args.runAfter ? 'run' : 'program', commPath: args.commPath };
         if (cmd === 'import') {
           for (let i = 0; i < 10; i++) {
             if (stopped) throw new Error('Stopped, as you asked. Your own Studio 5000 project was not changed.');
@@ -117,6 +119,37 @@ const FAKE = () => {
   await dialog.getByTestId('studio5000-open').click();
   await page.waitForTimeout(300);
   check((await page.evaluate(() => window.__s5.calls)).some((c) => c.cmd === 'open' && c.args.file === 'D:\\Lines\\Line_ISA.ACD'), 'Open in Studio 5000: the copy');
+
+  // Download: only from the confirm screen, with the safety tick and leave for Program mode
+  await dialog.getByTestId('studio5000-download-button').click();
+  const confirm = dialog.getByTestId('studio5000-confirm');
+  await confirm.waitFor({ timeout: 5000 });
+  check(await dialog.getByLabel('Path to the controller').inputValue() === 'AB_ETH-1\\192.168.1.10\\Backplane\\0', 'the confirm has the project\'s path to the controller');
+  check(!(await page.evaluate(() => window.__s5.calls)).some((c) => c.cmd === 'download'), 'nothing downloaded before the confirm');
+  await dialog.getByTestId('studio5000-safe').check();
+  check(await dialog.getByTestId('studio5000-download-now').isDisabled(), 'Download now off without leave for Program mode');
+  await dialog.getByTestId('studio5000-program-allowed').check();
+  await dialog.getByLabel('Path to the controller').fill('AB_ETH-1\\10.0.0.5\\Backplane\\0');
+  await dialog.getByTestId('studio5000-download-now').click();
+  await dialog.getByTestId('studio5000-downloaded').waitFor({ timeout: 10000 });
+  let dl = (await page.evaluate(() => window.__s5.calls)).filter((c) => c.cmd === 'download');
+  log('download:', JSON.stringify(dl[0].args));
+  check(dl.length === 1 && dl[0].args.confirmed === true && dl[0].args.programAllowed === true && dl[0].args.runAfter === false && dl[0].args.project === 'D:\\Lines\\Line_ISA.ACD' && dl[0].args.commPath === 'AB_ETH-1\\10.0.0.5\\Backplane\\0', 'one download: the copy, the path, Program mode allowed, no Run');
+  check(/the controller is in Program mode\. Put it in Run mode from Studio 5000/.test(await dialog.getByTestId('studio5000-downloaded').innerText()), 'left in Program mode, said');
+  await dialog.getByTestId('studio5000-download-button').click();
+  await confirm.waitFor({ timeout: 5000 });
+  check(!(await dialog.getByTestId('studio5000-safe').isChecked()) && !(await dialog.getByTestId('studio5000-program-allowed').isChecked()), 'each confirm starts unticked');
+  await dialog.getByTestId('studio5000-safe').check();
+  await dialog.getByTestId('studio5000-program-allowed').check();
+  await dialog.getByTestId('studio5000-run-after').check();
+  await dialog.getByTestId('studio5000-download-now').click();
+  await dialog.getByTestId('studio5000-downloaded').filter({ hasText: 'Run mode.' }).waitFor({ timeout: 10000 });
+  dl = (await page.evaluate(() => window.__s5.calls)).filter((c) => c.cmd === 'download');
+  check(dl.length === 2 && dl[1].args.runAfter === true, 'Run mode after, when ticked');
+  await dialog.getByTestId('studio5000-download-button').click();
+  await dialog.getByTestId('studio5000-safe').check();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  check(await dialog.getByTestId('studio5000-confirm').count() === 0 && (await page.evaluate(() => window.__s5.calls)).filter((c) => c.cmd === 'download').length === 2, 'Cancel: nothing downloaded');
 
   // Stop; an error in one sentence with the log
   await page.evaluate(() => { window.__s5.importMs = 3000; });

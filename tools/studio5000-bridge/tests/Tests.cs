@@ -167,6 +167,32 @@ static class Tests
             True(((string)Answer(m, 9)["error"]).StartsWith("Rockwell's Logix Designer SDK is not installed") && bare.Started.Count == 0, (string)Answer(m, 9)["error"]);
         });
 
+        Test("download: never without the confirm screen, leave for Program mode, a path; the choices to the job", () =>
+        {
+            var dir = TempDir();
+            var pc = new FakePc().Logix("36.00.02").SdkFolder();
+            pc.Present.Add(Venv); pc.WithSdk.Add(Venv);
+            Dictionary<string, object> job = null;
+            pc.Sdk = j => { job = (Dictionary<string, object>)Json.Parse(File.ReadAllText(j)); return Answers("{\"ok\":true,\"result\":{\"mode\":\"run\"}}")(j); };
+            string copy = Path.Combine(dir, "Line_ISA.ACD");
+            File.WriteAllText(copy, "");
+            string P = Json.Write(copy), path = Json.Write("AB_ETH-1\\10.0.0.5\\Backplane\\0");
+            var output = new StringWriter();
+            var p = Commands.Register(new Protocol(output), pc, new Jobs(pc, Path.Combine(dir, "jobs"), Script(dir)) { PollMs = 1 }, dir);
+            var m = Talk(p, output,
+                "{\"id\":1,\"cmd\":\"download\",\"args\":{\"project\":" + P + ",\"commPath\":" + path + ",\"programAllowed\":true}}",
+                "{\"id\":2,\"cmd\":\"download\",\"args\":{\"confirmed\":\"yes\",\"project\":" + P + ",\"commPath\":" + path + ",\"programAllowed\":true}}",
+                "{\"id\":3,\"cmd\":\"download\",\"args\":{\"confirmed\":true,\"project\":" + P + ",\"commPath\":" + path + "}}",
+                "{\"id\":4,\"cmd\":\"download\",\"args\":{\"confirmed\":true,\"project\":" + P + ",\"programAllowed\":true}}",
+                "{\"id\":5,\"cmd\":\"download\",\"args\":{\"confirmed\":true,\"project\":" + P + ",\"commPath\":" + path + ",\"programAllowed\":true,\"runAfter\":true}}");
+            True(((string)Answer(m, 1)["error"]).Contains("confirm screen") && ((string)Answer(m, 2)["error"]).Contains("confirm screen"), "no confirm, no download");
+            True(((string)Answer(m, 3)["error"]).Contains("needs the controller in Program mode"), (string)Answer(m, 3)["error"]);
+            True(((string)Answer(m, 4)["error"]).StartsWith("Enter the path to the controller"), (string)Answer(m, 4)["error"]);
+            Eq(1, pc.Started.Count, "the SDK started once, for the confirmed one");
+            Eq("run", ((Dictionary<string, object>)Answer(m, 5)["result"])["mode"]);
+            Eq("download", job["cmd"]); Eq(true, job["confirmed"]); Eq(true, job["programAllowed"]); Eq(true, job["runAfter"]); Eq("AB_ETH-1\\10.0.0.5\\Backplane\\0", job["commPath"]);
+        });
+
         Console.WriteLine($"Studio5000Bridge tests: all passed ({_passed})");
         return 0;
     }
