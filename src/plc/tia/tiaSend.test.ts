@@ -1,7 +1,8 @@
 /// <reference types="node" />
 /**
  * What Send to TIA Portal writes into TIA Portal: the CPU with its S7-1200 signal modules in slots 2…, the rest as
- * notes (ET 200SP on an S7-1500); the PLC tags are the .sdf export's, every one.
+ * notes (ET 200SP on an S7-1500); the PLC tags are the .sdf export's, every one; the blocks are the LAD export's for
+ * the open TIA Portal's version, in import order, and a compile message's block and network leads back to its rung.
  * Run with:  npx tsx src/plc/tia/tiaSend.test.ts
  */
 import assert from 'node:assert/strict';
@@ -10,7 +11,8 @@ import { collectProject } from '../../deliverables/collect';
 import { exportContext } from '../../deliverables/exportContext';
 import { useProjectStore } from '../../store/useProjectStore';
 import { siemensTagsSdf } from '../core/profiles/siemens';
-import { tiaPlcRequest, tiaProjectName, tiaTagRows } from './tiaSend';
+import { buildTiaLad } from '../core/profiles/siemensLad';
+import { tiaBlocks, tiaBlockVersion, tiaPlcRequest, tiaProjectName, tiaTagRows } from './tiaSend';
 
 seedSampleProject();
 useProjectStore.getState().setPlc('siemens-s7', '6ES7214-1AG40-0XB0');
@@ -32,6 +34,35 @@ assert.equal(sdf.length, tags.length);
 for (const t of tags) assert.ok(sdf.some((l) => l.startsWith(`"${t.name}"`) && l.includes(t.logicalAddress)), t.name);
 assert.equal(tiaProjectName('Bottle line: 2/B'), 'Bottle_line_2_B');
 assert.equal(tiaProjectName('  '), 'Machine');
+
+// the blocks for the open TIA Portal: its own version, the newest for a newer one, none before V16
+assert.equal(tiaBlockVersion('V19'), 'V19');
+assert.equal(tiaBlockVersion('V18 Update 3'), 'V18');
+assert.equal(tiaBlockVersion('21.0'), 'V20');
+assert.equal(tiaBlockVersion('V15.1'), null);
+const blocks = tiaBlocks(p, 'V19');
+const names = blocks.files.map((f) => f.name);
+assert.equal(names[0], 'Machine_DB.xml');
+assert.equal(names[1], 'Machine_tia_helpers.scl');
+assert.equal(names[names.length - 1], 'Main.xml');
+assert.deepEqual(new Set(names), new Set(buildTiaLad(p.ladder, exportContext(p), 'Machine', 'V19').files.map((f) => f.name)), 'every file of the export');
+assert.ok(blocks.files.every((f) => !f.text.startsWith('\uFEFF')), 'no byte-order mark (the bridge writes its own)');
+assert.ok(blocks.files.filter((f) => f.kind === 'xml').every((f) => /<Engineering version="V19"/.test(f.text)), 'V19 SimaticML');
+assert.equal(blocks.files.filter((f) => f.kind === 'scl').length, 1);
+assert.equal(blocks.rungs, p.ladder.rungs.length);
+// network n of an FC is that block's n-th rung
+const fcs = names.filter((n) => !/^(Machine_DB|Main)\.xml$|\.scl$/.test(n)).map((n) => n.replace(/\.xml$/, ''));
+const firstBlock = p.ladder.rungs[0].block ?? '';
+const ofFirst = p.ladder.rungs.flatMap((r, k) => ((r.block ?? '') === firstBlock ? [k + 1] : []));
+assert.equal(blocks.rungOf(fcs[0], 1), ofFirst[0]);
+assert.equal(blocks.rungOf(fcs[0], ofFirst.length), ofFirst[ofFirst.length - 1]);
+assert.equal(blocks.rungOf(fcs[0], ofFirst.length + 1), null);
+assert.equal(blocks.rungOf('Main', 1), null);
+assert.equal(blocks.rungOf(fcs[0], null), null);
+if (fcs.length > 1) {
+  const second = p.ladder.rungs.findIndex((r) => (r.block ?? '') !== firstBlock);
+  assert.ok(second >= 0 && blocks.rungOf(fcs[1], 1) !== null, 'the second block\'s first rung');
+}
 
 // S7-1500: the I/O is on ET 200SP, added in TIA Portal by hand for now
 useProjectStore.getState().setPlc('siemens-s7', '6ES7511-1AL03-0AB0');

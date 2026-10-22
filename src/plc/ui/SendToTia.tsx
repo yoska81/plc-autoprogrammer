@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowPathIcon, CheckCircleIcon, ExclamationTriangleIcon, PaperAirplaneIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import { desktopBridge, type TiaDetect } from '../../desktop/bridge';
 import { collectProject } from '../../deliverables/collect';
-import { tiaPlcRequest, tiaProjectName, tiaTagRows } from '../tia/tiaSend';
+import { tiaBlocks, tiaBlockVersion, tiaPlcRequest, tiaProjectName, tiaTagRows } from '../tia/tiaSend';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useProgramStore } from '../../store/useProgramStore';
 
@@ -10,6 +10,12 @@ interface Portal { processId: number; project: string | null }
 interface Opened { version: string; project: string; plc: { name: string; orderNumber: string; firmware: string } | null }
 interface PlcDone { plc: { name: string; orderNumber: string; firmware: string }; added: boolean; problems: string[] }
 interface TagsDone { table: string; created: number; updated: number; failed: { name: string; error: string }[] }
+interface CompileMessage { severity: 'error' | 'warning'; path: string; text: string; block: string | null; network: number | null }
+interface ProgramDone {
+  imported: number; files: number; failed: { name: string; error: string }[];
+  lad: number; viaScl: number; rungs: number;
+  compile: { errors: number; warnings: number; messages: (CompileMessage & { rung: number | null })[] } | null;
+}
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -18,7 +24,9 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * (electron/tiaBridge.cjs → tools/tia-bridge). Shown for a Siemens S7 project in the desktop app only (a browser
  * cannot start programs). 1. Check this PC (TIA Portal, TIA Openness, the user's permission, what to fix).
  * 2. Open TIA Portal: a running one (with its project) or a new one with a new project. 3. The PLC (its firmware:
- * the newest TIA knows, or the one chosen) and its modules, and the PLC tags.
+ * the newest TIA knows, or the one chosen) and its modules, and the PLC tags. 4. The program: the LAD export's
+ * blocks for the open TIA Portal's version (the DB, the SCL helpers, the FCs, OB 1), then a compile; each compile
+ * message is shown with the rung it is about (block and network → rung).
  */
 export default function SendToTia({ profileId }: { profileId: string }) {
   const tia = desktopBridge()?.tia;
@@ -35,6 +43,7 @@ export default function SendToTia({ profileId }: { profileId: string }) {
   const [fw, setFw] = useState('');
   const [plcDone, setPlcDone] = useState<PlcDone | null>(null);
   const [tagsDone, setTagsDone] = useState<TagsDone | null>(null);
+  const [programDone, setProgramDone] = useState<ProgramDone | null>(null);
 
   const cpu = useProjectStore((st) => st.cpuId);
   const projectName = useProgramStore((st) => st.projectName);
@@ -51,7 +60,7 @@ export default function SendToTia({ profileId }: { profileId: string }) {
   };
 
   const check = async () => {
-    setFound(null); setPortals(null); setOpened(null); setPlcDone(null); setTagsDone(null);
+    setFound(null); setPortals(null); setOpened(null); setPlcDone(null); setTagsDone(null); setProgramDone(null);
     const d = await step('check', () => tia.call('detect'));
     setFound(d);
     if (d?.ready) {
@@ -63,7 +72,7 @@ export default function SendToTia({ profileId }: { profileId: string }) {
   const show = () => { setOpen(true); void check(); };
 
   const openTia = async () => {
-    setPlcDone(null); setTagsDone(null);
+    setPlcDone(null); setTagsDone(null); setProgramDone(null);
     const p = collectProject();
     const r = await step('open', () => tia.call('open', target === 'new' ? { name: newProject } : { processId: target }) as Promise<Opened>);
     if (!r) return;
@@ -82,6 +91,21 @@ export default function SendToTia({ profileId }: { profileId: string }) {
     setTagsDone(await step('send', () => tia.call('tags', { tags: tiaTagRows(p) }) as Promise<TagsDone>));
   };
 
+  const sendProgram = async () => {
+    setProgramDone(null);
+    const version = tiaBlockVersion(opened?.version ?? '');
+    if (!version) { setError(`TIA Portal ${opened?.version ?? ''} is older than the oldest version the app writes blocks for (V16). Use the SCL source from the download instead.`); return; }
+    const b = tiaBlocks(collectProject(), version);
+    const r = await step('program', async () => {
+      const imp = await tia.call('blocks', { files: b.files }) as { imported: number; failed: { name: string; error: string }[] };
+      const done: ProgramDone = { ...imp, files: b.files.length, lad: b.lad, viaScl: b.viaScl.length, rungs: b.rungs, compile: null };
+      setProgramDone(done);
+      const c = await tia.call('compile') as { errors: number; warnings: number; messages: CompileMessage[] };
+      return { ...done, compile: { ...c, messages: c.messages.map((m) => ({ ...m, rung: b.rungOf(m.block, m.network) })) } };
+    });
+    if (r) setProgramDone(r);
+  };
+
   const newProject = tiaProjectName(projectName);
   const otherPlc = opened?.plc && opened.plc.orderNumber.replace(/\s/g, '') !== cpu;
 
@@ -97,7 +121,7 @@ export default function SendToTia({ profileId }: { profileId: string }) {
             <div className="flex items-start gap-3 border-b border-steel-200 px-5 py-3">
               <div className="flex-1">
                 <h2 className="text-base font-semibold text-steel-900">Send to TIA Portal</h2>
-                <p className="text-xs text-steel-500">The app opens TIA Portal on this PC and puts the PLC and its tags into it. TIA Portal asks once whether to allow this app: choose Yes.</p>
+                <p className="text-xs text-steel-500">The app opens TIA Portal on this PC and puts the PLC, its tags and the program into it. TIA Portal asks once whether to allow this app: choose Yes.</p>
               </div>
               <button onClick={() => setOpen(false)} disabled={Boolean(busy)} aria-label="Close" className="rounded p-1 text-steel-400 hover:bg-steel-100 hover:text-steel-700 disabled:opacity-40"><XMarkIcon className="h-5 w-5" /></button>
             </div>
@@ -176,7 +200,37 @@ export default function SendToTia({ profileId }: { profileId: string }) {
                     <div className="text-steel-700" data-testid="tia-tags-done">
                       <p><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />PLC tags in the table "{tagsDone.table}": {tagsDone.created} new, {tagsDone.updated} updated{tagsDone.failed.length ? `, ${tagsDone.failed.length} not written` : ''}.</p>
                       {tagsDone.failed.length > 0 && <ul className="ml-5 list-disc text-amber-900">{tagsDone.failed.map((x) => <li key={x.name}>{x.name}: {x.error}</li>)}</ul>}
-                      <p className="mt-1 text-xs text-steel-500">The program blocks follow in the next update of the app; until then use Load into PLC for them.</p>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {tagsDone && (
+                <section className="space-y-2" data-testid="tia-program">
+                  <h3 className="font-semibold text-steel-900">4. The program</h3>
+                  <p className="text-xs text-steel-500">The ladder goes in as LAD blocks for TIA Portal {opened?.version} (a block of the same name in the project is replaced), then TIA Portal compiles it. Nothing goes to the PLC yet.</p>
+                  <button onClick={() => void sendProgram()} disabled={Boolean(busy)} data-testid="tia-program-button"
+                    className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-40">Put the program in and compile</button>
+                  {programDone && (
+                    <div className="space-y-1 text-steel-700" data-testid="tia-program-done">
+                      <p>{programDone.failed.length
+                        ? <><ExclamationTriangleIcon className="mr-1 inline h-4 w-4 text-amber-600" />{programDone.imported} of {programDone.files} block files imported.</>
+                        : <><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />All {programDone.files} block files imported: {programDone.lad} of {programDone.rungs} rungs as ladder networks{programDone.viaScl ? `, ${programDone.viaScl} as small SCL functions (LAD has no form for them)` : ''}.</>}</p>
+                      {programDone.failed.length > 0 && <ul className="ml-5 list-disc text-amber-900">{programDone.failed.map((x) => <li key={x.name}>{x.name}: {x.error}</li>)}</ul>}
+                      {programDone.compile && (
+                        <div data-testid="tia-compiled">
+                          <p>{programDone.compile.errors
+                            ? <><ExclamationTriangleIcon className="mr-1 inline h-4 w-4 text-red-600" />Compiled with {programDone.compile.errors} error{programDone.compile.errors === 1 ? '' : 's'} and {programDone.compile.warnings} warning{programDone.compile.warnings === 1 ? '' : 's'}: fix them before a download.</>
+                            : <><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />Compiled: no errors{programDone.compile.warnings ? `, ${programDone.compile.warnings} warning${programDone.compile.warnings === 1 ? '' : 's'}` : ''}.</>}</p>
+                          {programDone.compile.messages.length > 0 && (
+                            <ul className="ml-5 list-disc">{programDone.compile.messages.slice(0, 40).map((m, i) => (
+                              <li key={i} className={m.severity === 'error' ? 'text-red-800' : 'text-amber-900'}>
+                                {m.rung ? `Rung ${m.rung}` : m.block ?? 'TIA Portal'}{m.block && m.network ? ` (${m.block}, network ${m.network})` : ''}: {m.text}
+                              </li>
+                            ))}{programDone.compile.messages.length > 40 && <li>… and {programDone.compile.messages.length - 40} more, in TIA Portal (Info › Compile)</li>}</ul>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </section>
