@@ -9,6 +9,10 @@
 #   build: open the project (or create it with a CODESYS Control Win V3 device), save it as the app's copy (the
 #          user's own file is never changed), create or replace each object (POU, DUT, GVL) in the active
 #          application, put the main program in the MainTask, save, build, and return the build messages.
+#   download (only with the app's confirm screen: confirmed): open the app's project, the PLC's address through the
+#          first gateway, log in: an online change only (OnlineChangeOption.Force: no change at all when it is not
+#          possible, the PLC keeps running), or, when the user allowed the PLC to stop, an online change else a full
+#          download (Try); never deleting other applications on the PLC; start the program only when asked.
 from __future__ import print_function
 import io
 import json
@@ -145,12 +149,67 @@ def build(job):
     }
 
 
+def ip_address(text):
+    try:
+        from System.Net import IPAddress  # IronPython: the .NET type the ScriptEngine takes
+        return IPAddress.Parse(text)
+    except ImportError:
+        return text
+
+
+def device_of(app):
+    o = app
+    while o is not None and not getattr(o, 'is_device', False):
+        o = getattr(o, 'parent', None)
+    return o
+
+
+def download(job):
+    if job.get('confirmed') is not True:
+        raise Exception('A download needs the confirm screen in the app (nothing was sent to the PLC).')
+    if projects.primary:
+        projects.primary.close()
+    say('Opening %s' % os.path.basename(job['project']))
+    proj = projects.open(job['project'], primary=True)
+    app = proj.active_application
+    if app is None:
+        raise Exception('The CODESYS project has no application to download.')
+    dev = device_of(app)
+    if dev is None:
+        raise Exception('The CODESYS project has no PLC (device) for its application.')
+    gateways = list(online.gateways)
+    if not gateways:
+        raise Exception('CODESYS has no gateway: start the CODESYS Gateway (its icon in the Windows taskbar), then try again.')
+    dev.set_gateway_and_ip_address(str(gateways[0].guid), ip_address(job['ip']))
+    if job.get('user'):
+        online.set_default_credentials(job['user'], job.get('password'))
+    full = job.get('stopAllowed') is True
+    say('Logging in to the PLC at %s' % job['ip'])
+    onl = online.create_online_application(app)
+    try:
+        onl.login(OnlineChangeOption.Try if full else OnlineChangeOption.Force, False)
+    except Exception as e:
+        if full:
+            raise Exception('CODESYS could not download to the PLC at %s: %s' % (job['ip'], e))
+        raise Exception('No online change was possible (nothing was changed in the PLC): %s. If the PLC may stop for a full download, tick "The PLC may be stopped" and download again.' % e)
+    started = False
+    if job.get('startAfter') is True and onl.application_state != ApplicationState.run:
+        say('Starting the program')
+        onl.start()
+        started = True
+    state = str(onl.application_state).split('.')[-1]
+    onl.logout()
+    return {'state': state, 'full': full, 'started': started, 'ip': job['ip']}
+
+
 def main():
     try:
         with io.open(JOB, encoding='utf-8') as f:
             job = json.load(f)
         if job.get('cmd') == 'build':
             write_result({'ok': True, 'result': build(job)})
+        elif job.get('cmd') == 'download':
+            write_result({'ok': True, 'result': download(job)})
         else:
             write_result({'ok': False, 'error': 'The app sent a job the CODESYS script does not know (%s): update the app.' % job.get('cmd')})
     except Exception as e:

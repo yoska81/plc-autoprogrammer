@@ -28,7 +28,13 @@ namespace CodesysBridge
             File.Copy(_script, script, true);
             string args = $"--profile=\"{install.Profile}\" --noUI --runscript=\"{script}\"";
             Log.Write($"codesys: \"{install.Exe}\" {args} (job {jobFile})");
-            var proc = _pc.Start(install.Exe, args, new Dictionary<string, string> { ["ISA_CODESYS_JOB"] = jobFile });
+            try { return Wait(_pc.Start(install.Exe, args, new Dictionary<string, string> { ["ISA_CODESYS_JOB"] = jobFile }), dir, progress, stop); }
+            // the job file may hold the PLC's password: gone as soon as CODESYS has read it and ended
+            finally { try { File.Delete(jobFile); } catch (IOException) { /* still open */ } }
+        }
+
+        Dictionary<string, object> Wait(IProc proc, string dir, Action<string> progress, CancellationToken stop)
+        {
             string progressFile = Path.Combine(dir, "progress.txt");
             int seen = 0, waited = 0;
             void Pass()

@@ -28,6 +28,7 @@ Same as the TIA bridge (`tools/tia-bridge/README.md`): one JSON object per line.
 |---|---|
 | `detect` | `{ready, installs: [{name, version, exe, profile}], projectsDir, steps}`: the CODESYS folders under Program Files ("CODESYS 3.5.19.20") with `CODESYS\Common\CODESYS.exe` and a profile (`CODESYS\Profiles\*.profile.xml`), newest first. |
 | `build` `{project?, name, objects, main, device?}` | The program into the user's project (its copy) or a new project in `projectsDir\<name>`, then a build: `{project, objects: [{name, kind, action}], errors, warnings, messages: [{severity, text, object, line}], notes}`. |
+| `download` `{confirmed: true, project, ip, stopAllowed, startAfter, user?, password?}` | **Refused without `confirmed: true`** (the app sends it only from its confirm screen) and without a valid IPv4 address. The app's project to the PLC at `ip` through CODESYS's first gateway (`set_gateway_and_ip_address`): an **online change only** (`OnlineChangeOption.Force`: the program keeps running, and nothing changes when one is not possible), or, when `stopAllowed`, an online change else a full download (`Try`); other applications on the PLC are never deleted; the program is started only when `startAfter`. The password is never logged, and the job file holding it is deleted as soon as CODESYS ends. `{state, full, started, ip}`. |
 | `open` `{project}` | Opens the project with the program Windows has for it (CODESYS). |
 | `stop` | Closes the CODESYS of a running job (the user's project is not changed). |
 
@@ -57,6 +58,16 @@ project on the **Structured Text** PLC in ISA Auto Programmer, with its program 
    replaced, not doubled.
 4. **Stop** while it builds: CODESYS closes (Task Manager: no CODESYS.exe left), the dialog says your project was
    not changed.
-5. If anything goes wrong: the dialog says it in one sentence; **Open folder** and send us `codesys-bridge.log`.
+5. **Download, confirm**: after a build without errors, **Download to the PLC…**: **Download now** stays off until
+   the PLC's IP address is right and "I am at the machine…" is ticked. Cancel: nothing happens (the log has no
+   `download` request).
+6. **Online change**: change one rung, put the program in and build again, download with "The PLC may be stopped"
+   unticked: the program keeps running and has the change. A change no online change can do (e.g. a new variable in
+   a running FB, depending on the PLC): "No online change was possible (nothing was changed in the PLC)"; tick
+   "The PLC may be stopped" and download again: a full download.
+7. **Start**: with "Start the program after the download" ticked, the program runs afterwards; unticked, a stopped
+   program stays stopped. A PLC with users: enter the user and password; the log shows "password given", never
+   the password.
+8. If anything goes wrong: the dialog says it in one sentence; **Open folder** and send us `codesys-bridge.log`.
 
 Note your CODESYS version (Help › Information) with the result.

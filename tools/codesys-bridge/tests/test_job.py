@@ -71,18 +71,34 @@ class Repo:
 
 
 PouType = type('PouType', (), {'Program': 'Program', 'FunctionBlock': 'FunctionBlock', 'Function': 'Function'})
+OnlineChangeOption = type('OnlineChangeOption', (), {'Never': 'Never', 'Try': 'Try', 'Force': 'Force', 'Keep': 'Keep'})
+ApplicationState = type('ApplicationState', (), {'run': 'ApplicationState.run', 'stop': 'ApplicationState.stop'})
+
+
+class OnlineApp:
+    def __init__(self): self.application_state = S.plc_state; self.calls = []
+    def login(self, option, delete_foreign): self.calls.append(('login', option, delete_foreign)); S.online.append(self)
+    def start(self): self.calls.append('start'); self.application_state = ApplicationState.run
+    def logout(self): self.calls.append('logout')
+
+
+class Online:
+    @property
+    def gateways(self): return tuple(type('G', (), {'guid': g, 'name': 'Gateway-1'})() for g in S.gateways)
+    def create_online_application(self, app): o = OnlineApp(); return o
+    def set_default_credentials(self, user, password=None): S.credentials = (user, password)
 
 
 def run(job, project_exists=True, create_app=True, repo=('CODESYS Control Win V3',)):
     d = tempfile.mkdtemp()
     try:
-        S.primary = None; S.opened = []; S.created = []; S.messages = []; S.create_app = create_app; S.repo = list(repo)
+        S.primary = None; S.opened = []; S.created = []; S.messages = []; S.create_app = create_app; S.repo = list(repo); S.online = []; S.credentials = None
         src = os.path.join(d, 'Line.project')
         if project_exists: open(src, 'w').close()
         job = dict(job, project=src, copy=os.path.join(d, 'Line_ISA.project'))
         with open(os.path.join(d, 'job.json'), 'w') as f: json.dump(job, f)
         os.environ['ISA_CODESYS_JOB'] = os.path.join(d, 'job.json')
-        runpy.run_path(SCRIPT, init_globals={'projects': Projects(), 'system': System(), 'device_repository': Repo(), 'PouType': PouType}, run_name='__main__')
+        runpy.run_path(SCRIPT, init_globals={'projects': Projects(), 'system': System(), 'device_repository': Repo(), 'PouType': PouType, 'online': Online(), 'OnlineChangeOption': OnlineChangeOption, 'ApplicationState': ApplicationState}, run_name='__main__')
         with open(os.path.join(d, 'result.json')) as f: res = json.load(f)
         progress = open(os.path.join(d, 'progress.txt')).read() if os.path.exists(os.path.join(d, 'progress.txt')) else ''
         return res, S.primary, progress, d
@@ -141,4 +157,39 @@ res, _, _, _ = run({'cmd': 'build', 'objects': OBJECTS, 'main': 'Main'}, project
 assert not res['ok'] and res['error'].startswith('The CODESYS project has no application'), res
 res, _, _, _ = run({'cmd': 'fly'})
 assert not res['ok'] and 'does not know (fly)' in res['error']
+
+# download: only with the confirm; an online change only unless the PLC may stop; never other apps deleted; start when asked
+S.gateways = ['{gw-1}']; S.plc_state = ApplicationState.stop; S.login_fails = None
+class DevApp(App):
+    pass
+orig_open2 = Projects.open
+def open_with_device(self, path, primary=True):
+    p = orig_open2(self, path, primary)
+    dev = Obj('Device', 'device'); dev.is_device = True; dev.parent = None; dev.gw = None
+    def set_gw(guid, ip): dev.gw = (guid, ip)
+    dev.set_gateway_and_ip_address = set_gw
+    plc_logic = Obj('Plc Logic', 'logic'); plc_logic.parent = dev
+    p.active_application.parent = plc_logic
+    S.device = dev
+    return p
+Projects.open = open_with_device
+res, _, progress, _ = run({'cmd': 'download', 'ip': '192.168.1.10'})
+assert not res['ok'] and 'needs the confirm screen' in res['error'] and not S.online, res
+res, _, progress, _ = run({'cmd': 'download', 'ip': '192.168.1.10', 'confirmed': 'yes'})
+assert not res['ok'] and not S.online, 'only a real true confirms'
+res, _, progress, _ = run({'cmd': 'download', 'ip': '192.168.1.10', 'confirmed': True})
+assert res['ok'], res
+assert S.device.gw == ('{gw-1}', '192.168.1.10'), S.device.gw
+assert S.online[0].calls == [('login', 'Force', False), 'logout'], S.online[0].calls
+assert res['result'] == {'state': 'stop', 'full': False, 'started': False, 'ip': '192.168.1.10'}, res
+res, _, _, _ = run({'cmd': 'download', 'ip': '192.168.1.10', 'confirmed': True, 'stopAllowed': True, 'startAfter': True, 'user': 'admin', 'password': 'pw'})
+assert S.online[0].calls == [('login', 'Try', False), 'start', 'logout'] and res['result']['state'] == 'run' and res['result']['started'] and S.credentials == ('admin', 'pw'), (S.online[0].calls, res)
+S.gateways = []
+res, _, _, _ = run({'cmd': 'download', 'ip': '192.168.1.10', 'confirmed': True})
+assert not res['ok'] and 'no gateway' in res['error'], res
+S.gateways = ['{gw-1}']
+OnlineApp.login = lambda self, o, d: (_ for _ in ()).throw(Exception('Online change not possible'))
+res, _, _, _ = run({'cmd': 'download', 'ip': '192.168.1.10', 'confirmed': True})
+assert not res['ok'] and res['error'].startswith('No online change was possible (nothing was changed in the PLC): Online change not possible.') and 'tick "The PLC may be stopped"' in res['error'], res
+Projects.open = orig_open2
 print('codesys job script: all passed')
