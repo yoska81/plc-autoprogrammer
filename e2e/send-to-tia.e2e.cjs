@@ -45,6 +45,7 @@ const FAKE = () => {
         return answer(cmd, args);
       },
       logPath: async () => 'C:\\Users\\tech\\AppData\\Roaming\\ISA Auto Programmer\\logs\\tia-bridge.log',
+      showLog: async () => { window.__tia.shownLog = true; return true; },
       onProgress: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
     },
   };
@@ -200,11 +201,13 @@ const READY = { ...NOT_IN_GROUP, ready: true, inOpennessGroup: true, steps: [] }
   check(/already has another PLC \(6ES7 215-1AG40-0XB0\)/.test(await dialog.getByTestId('tia-send').innerText()) && await dialog.getByTestId('tia-send-button').count() === 0, 'another PLC in the project: said, nothing sent');
   check((await page.evaluate(() => window.__tia.calls)).find((c) => c.cmd === 'open').args.processId === 4242, 'attached to the running one');
 
-  await page.evaluate(() => { window.__tia.fail = 'The TIA Portal bridge stopped (exit code 3). Try again; the log is at C:\\logs\\tia-bridge.log.'; });
+  await page.evaluate(() => { window.__tia.fail = 'TIA Portal reported: the project is locked.\n   at Siemens.Engineering.Project.Open()'; });
   await dialog.getByRole('button', { name: 'Check again' }).click();
-  await dialog.getByRole('alert').waitFor({ timeout: 5000 });
-  check(/bridge stopped \(exit code 3\)/.test(await dialog.getByRole('alert').innerText()), 'a bridge error in plain words');
-  check(/tia-bridge\.log/.test(await dialog.innerText()), 'the log path for support');
+  await dialog.getByTestId('tia-failed').waitFor({ timeout: 5000 });
+  const failed = await dialog.getByTestId('tia-failed').innerText();
+  check(/^TIA Portal reported: the project is locked\.\s*Send this log to support: C:\\.*tia-bridge\.log/.test(failed) && !/Siemens\.Engineering/.test(failed), 'a bridge error: its first line only, then the log for support');
+  await dialog.getByTestId('tia-failed').getByRole('button', { name: 'Open log folder' }).click();
+  check(await page.evaluate(() => window.__tia.shownLog === true), 'Open log folder shows the log');
   await dialog.getByRole('button', { name: 'Close' }).click();
   check(await dialog.count() === 0, 'closes');
 

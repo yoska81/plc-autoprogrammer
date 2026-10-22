@@ -1,7 +1,7 @@
 # TIA Portal bridge
 
 `TiaBridge.exe` lets the ISA Auto Programmer desktop app drive the user's own **Siemens TIA Portal**
-(V16–V20) through **TIA Openness**: the "Send to TIA Portal" button on the PLC program page.
+(V16–V20) through **TIA Openness**: the "Send to PLC software" button on the PLC program page (a Siemens project).
 
 - C#, .NET Framework 4.8 (what TIA Portal Openness V16–V20 runs on). Built by
   `node scripts/build-tia-bridge.cjs` into `resources/tia-bridge/`, shipped next to the app
@@ -68,7 +68,7 @@ the app.
 
 Run on each TIA Portal version we support (V16 … V20) before a release; note the version and the result.
 
-1. **No Openness**: TIA Portal installed without "TIA Openness" → Send to TIA Portal → the check says
+1. **No Openness**: TIA Portal installed without "TIA Openness" → Send to PLC software → the check says
    TIA Openness is not installed and how to add it (setup → Modify → Options).
 2. **Not in the group**: Openness installed, the Windows user not in "Siemens TIA Openness" → the check names the
    user, the group, the `net localgroup` command and "sign out". Add the user, sign out and in → Check again
@@ -77,7 +77,7 @@ Run on each TIA Portal version we support (V16 … V20) before a release; note t
 4. **Log**: the path shown exists and has the `detect` request with the versions found.
 5. **Bridge missing**: rename `resources\tia-bridge\TiaBridge.exe` → the dialog says the bridge is not in this
    installation (no crash); rename it back.
-6. **Browser**: the web version (preview) has no Send to TIA Portal button; a CLICK project has none either.
+6. **Browser**: in the web version (preview), Send to PLC software says it works in the desktop app for Windows.
 7. **New project**: no TIA Portal running → Open TIA Portal → TIA Portal starts, asks to allow ISA Auto Programmer
    (answer Yes), and the project appears in Documents\ISA Auto Programmer\TIA\<project>. Answer No once: the
    dialog says TIA Portal did not allow it.
@@ -87,7 +87,7 @@ Run on each TIA Portal version we support (V16 … V20) before a release; note t
    view); a module TIA does not know is listed as a problem; the project is saved.
 10. **Tags**: the table "ISA Auto Programmer" has every tag of the .sdf export with address and comment; run it
     again → 0 new, all updated; a tag on an address the CPU does not have is listed with TIA's reason.
-11. **Running TIA Portal**: open a project with another CPU in TIA Portal → Send to TIA Portal offers that
+11. **Running TIA Portal**: open a project with another CPU in TIA Portal → Send to PLC software offers that
     TIA Portal first; after Open it says the project already has another PLC and changes nothing.
 12. **Program**: after the tags, **Put the program in and compile** → Program blocks has Machine_DB, the FCs of the
     program's blocks and Main (OB 1), all in LAD (each network's comment names its rung); External source files has
@@ -109,3 +109,5 @@ Run on each TIA Portal version we support (V16 … V20) before a release; note t
     **Find TIA Portal** lists it → **Read the program**: "What the program shows" has its blocks, rungs and I/O with
     the tag table's addresses. TIA Portal's project is unchanged (no "modified" mark). A know-how protected block is
     named as not read. With no project open: it says to open one first.
+18. **Something goes wrong** (close TIA Portal while the program goes in, for example): the dialog says it in one
+    sentence; **Open log folder** shows `tia-bridge.log` in Explorer: send it to us.

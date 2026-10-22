@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowPathIcon, CheckCircleIcon, ExclamationTriangleIcon, PaperAirplaneIcon, StopIcon, XMarkIcon } from '@heroicons/react/20/solid';
+import BridgeFailed from './BridgeFailed';
 import { desktopBridge, type CodesysDetect } from '../../desktop/bridge';
 import { codesysProgram } from '../codesys/codesysObjects';
 import { useProgramStore } from '../../store/useProgramStore';
@@ -89,7 +90,7 @@ export default function SendToCodesys({ profileId }: { profileId: string }) {
     <>
       <button onClick={show} data-testid="send-to-codesys" title="Put the program into a CODESYS project on this PC and build it"
         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded border border-brand-300 bg-white text-brand-800 hover:bg-brand-50">
-        <PaperAirplaneIcon className="h-4 w-4" /> Send to CODESYS
+        <PaperAirplaneIcon className="h-4 w-4" /> Send to PLC software
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/40 p-6" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setOpen(false); }}>
@@ -195,12 +196,7 @@ export default function SendToCodesys({ profileId }: { profileId: string }) {
                 </section>
               )}
 
-              {error && (
-                <div role="alert" className="space-y-1 rounded border border-red-200 bg-red-50 p-3 text-red-900" data-testid="codesys-failed">
-                  <p>{error}</p>
-                  <p className="text-xs">Send this log to support: <span className="select-all font-mono">{logPath || 'codesys-bridge.log'}</span><button onClick={() => void codesys.showLog().catch(() => undefined)} className="ml-2 rounded border border-red-300 bg-white px-2 py-0.5 font-medium hover:bg-red-100">Open folder</button></p>
-                </div>
-              )}
+              {error && <BridgeFailed error={error} logPath={logPath} logName="codesys-bridge.log" showLog={codesys.showLog} testId="codesys" />}
             </div>
           </div>
         </div>

@@ -55,7 +55,10 @@ namespace CodesysBridge
             Pass();
             string resultFile = Path.Combine(dir, "result.json");
             if (!File.Exists(resultFile))
-                throw new BridgeError($"CODESYS ended without an answer (exit code {proc.ExitCode}). Close every CODESYS window and try again; if it happens again, send us the log.");
+            {
+                Log.Write($"codesys ended without result.json, exit code {proc.ExitCode}");
+                throw new BridgeError("CODESYS ended without an answer: close every CODESYS window and try again.");
+            }
             var r = Json.Parse(File.ReadAllText(resultFile)) as Dictionary<string, object> ?? throw new BridgeError("CODESYS's answer could not be read: send us the log.");
             Log.Write($"codesys result: {Json.Write(r)}");
             if (!(r.TryGetValue("ok", out object ok) && ok is bool b && b)) throw new BridgeError(r.TryGetValue("error", out object e) && e is string s ? s : "CODESYS reported a problem: send us the log.");

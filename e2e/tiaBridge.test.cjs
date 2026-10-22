@@ -38,19 +38,22 @@ const ok = (what) => { passed++; console.log('  ok ', what); };
   assert.deepEqual(await b.call('noisy'), { fine: true });
   ok('errors in plain words; other text on the bridge\'s output is ignored');
 
-  await rejects(b.call('slow', { ms: 5000 }), /did not answer within 3 s \(slow\).*Openness access question/);
-  ok('a request that never answers times out with what to check');
+  await rejects(b.call('slow', { ms: 5000 }), /^TIA Portal did not answer in 3 seconds: check TIA Portal for an open dialog \(such as the question to allow access\), then try again\.$/);
+  assert.match(fs.readFileSync(logFile, 'utf8'), /\[app\] no answer to \d+ slow within 3 s/);
+  ok('a request that never answers: one sentence with what to check; the command in the log');
 
   const inFlight = b.call('slow', { ms: 2000 });
-  await rejects(b.call('crash'), /bridge stopped \(exit code 3\): Unhandled exception: boom.*the log is at/);
-  await rejects(inFlight, /bridge stopped/);
+  await rejects(b.call('crash'), /^The TIA Portal bridge stopped unexpectedly\. Try again\.$/);
+  await rejects(inFlight, /bridge stopped unexpectedly/);
   assert.equal(b.running, false);
-  ok('the bridge stops: every open request fails with the reason and where the log is');
+  assert.match(fs.readFileSync(logFile, 'utf8'), /\[app\] the TIA Portal bridge stopped \(exit code 3\): Unhandled exception: boom; open requests: (slow, crash|crash, slow)/);
+  ok('the bridge stops: every open request fails in one sentence; the exit code and the bridge\'s last words in the log');
   assert.deepEqual(await b.call('ping'), { pong: true });
   ok('the next request starts it again');
   b.stop();
-  await rejects(createTiaBridge({ exe: path.join(dir, 'missing.exe') }).call('ping'), /not in this installation/);
-  ok('no bridge installed: says so');
+  await rejects(createTiaBridge({ exe: path.join(dir, 'missing.exe'), logFile }).call('ping'), /not in this installation/);
+  assert.match(fs.readFileSync(logFile, 'utf8'), /\[app\] the TIA Portal bridge is missing: .*missing\.exe/);
+  ok('no bridge installed: says so, and the log says where it looked');
 
   // The IPC as the window uses it: { ok, value | error }, progress sent to the window.
   const handlers = {};

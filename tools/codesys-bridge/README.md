@@ -48,7 +48,7 @@ npx tsx src/plc/codesys/codesysObjects.test.ts          # the objects from the S
 Before you start: the CODESYS Development System V3.5 (SP16 or newer) installed, with CODESYS Control Win V3; a
 project on the **Structured Text** PLC in ISA Auto Programmer, with its program generated.
 
-1. PLC program page › **Send to CODESYS**. It names the CODESYS found (none: how to get it).
+1. PLC program page › **Send to PLC software**. It names the CODESYS found (none: how to get it).
 2. **A new project** › **Put the program in and build**. No CODESYS window opens (it works in the background, about
    a minute). The dialog says how many objects were created and "Built: no errors" (or the errors, each with its
    object and line). **Open in CODESYS**: the project has the POUs, DUTs and GVL under Application, and the main
@@ -68,6 +68,6 @@ project on the **Structured Text** PLC in ISA Auto Programmer, with its program 
 7. **Start**: with "Start the program after the download" ticked, the program runs afterwards; unticked, a stopped
    program stays stopped. A PLC with users: enter the user and password; the log shows "password given", never
    the password.
-8. If anything goes wrong: the dialog says it in one sentence; **Open folder** and send us `codesys-bridge.log`.
+8. If anything goes wrong: the dialog says it in one sentence; **Open log folder** and send us `codesys-bridge.log`.
 
 Note your CODESYS version (Help › Information) with the result.

@@ -28,7 +28,7 @@ is reverse-engineered and no file of CLICK's is written by the app.
   4.00: could not find New project (tried: Ctrl+N, the File menu, the ribbon key tips (Alt, F, N))."
 - **Records itself.** Every window a step opens is written to the log with its controls the first time in a run,
   and every window of CLICK (dialogs too) on any failure: the log alone is enough to fit the steps. The user only
-  sends the log ("Open folder" next to the message).
+  sends the log ("Open log folder" next to the message).
 - Every step and every UI action is written to `<user data>\logs\click-bridge.log`.
 
 ## Safety rules (the bridge enforces them, whatever the plan says)
@@ -78,7 +78,7 @@ Only the user's PC can show whether the steps fit their CLICK version and screen
 Before you start: CLICK Programming Software installed (open or not); no unsaved project in it; the example project
 (or yours) open in ISA Auto Programmer on a **CLICK** PLC.
 
-1. PLC program page › **Send to CLICK**. It says which CLICK it found (no CLICK: how to get it).
+1. PLC program page › **Send to PLC software**. It says which CLICK it found (no CLICK: how to get it).
 2. **Put the project into CLICK**. Hands off the mouse and keyboard; watch CLICK:
    - CLICK comes to the front, maximized (also when it was minimized);
    - a new project opens (CLICK 4: Ctrl+N) and the project's CPU is chosen;
@@ -87,7 +87,7 @@ Before you start: CLICK Programming Software installed (open or not); no unsaved
      joined, outputs at the right rail.
 3. The dialog says "Done in CLICK x.xx: …, 39 of 42 rungs entered" and lists what is left: the modules to add in
    System Configuration, the rungs to type (each "after rung N"). Nothing was saved: save in CLICK (Ctrl+S).
-4. If it stops: one sentence says what it could not do. Press **Open folder** and send us `click-bridge.log`: it has
+4. If it stops: one sentence says what it could not do. Press **Open log folder** and send us `click-bridge.log`: it has
    every CLICK window the app opened, with its controls. Nothing else is needed from you.
 5. **Pause**: run it again and click on another window: the dialog says "Paused"; click on CLICK: it goes on.
 6. **Stop**: run it again and press **Stop** (then once more with the **Pause** key): it stops at once and says

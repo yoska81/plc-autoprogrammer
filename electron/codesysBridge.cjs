@@ -4,7 +4,7 @@
 // src/desktop/bridge.ts (CodesysBridge). ISA_CODESYS_BRIDGE=<path> runs another bridge instead (a .cjs file: the
 // tests' fake). Main process only.
 const path = require('node:path');
-const { createBridge } = require('./tiaBridge.cjs');
+const { createBridge, showLogFile } = require('./tiaBridge.cjs');
 
 /** CODESYS starts slowly and a build can take minutes; detect is quick. */
 const TIMEOUT_MS = { detect: 60000, open: 60000, default: 40 * 60000 };
@@ -29,7 +29,7 @@ function registerCodesysBridgeIpc(ipcMain, app, resourcesDir, dialog) {
     catch (err) { return { ok: false, error: err instanceof Error ? err.message : String(err) }; }
   });
   ipcMain.handle('isa:codesys-log', () => logFile);
-  ipcMain.handle('isa:codesys-show-log', () => { require('electron').shell.showItemInFolder(logFile); return true; });
+  ipcMain.handle('isa:codesys-show-log', () => showLogFile(logFile));
   // the user's CODESYS project, chosen in Windows' Open dialog (its path only: the bridge opens it)
   ipcMain.handle('isa:codesys-pick', async (e) => {
     const d = dialog ?? require('electron').dialog;

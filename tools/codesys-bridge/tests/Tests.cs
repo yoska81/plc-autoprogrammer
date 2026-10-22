@@ -109,7 +109,7 @@ static class Tests
             Eq("The CODESYS project has no application: open it in CODESYS.", Throws<BridgeError>(() => jobs.Run(inst, new Dictionary<string, object>(), said.Add, CancellationToken.None)).Message);
             Eq("Opening Line.project", string.Join("|", said), "a traceback goes to the log only");
             pc.Codesys = _ => new FakeProc { ExitCode = 3 };
-            True(Throws<BridgeError>(() => jobs.Run(inst, new Dictionary<string, object>(), _ => { }, CancellationToken.None)).Message.StartsWith("CODESYS ended without an answer (exit code 3)"), "no answer");
+            True(Throws<BridgeError>(() => jobs.Run(inst, new Dictionary<string, object>(), _ => { }, CancellationToken.None)).Message == "CODESYS ended without an answer: close every CODESYS window and try again.", "no answer");
             True(Throws<BridgeError>(() => new Jobs(pc, dir, Path.Combine(dir, "gone.py")).Run(inst, new Dictionary<string, object>(), _ => { }, CancellationToken.None)).Message.Contains("missing its script"), "no script");
         });
 
