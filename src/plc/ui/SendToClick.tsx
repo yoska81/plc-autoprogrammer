@@ -4,7 +4,8 @@ import { desktopBridge, type ClickDetect } from '../../desktop/bridge';
 import { collectProject } from '../../deliverables/collect';
 import { hmiExtraTags } from '../../deliverables/exportContext';
 import { clickNicknameCsv } from '../core/clickExport';
-import { setupPlan } from '../click/clickPlan';
+import { newProjectPlan, setupPlan } from '../click/clickPlan';
+import { CALIBRATION_PDF, CALIBRATION_REPORT, calibrationPlan, calibrationReport, calibrationResult, type Calibration } from '../click/clickCalibrate';
 import { DEFAULT_KEYMAP, rungsPlan } from '../click/clickRungs';
 import { compareNicknames, compareRungs, exportNicknamesPlan, printLadderPlan, type NicknameCheck, type RungCheck } from '../click/clickVerify';
 import { loadPdfjs } from '../../lib/pdfjs';
@@ -52,6 +53,7 @@ export default function SendToClick({ profileId }: { profileId: string }) {
   const stopAsked = useRef(false);
   const [setUpDone, setSetUpDone] = useState(false);
   const [checked, setChecked] = useState<{ nicknames: NicknameCheck; rungs: RungCheck } | null>(null);
+  const [calibrated, setCalibrated] = useState<{ result: Calibration | null; report: string } | null>(null);
 
   useEffect(() => (open && click ? click.onProgress((p) => setProgress(p.text)) : undefined), [open, click]);
 
@@ -111,6 +113,33 @@ export default function SendToClick({ profileId }: { profileId: string }) {
     if (r) setChecked(r);
   };
 
+  /** Three sample rungs in a new, empty project, printed and read back; the report goes to a file for support. */
+  const calibrate = async () => {
+    setDone(null); setCalibrated(null);
+    stopAsked.current = false;
+    const p = collectProject();
+    let steps: unknown[] = [], printedText = '', result: Calibration | null = null, failed = '';
+    await step('run', async () => {
+      try {
+        const { path: folder } = await click.call('folder') as { path: string };
+        const plan = calibrationPlan(folder);
+        steps = [...newProjectPlan(p.cpu.id), ...plan.rungs, ...plan.print];
+        await click.call('run', { steps: [...newProjectPlan(p.cpu.id), ...plan.rungs] });
+        if (stopAsked.current) throw new Error('Stopped, as you asked.');
+        await click.call('run', { steps: plan.print });
+        const pdf = await click.call('readFile', { name: CALIBRATION_PDF }) as { base64: string };
+        printedText = await pdfText(fromBase64(pdf.base64));
+        if (!printedText.trim()) throw new Error('The printout has no text the app can read: use the "Microsoft Print to PDF" printer in CLICK\'s Print dialog.');
+        result = calibrationResult(printedText);
+      } catch (e) { failed = message(e); throw e; }
+      finally {
+        const text = calibrationReport({ clickVersion: started?.version ?? '', when: new Date().toLocaleString(), result, error: failed || undefined, printedText, steps: steps as never });
+        const f = await click.call('writeFile', { name: CALIBRATION_REPORT, text }).catch(() => null) as { path: string } | null;
+        setCalibrated({ result, report: f?.path ?? '' });
+      }
+    });
+  };
+
   const yourTurn = busy === 'run' && /^Your turn/.test(progress);
   const goOn = () => { void click.call('resume').catch(() => undefined); setProgress('Going on…'); };
 
@@ -167,9 +196,26 @@ export default function SendToClick({ profileId }: { profileId: string }) {
               )}
 
               {started && (
+                <section className="space-y-2" data-testid="click-calibrate">
+                  <h3 className="font-semibold text-steel-900">Check the keys first (once per CLICK version)</h3>
+                  <p className="text-xs text-steel-500">The app starts a new, empty project and enters three sample rungs (a contact and a coil, a seal-in, a timer), then CLICK prints them to a PDF (you press Save) and the app reads them back. Don't save that project: it is only a test. Hands off the mouse and keyboard while it runs.</p>
+                  <button onClick={() => void calibrate()} disabled={Boolean(busy)} data-testid="click-calibrate-button" className="rounded border border-brand-300 bg-white px-3 py-1.5 text-xs font-medium text-brand-800 hover:bg-brand-50 disabled:opacity-40">Try three sample rungs</button>
+                  {calibrated && (
+                    <div className="space-y-1 text-steel-700" data-testid="click-calibrated">
+                      {calibrated.result?.fits
+                        ? <p><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />All 3 sample rungs are in CLICK as they should be: the rung entry fits your CLICK {started.version}.</p>
+                        : <p><ExclamationTriangleIcon className="mr-1 inline h-4 w-4 text-amber-600" />{calibrated.result ? `${calibrated.result.check.ok} of 3 sample rungs as they should be` : 'The calibration did not finish'}: the rung entry does not fit your CLICK yet. Send us the report and the log; enter the rungs by hand from the entry sheet until then.</p>}
+                      {calibrated.result && calibrated.result.check.differences.length > 0 && <ul className="ml-5 list-disc text-amber-900">{calibrated.result.check.differences.map((d) => <li key={d.rung}>Sample rung {d.rung}: {d.missing.join(', ')} not where it should be</li>)}</ul>}
+                      {calibrated.report && <p className="text-xs text-steel-500">Report for support: <span className="select-all font-mono">{calibrated.report}</span></p>}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {started && (
                 <section className="space-y-2" data-testid="click-setup">
                   <h3 className="font-semibold text-steel-900">3. Set up the project</h3>
-                  <p className="text-xs text-steel-500">A new project with the CPU, then System Configuration for you to add the modules (the app waits until you close it), then the nicknames into the Address Picker. The rungs follow in the next update of the app.</p>
+                  <p className="text-xs text-steel-500">A new project with the CPU, then System Configuration for you to add the modules (the app waits until you close it), then the nicknames into the Address Picker.</p>
                   <div className="flex flex-wrap gap-2">
                     <button onClick={() => void setUp()} disabled={Boolean(busy)} data-testid="click-setup-button" className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-40">Set up the project in CLICK</button>
                     <button onClick={() => void record()} disabled={Boolean(busy)} data-testid="click-record" title="Writes the names of CLICK's windows and controls to a file, so we can fit the steps to your CLICK version"

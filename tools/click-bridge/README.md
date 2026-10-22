@@ -13,7 +13,8 @@ is reverse-engineered and no file of CLICK's is written by the app.
 - The **steps** are not in the exe: the app sends them (`src/plc/click/clickPlan.ts` for the project set-up,
   `src/plc/click/clickRungs.ts` for the rungs: the entry sheet's cells and dialog fields, entered through the
   keymap: cursor keys, the Instruction List entry that opens each instruction, its dialog's fields;
-  `src/plc/click/clickVerify.ts` for the check: the nickname export and the printed ladder against the project). They name CLICK's windows,
+  `src/plc/click/clickVerify.ts` for the check: the nickname export and the printed ladder against the project;
+  `src/plc/click/clickCalibrate.ts` for the calibration: three sample rungs entered and read back). They name CLICK's windows,
   menus and controls; when a CLICK version names them differently, the plan is corrected in the app, from the
   controls the bridge records on the user's PC ("Record CLICK's windows for us").
 - Every step and every UI action is written to `<user data>\logs\click-bridge.log`.
@@ -55,6 +56,7 @@ CLICK_BRIDGE_EXE=resources/click-bridge/ClickBridge.exe node e2e/clickBridge.tes
 BASE_URL=http://localhost:5215 node e2e/send-to-click.e2e.cjs                            # the dialog, fake bridge
 npx tsx src/plc/click/clickPlan.test.ts                # the step plans
 npx tsx src/plc/click/clickVerify.test.ts              # the check (nicknames, rungs against a printout)
+npx tsx src/plc/click/clickCalibrate.test.ts           # the calibration (three sample rungs, read back, the report)
 ```
 
 Only the user's PC can show whether the steps fit their CLICK version and screen: the test card below.
@@ -67,26 +69,31 @@ Before you start: CLICK Programming Software installed; no unsaved project open 
 1. PLC program page › **Send to CLICK**. It says which CLICK version it found. (No CLICK: it says how to get it.)
 2. **Start CLICK** (or "Use the open CLICK"). CLICK opens; the dialog says "CLICK 3.x started".
 3. **Record CLICK's windows for us**. Note the file it names.
-4. **Set up the project in CLICK**. Hands off the mouse and keyboard; watch CLICK:
+4. **Check the keys first** (once per CLICK version): **Try three sample rungs**. CLICK starts a new, empty
+   project and the three sample rungs go in (a contact and a coil, a seal-in with a parallel row, a timer); then
+   Print opens: choose "Microsoft Print to PDF", the file name is filled in, press **Save**. The dialog says "All 3
+   sample rungs … fit your CLICK" or names the sample rung that went wrong. Either way it names the report file
+   (`click_calibration.txt`): send it to us with the log when it does not fit. Close that test project without saving.
+5. **Set up the project in CLICK**. Hands off the mouse and keyboard; watch CLICK:
    - File › New Project opens, the CPU of your project is picked, OK.
    - With expansion modules: System Configuration opens and the dialog says which module goes in which slot.
      Add them, press OK there; the run goes on by itself.
    - The Address Picker opens and imports the nicknames.
    - The dialog says the project is set up. Nothing was saved: check, then save in CLICK yourself if you want.
-5. **Pause**: run step 4 again and click on another window while it runs: the dialog says "Paused"; click on CLICK:
+6. **Pause**: run step 5 again and click on another window while it runs: the dialog says "Paused"; click on CLICK:
    it goes on.
-6. **Stop**: run step 4 again and press **Stop** (then once more with the **Pause** key on the keyboard): it
+7. **Stop**: run step 5 again and press **Stop** (then once more with the **Pause** key on the keyboard): it
    stops at once and says nothing was saved.
-7. **Rungs**: after the set-up, **Enter the rungs in CLICK**. Watch the first rungs closely: each instruction
+8. **Rungs**: after the set-up, **Enter the rungs in CLICK**. Watch the first rungs closely: each instruction
    should land in its row and column with its address, parallel rows joined, outputs at the right rail. A rung the
    app cannot enter (a retentive timer's reset input, an instruction kept from an old program) is your turn: the
    dialog says which rung; type it from the entry sheet (Load into PLC), then **Continue**. If a rung goes wrong,
    **Stop** at once and send us the log.
-8. **Check what CLICK has**: CLICK's Address Picker exports the nicknames, then CLICK's Print goes to
+9. **Check what CLICK has**: CLICK's Address Picker exports the nicknames, then CLICK's Print goes to
    "Microsoft Print to PDF". In both Save dialogs the file name is filled in: press **Save** yourself. The dialog
    then says how many rungs match the project and names any rung with an address not where it should be (change
    one address in CLICK first to see it named), and any nickname missing or different.
-9. If any step does not work: the dialog names the step. Press **Record CLICK's windows for us** with that
+10. If any step does not work: the dialog names the step. Press **Record CLICK's windows for us** with that
    window still open, then send us the log and the recorded file (both paths are in the dialog). With them we fit
    the steps to your CLICK version.
 

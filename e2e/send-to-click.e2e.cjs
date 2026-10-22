@@ -99,6 +99,43 @@ const FAKE = () => {
   await dialog.getByTestId('click-start').click();
   await dialog.getByTestId('click-started').waitFor({ timeout: 5000 });
   check(/CLICK 3\.71 started/.test(await dialog.getByTestId('click-started').innerText()), 'CLICK started');
+
+  // The calibration: three sample rungs in a new project, printed, read back; a report for support.
+  const samplePdf = async (change) => {
+    const rows = await page.evaluate(async () => {
+      const v = await appImport('/src/plc/click/clickVerify.ts');
+      const c = await appImport('/src/plc/click/clickCalibrate.ts');
+      return v.rungAddressesInOrder(c.CALIBRATION_PROGRAM);
+    });
+    const doc = await PDFDocument.create();
+    const f = await doc.embedFont(StandardFonts.Helvetica);
+    const pg = doc.addPage([612, 792]);
+    ['Untitled  CLICK ladder  Page 1', ...rows.map((r) => `${r.rung}   ${r.addresses.map((a, i) => (change && change.rung === r.rung && i === 0 ? change.to : a)).join('   ')}`), 'END'].forEach((l, k) => pg.drawText(l, { x: 30, y: 760 - k * 18, size: 9, font: f }));
+    return Buffer.from(await doc.save()).toString('base64');
+  };
+  await page.evaluate((b) => { window.__click.files = { 'click_calibration.pdf': b }; window.__click.calls = []; }, await samplePdf());
+  await dialog.getByTestId('click-calibrate-button').click();
+  await dialog.getByTestId('click-calibrated').waitFor({ timeout: 20000 });
+  const cal = await dialog.getByTestId('click-calibrated').innerText();
+  const calCalls = await page.evaluate(() => window.__click.calls);
+  const calRuns = calCalls.filter((c) => c.cmd === 'run');
+  log('calibration:', cal.replace(/\s+/g, ' ').slice(0, 160));
+  check(/All 3 sample rungs are in CLICK as they should be: the rung entry fits your CLICK 3\.71/.test(cal), 'calibration: the sample rungs read back, it fits');
+  check(calRuns.length === 2 && calRuns[0].args.steps.some((s) => s.do === 'menu' && s.path.join('>') === 'File>New Project') && calRuns[0].args.steps.some((s) => s.do === 'setText' && s.text === 'T50') && !calRuns[0].args.steps.some((s) => s.do === 'waitUser'), 'calibration: a new project, the three rungs, none left to you');
+  check(calRuns[1].args.steps.some((s) => s.do === 'waitGone' && /press Save/.test(s.say)) && !calRuns.some((c) => c.args.steps.some((x) => /save/i.test(JSON.stringify(x.path ?? x.find ?? x.keys ?? '')))), 'calibration: the user presses Save, the app saves nothing');
+  const rep = calCalls.find((c) => c.cmd === 'writeFile' && c.args.name === 'click_calibration.txt');
+  check(rep && /CLICK Programming Software: 3\.71/.test(rep.args.text) && /the keys fit this CLICK/.test(rep.args.text) && /The steps \(\d+\):/.test(rep.args.text) && /click_calibration\.txt/.test(cal), 'calibration: the report written, its path shown');
+  // a sample rung wrong: does not fit, the rung named
+  await page.evaluate((b) => { window.__click.files = { 'click_calibration.pdf': b }; }, await samplePdf({ rung: 1, to: 'X009' }));
+  await dialog.getByTestId('click-calibrate-button').click();
+  await dialog.getByTestId('click-calibrated').filter({ hasText: 'does not fit' }).waitFor({ timeout: 20000 });
+  check(/2 of 3 sample rungs as they should be/.test(await dialog.getByTestId('click-calibrated').innerText()) && /Sample rung 1: X001 not where it should be/.test(await dialog.getByTestId('click-calibrated').innerText()), 'calibration: a wrong sample rung named, does not fit');
+  // no printout saved: stops, still writes the report
+  await page.evaluate(() => { window.__click.files = {}; window.__click.calls = []; });
+  await dialog.getByTestId('click-calibrate-button').click();
+  await dialog.getByTestId('click-calibrated').filter({ hasText: 'did not finish' }).waitFor({ timeout: 20000 });
+  check(/There is no click_calibration\.pdf/.test(await dialog.getByRole('alert').innerText()) && (await page.evaluate(() => window.__click.calls)).some((c) => c.cmd === 'writeFile' && /Stopped: There is no/.test(c.args.text)), 'calibration: no printout, said, the report still written');
+  await page.evaluate(() => { window.__click.calls = []; });
   await dialog.getByTestId('click-setup-button').click();
   check(await dialog.getByRole('status').filter({ hasText: /\d+\/\d+ / }).waitFor({ timeout: 5000 }).then(() => true, () => false), 'live progress per step');
   await dialog.getByTestId('click-done').waitFor({ timeout: 15000 });
