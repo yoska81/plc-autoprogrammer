@@ -77,11 +77,16 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
     ' => MW00011:=MW00010 + 1',
     'IB00003 => OUT H01_DB000000',
     'RISE:H01_DB000000 => SET MB002000',
-    ' => {SEE H01.01}, {Unknown instruction (step 25, code 0xaf) MW00020, MW00030, #5: not run, rewrite by hand}',
   ]);
   const sub = fp.routines.find((r) => r.origin?.routine === 'H01.01')!;
   // two rungs that share the branch point after "Run"
   assert.deepEqual(sub.rungs.map(show), ['MB001000 MB002000 => OUT OB00002', 'MB001000 NC:MB002000 => OUT OB00003']);
+  // SEE H01.01 on a rung that always runs: the called drawing at that point, then the rest of H01, in scan order.
+  assert.deepEqual(fp.routines.filter((r) => r.language === 'ladder').map((r) => r.name), ['H01 Demo conveyor', 'H01.01 Demo sub', 'H01 Demo conveyor (after H01.01)']);
+  const rest = fp.routines.find((r) => r.name === 'H01 Demo conveyor (after H01.01)')!;
+  assert.deepEqual(rest.rungs.map(show), [' => {Unknown instruction (step 25, code 0xaf) MW00020, MW00030, #5: not run, rewrite by hand}']);
+  assert.equal(rest.origin, undefined, 'the continuation is not a routine of the original');
+  assert.ok(fp.notes.some((n) => /1 call on a rung that always runs: the called drawing is placed at the call/.test(n)));
   console.log('drawings: ok');
 }
 
@@ -230,9 +235,10 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   assert.equal(profile.readOnly, true);
   const issues = validateProgram(plan.program, profile, new Set(plan.io.map((p) => p.plcAddress!)));
   assert.deepEqual(issues.filter((i) => i.severity === 'error' && /address/i.test(i.message)).map((i) => i.message), [], 'the program checks on its own registers');
-  // SEE calls and unread codes are the PLC's own instructions here: "Not understood" warnings, never "cannot run on".
+  // Unread codes are the PLC's own instructions here: "Not understood" warnings, never "cannot run on".
   assert.deepEqual(issues.filter((i) => /cannot run on/.test(i.message)).map((i) => i.message), [], 'no "cannot run on" on its own Yaskawa');
-  assert.ok(issues.some((i) => i.severity === 'warning' && /Not understood: check by hand \(SEE H01\.01\)/.test(i.message)));
+  assert.ok(issues.some((i) => i.severity === 'warning' && /Not understood: check by hand \(Unknown instruction \(step 25/.test(i.message)));
+  assert.ok(!issues.some((i) => /SEE H01/.test(i.message)), 'the call is the drawing at that point, no box');
   // A project saved before (its boxes tagged 'yaskawa') is the same family.
   const old = { ...plan.program, rungs: plan.program.rungs.map((r) => ({ ...r, outputs: r.outputs.map((o) => (o.type === 'RAW' ? { ...o, vendor: 'yaskawa' } : o)) })) };
   assert.deepEqual(validateProgram(old, profile, new Set(plan.io.map((p) => p.plcAddress!))).filter((i) => /cannot run on/.test(i.message)), [], 'older tag: still its own PLC');
