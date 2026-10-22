@@ -42,8 +42,7 @@ on (`BridgeError`), or "TIA Portal reported: …" with the innermost cause.
 | `compile` | Compiles the PLC software. `{errors, warnings, messages: [{severity, path, text, block, network}]}`: `block` and `network` read from the message's place in TIA's tree (the app maps them to rungs). Saves. |
 | `downloadTargets` | `{plc, address, interfaces: [{name, number, targets}]}`: the PLC, its IP address in the project, and this PC's network cards (PN/IE) that reach it. |
 | `download` `{confirmed: true, pcInterface, number, target, stopAllowed, startAfter, password?}` | Downloads hardware and software. **Refused without `confirmed: true`** (the app sends it only from its confirm screen). TIA Portal's questions are answered by `src/DownloadPolicy.cs` from the user's choices: stop the PLC only when `stopAllowed`, start it only when `startAfter`, the password only when given (not kept, not logged); any question it does not know **stops the download** and names it. `{state: success \| warning \| error \| refused, errors, warnings, messages, answers}`. |
-
-Coming next: read the program back for the Upgrade page.
+| `readBack` | **Read only.** Every program block of the open project exported as SimaticML (`PlcBlock.Export`, all block groups) and every PLC tag of every tag table: `{plc, blocks: [{name, xml}], failed: [{name, error}], tags: [{name, dataType, address, comment}]}`. A know-how protected block, or one TIA does not export (not compiled), is listed in `failed`. Nothing is saved. TIA Openness cannot read a PLC itself: a program only in the PLC is uploaded in TIA Portal first (Online › Upload device as new station). |
 
 ## Build and test
 
@@ -106,3 +105,7 @@ Run on each TIA Portal version we support (V16 … V20) before a release; note t
 16. **Download, password**: a PLC with an access password → without it: "protected by a password"; with it: the
     download runs. **Something new**: when TIA Portal asks a question the app does not know, the dialog names it and
     nothing is downloaded; download that one from TIA Portal itself and send us the log.
+17. **Read back (Upgrade page)**: open a machine's project in TIA Portal → Upgrade › the machine's PLC program ›
+    **Find TIA Portal** lists it → **Read the program**: "What the program shows" has its blocks, rungs and I/O with
+    the tag table's addresses. TIA Portal's project is unchanged (no "modified" mark). A know-how protected block is
+    named as not read. With no project open: it says to open one first.
