@@ -24,6 +24,7 @@ import { and, el, not, or, toBranches, toRungs, TRUE, type Cond, type Driven } f
 import type { CompareOp, LadderOutput } from '../core/ladder';
 import type { ForeignProgram, ForeignRoutine, ForeignTag, ForeignType, NetworkAxisImport } from './types';
 import { hmiNotes, type HmiProject } from './emtp';
+import { servoAxesUsed, servoComment, servoRegister } from './mpServo';
 import { networkNotes, readEthernetConnections, readSvcStations, type EthernetConnection, type MechatrolinkAxis } from './mpe720Network';
 
 export const YASKAWA_VENDOR = 'yaskawa-mp';
@@ -477,7 +478,8 @@ export function readYmw7(bytes: Uint8Array, fileName = 'project.YMW7', hmi?: Hmi
     if (seen.has(name)) return;
     seen.add(name);
     const addr = name.replace(/^[AHIL](\d\d)?(_\d\d)?_/, '').replace(/[ij]$/, '');
-    tags.push({ name, dataType, address: addr, comment: comments.get(addr) ?? '', ...(dataType === 'TIMER' ? { rawType: 'TON' } : {}), ...io(addr) });
+    const servo = servoRegister(addr);
+    tags.push({ name, dataType, address: addr, comment: comments.get(addr) || (servo ? servoComment(servo) : ''), ...(dataType === 'TIMER' ? { rawType: 'TON' } : {}), ...io(addr) });
   };
   for (const [name, t] of used) addTag(name, t);
   for (const [addr, c] of comments) if (c && (/^[IO][BW]/.test(addr) && Object.keys(io(addr)).length)) addTag(addr, typeOf(addr));
@@ -489,6 +491,7 @@ export function readYmw7(bytes: Uint8Array, fileName = 'project.YMW7', hmi?: Hmi
     `MPE720 project: ${summary.drawings} ladder drawings, ${total} steps; ${decoded} read into rungs (${total ? Math.round((decoded / total) * 1000) / 10 : 0} %).${Object.keys(unknownOps).length ? ` Not read (shown as "Unknown instruction" boxes): ${Object.entries(unknownOps).map(([k, n]) => `${k} ×${n}`).join(', ')}.` : ''}`,
     `Drawings call each other with SEE.${calls.spliced ? ` ${calls.spliced} call${calls.spliced === 1 ? '' : 's'} on a rung that always runs: the called drawing is placed at the call (the caller's block continues after it), so the scan order stays.` : ''}${calls.kept ? ` ${calls.kept} conditional or repeated call${calls.kept === 1 ? ' is' : 's are'} kept as boxes (rewrite by hand).` : ''} Every drawing is a block of the program, in scan order. Local registers (D) and the compiler's work bits carry their drawing in the name (H01_02_DB000090).`,
     'Function calls (FUNC) and the servo / motion registers (IW/OW 8000 and up) are kept as written; check them against the new PLC.',
+    ...servoAxesUsed(used.keys()).map((a) => `Servo axis ${a.axis} (circuit ${a.circuit}): the program uses ${a.registers.map((r) => `${r.register} (${r.what})`).join(', ')}. On another PLC these are the axis itself: set the axis up there and connect them.`),
     ...(axes.length ? [`Servo axes (MECHATROLINK): ${axes.join('; ')}.`] : []),
     ...networkNotes(stations, connections),
     ...(hmi ? hmiNotes(hmi, (a) => comments.get(a), (a) => used.has(a)) : []),

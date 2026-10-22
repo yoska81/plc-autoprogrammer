@@ -30,6 +30,7 @@ function keptPhrase(what: string, n: number): string {
     : w === 'UNKNOWN INSTRUCTION' ? ["instruction the app can't read", "instructions the app can't read"]
       : w === 'JSR' || w === 'CALL' ? ['subroutine call', 'subroutine calls']
         : w === 'MSG' ? ['message (communication) instruction', 'message (communication) instructions']
+          : w === 'SERVO REGISTER' ? ['rung that moves a servo axis (set the axis up on the new PLC)', 'rungs that move a servo axis (set the axes up on the new PLC)']
           : [`${what} instruction`, `${what} instructions`];
   return `${n} ${n === 1 ? one : many}`;
 }

@@ -11,7 +11,8 @@ import type { HmiDesign } from '../../hmi/types';
 import type { IOPoint } from '../../types/io';
 import { ptoPointsFor } from '../../electrical/highSpeedIo';
 import { needFromIo } from '../../spec/equipmentRules';
-import type { LadderProgram, Rung } from '../core/ladder';
+import { rungAddresses, type LadderProgram, type Rung } from '../core/ladder';
+import { servoRegister, type ServoRegister } from './mpServo';
 import { modulesToFit } from '../core/fit';
 import { ioAddresses } from '../core/ioChange';
 import { ioRemap } from '../core/ioRemap';
@@ -32,6 +33,8 @@ export interface RemakeCoverage {
   kept: { what: string; count: number; codes?: string[] }[];
   /** Rungs without kept instructions that the target's checker rejects, with its first message. */
   errors: { rungId: string; message: string }[];
+  /** Servo axes whose motion registers rungs use (kept as "servo register"): set the axis up on the target first. */
+  motion: { circuit: number; axis: number; rungs: number }[];
 }
 
 interface Project { io: IOPoint[]; plcId: string; cpuId: string; modules: string[]; program: LadderProgram; hmi?: HmiDesign | null }
@@ -58,8 +61,18 @@ export function remakeCoverage(p: Project, plcId: string): RemakeCoverage {
   const codes = new Map<string, Set<string>>();
   const errors: RemakeCoverage['errors'] = [];
   let converted = 0;
+  // Yaskawa motion registers kept as memory by the import (nickname OW8008 …): on another PLC they are the axis
+  // itself, so their rungs wait for the axis to be set up there (mpServo.ts).
+  const servo = new Map(program.tags.flatMap((t) => { const x = servoRegister(t.native ?? t.nickname ?? ''); return x ? [[t.address.toUpperCase(), x] as const] : []; }));
+  const axes = new Map<string, { circuit: number; axis: number; rungs: number }>();
   for (const r of program.rungs) {
     const raw = rawTexts(r);
+    const moving = [...new Set(rungAddresses(r).map((a) => servo.get(a.trim().toUpperCase())).filter((x): x is ServoRegister => Boolean(x)).map((x) => `${x.circuit}.${x.axis}`))];
+    if (moving.length) {
+      kept.set('servo register', (kept.get('servo register') ?? 0) + 1);
+      for (const k of moving) { const [c, a] = k.split('.').map(Number); const e = axes.get(k) ?? { circuit: c, axis: a, rungs: 0 }; e.rungs++; axes.set(k, e); }
+      continue;
+    }
     for (const t of raw) {
       const w = /^unknown instruction/i.test(t.trim()) ? 'unknown instruction' : t.trim().split(/\s+/)[0] || 'instruction';
       kept.set(w, (kept.get(w) ?? 0) + 1);
@@ -77,6 +90,7 @@ export function remakeCoverage(p: Project, plcId: string): RemakeCoverage {
     percent: rungs ? Math.floor((100 * converted) / rungs) : 100,
     kept: [...kept].map(([what, count]) => ({ what, count, ...(codes.has(what) ? { codes: [...codes.get(what)!].sort() } : {}) })).sort((a, b) => b.count - a.count),
     errors,
+    motion: [...axes.values()].sort((x, y) => x.circuit - y.circuit || x.axis - y.axis),
   };
 }
 
@@ -93,7 +107,7 @@ export function remakeCoverageAll(p: Project): RemakeCoverage[] {
  */
 export function remakeCoverageText(p: Project, coverage: RemakeCoverage[] = remakeCoverageAll(p)): string {
   const names = new Set(p.program.tags.flatMap((t) => [t.address, t.nickname]).filter(Boolean).map((x) => x.toUpperCase()));
-  const kind = (w: string) => { if (w === 'unknown instruction') return w; const m = /^([A-Z]{2,6})(?=$|\()/.exec(w)?.[1]; return m && !names.has(m) ? m : 'other instruction'; };
+  const kind = (w: string) => { if (w === 'unknown instruction' || w === 'servo register') return w; const m = /^([A-Z]{2,6})(?=$|\()/.exec(w)?.[1]; return m && !names.has(m) ? m : 'other instruction'; };
   const blocks = new Set(p.program.rungs.map((r) => r.block ?? '')).size;
   const from = getProfile(p.plcId);
   const lines = [
@@ -104,7 +118,7 @@ export function remakeCoverageText(p: Project, coverage: RemakeCoverage[] = rema
     const kept = new Map<string, { count: number; codes: Set<string> }>();
     for (const k of c.kept) { const w = kind(k.what); const e = kept.get(w) ?? { count: 0, codes: new Set<string>() }; e.count += k.count; for (const x of k.codes ?? []) e.codes.add(x); kept.set(w, e); }
     const keptText = [...kept].map(([w, e]) => `${w}${e.codes.size ? ` (codes ${[...e.codes].sort().join(', ')})` : ''} ×${e.count}`).join('; ');
-    lines.push(`${c.label}: ${c.converted} of ${c.rungs} rungs convert (${c.percent}%)${keptText ? `; kept: ${keptText}` : ''}${c.errors.length ? `; rejected by its checker: ${c.errors.length} rung${c.errors.length === 1 ? '' : 's'}` : ''}.`);
+    lines.push(`${c.label}: ${c.converted} of ${c.rungs} rungs convert (${c.percent}%)${keptText ? `; kept: ${keptText}` : ''}${c.errors.length ? `; rejected by its checker: ${c.errors.length} rung${c.errors.length === 1 ? '' : 's'}` : ''}${c.motion.length ? `; servo axes to set up: ${c.motion.map((m) => `circuit ${m.circuit} axis ${m.axis} (${m.rungs} rung${m.rungs === 1 ? '' : 's'})`).join(', ')}` : ''}.`);
   }
   return lines.join('\n');
 }

@@ -73,4 +73,30 @@ assert.equal(remakeCoverage(project(), 'generic-st').errors.length, 0);
   assert.doesNotMatch(text, /\b[IOM][BWLF][0-9A-F]{4,}/, 'no MPE720 register');
 }
 
+// Servo (motion) registers: the import keeps them as memory, but on another PLC they are the axis itself. Their
+// rungs do not count as converted: they wait for the axis to be set up there (a synthetic two-rung program).
+{
+  const fp = {
+    format: 'yaskawa-mpe720' as const, vendor: 'Yaskawa', controller: 'CPU-301', modules: [], projectName: 'servo', notes: [], outside: [],
+    tags: [
+      { name: 'IB00000', dataType: 'BOOL' as const, address: 'IB00000', comment: 'Start', io: 'input' as const },
+      { name: 'OW8008', dataType: 'INT' as const, address: 'OW8008', comment: '' },
+      { name: 'IL8016', dataType: 'DINT' as const, address: 'IL8016', comment: '' },
+      { name: 'MW00010', dataType: 'INT' as const, address: 'MW00010', comment: '' },
+      { name: 'MW00011', dataType: 'INT' as const, address: 'MW00011', comment: '' },
+    ],
+    routines: [{ name: 'H01', language: 'ladder' as const, untranslated: [], rungs: [
+      { id: 'a', comment: '', branches: [[{ type: 'NO' as const, address: 'IB00000' }]], outputs: [{ type: 'COPY' as const, source: '1', dest: 'OW8008' }] },
+      { id: 'b', comment: '', branches: [], outputs: [{ type: 'COPY' as const, source: 'IL8016', dest: 'MW00010' }] },
+      { id: 'c', comment: '', branches: [], outputs: [{ type: 'COPY' as const, source: 'MW00010', dest: 'MW00011' }] },
+    ] }],
+  };
+  applyUpgrade(convertForeign(fp, 'servo.YMW7'));
+  const c = remakeCoverage(project(), 'siemens-s7');
+  assert.deepEqual([c.rungs, c.converted], [3, 1], 'only the rung without a servo register converts');
+  assert.deepEqual(c.kept, [{ what: 'servo register', count: 2 }]);
+  assert.deepEqual(c.motion, [{ circuit: 1, axis: 1, rungs: 2 }]);
+  assert.match(remakeCoverageText(project()), /Siemens S7-1200 \/ S7-1500: 1 of 3 rungs convert \(33%\); kept: servo register ×2; servo axes to set up: circuit 1 axis 1 \(2 rungs\)\./);
+}
+
 console.log('remake coverage tests passed');
