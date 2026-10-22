@@ -59,17 +59,18 @@ export const DEFAULT_KEYMAP: ClickKeymap = {
   comment: { keys: '^m', dialog: '^(Rung )?Comment', field: edit('', 0) },
   ok: { type: 'Button', name: '^OK$' },
   instructions: [
-    { match: /^NO contact/, how: { list: '^NO Contact', dialog: 'Contact', fields: { Address: edit('Address|Bit') } } },
-    { match: /^NC contact/, how: { list: '^NC Contact', dialog: 'Contact', fields: { Address: edit('Address|Bit') } } },
+    // the Instruction List's entries as CLICK 4 names them ("Contact (NO)", "Out" …), CLICK 3's names as well
+    { match: /^NO contact/, how: { list: '^(Contact \\(NO\\)|NO Contact)', dialog: 'Contact', fields: { Address: edit('Address|Bit') } } },
+    { match: /^NC contact/, how: { list: '^(Contact \\(NC\\)|NC Contact)', dialog: 'Contact', fields: { Address: edit('Address|Bit') } } },
     { match: /^Edge contact/, how: { list: '^Edge Contact', dialog: 'Edge', fields: { Address: edit('Address|Bit') } } },
     { match: /^Compare contact/, how: { list: '^Compare', dialog: 'Compare', fields: { 'Value A': edit('Value A|A'), Operator: { type: 'ComboBox', select: true }, 'Value B': edit('Value B|B') } } },
-    { match: /^Out coil/, how: { list: '^Out', dialog: '^Out', fields: { Address: edit('Address|Bit') } } },
-    { match: /^Set coil/, how: { list: '^Set', dialog: '^Set', fields: { Address: edit('Address|Bit') } } },
-    { match: /^Reset coil/, how: { list: '^Reset', dialog: '^Reset', fields: { Address: edit('Address|Bit') } } },
-    { match: /^Timer/, how: { list: '^Timer', dialog: 'Timer', fields: { 'Timer number': edit('Timer|T'), Setpoint: edit('Set ?Point'), Unit: { type: 'ComboBox', name: 'Unit', select: true } } } },
-    { match: /^Counter/, how: { list: '^Counter', dialog: 'Counter', fields: { 'Counter number': edit('Counter|CT'), Setpoint: edit('Set ?Point') } } },
-    { match: /^Copy/, how: { list: '^Copy', dialog: 'Copy', fields: { Source: edit('Source'), Destination: edit('Destination') } } },
-    { match: /^Math/, how: { list: '^Math', dialog: 'Math', fields: { Result: edit('Result'), Formula: edit('Formula') } } },
+    { match: /^Out coil/, how: { list: '^Out\\b', dialog: '^Out', fields: { Address: edit('Address|Bit') } } },
+    { match: /^Set coil/, how: { list: '^Set\\b', dialog: '^Set', fields: { Address: edit('Address|Bit') } } },
+    { match: /^Reset coil/, how: { list: '^Reset\\b', dialog: '^Reset', fields: { Address: edit('Address|Bit') } } },
+    { match: /^Timer/, how: { list: '^Timer\\b', dialog: 'Timer', fields: { 'Timer number': edit('Timer|T'), Setpoint: edit('Set ?Point'), Unit: { type: 'ComboBox', name: 'Unit', select: true } } } },
+    { match: /^Counter/, how: { list: '^Counter\\b', dialog: 'Counter', fields: { 'Counter number': edit('Counter|CT'), Setpoint: edit('Set ?Point') } } },
+    { match: /^Copy/, how: { list: '^Copy\\b', dialog: 'Copy', fields: { Source: edit('Source'), Destination: edit('Destination') } } },
+    { match: /^Math/, how: { list: '^Math\\b', dialog: 'Math', fields: { Result: edit('Result'), Formula: edit('Formula') } } },
   ],
 };
 
@@ -102,8 +103,9 @@ export interface RungsPlan {
   steps: ClickStep[];
   /** How many rungs the app enters. */
   entered: number;
-  /** Rungs the app hands to the user (an instruction it cannot enter): the run waits while they type them. */
-  leftForYou: { number: number; why: string }[];
+  /** Rungs the app hands to the user (an instruction it cannot enter): typed while the run waits, or after it
+   * (`list`), each after the rung named in `after` (0: before the first). */
+  leftForYou: { number: number; why: string; after: number }[];
 }
 
 /** One rung: a new rung, its cells row by row, the parallel rows joined, its outputs, its comment. The cursor is
@@ -156,14 +158,25 @@ export function rungSteps(km: ClickKeymap, r: EntryRung): { number: number; step
   return { number: r.number, steps };
 }
 
-/** Every rung of the program, in program order (CLICK runs them top to bottom). */
-export function rungsPlan(program: LadderProgram, labels: Map<string, string>, km: ClickKeymap = DEFAULT_KEYMAP): RungsPlan {
+/**
+ * Every rung of the program, in program order (CLICK runs them top to bottom). A rung the app cannot enter is the
+ * user's: `wait` stops the run for it (Continue), `list` (one click) leaves it out and lists it for afterwards,
+ * with the rung it goes after.
+ */
+export function rungsPlan(program: LadderProgram, labels: Map<string, string>, km: ClickKeymap = DEFAULT_KEYMAP, yourTurn: 'wait' | 'list' = 'wait'): RungsPlan {
   const out: RungsPlan = { steps: [], entered: 0, leftForYou: [] };
   const all = clickEntryBlocks(program, labels).flatMap((b) => b.rungs).sort((a, b) => a.number - b.number);
+  let last = 0;
   for (const r of all) {
     const p = rungSteps(km, r);
+    if (p.leftForYou) {
+      out.leftForYou.push({ number: p.number, why: p.leftForYou, after: last });
+      if (yourTurn === 'wait') { out.steps.push(...p.steps); last = p.number; }
+      continue;
+    }
     out.steps.push(...p.steps);
-    if (p.leftForYou) out.leftForYou.push({ number: p.number, why: p.leftForYou }); else out.entered++;
+    out.entered++;
+    last = p.number;
   }
   return out;
 }

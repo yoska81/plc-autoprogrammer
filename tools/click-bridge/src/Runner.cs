@@ -6,7 +6,11 @@
 //   - a step that fails names the step and writes the window's controls to the log (to correct the plan);
 //   - an optional step (a window that may not come, e.g. a confirmation) is skipped when it does not come;
 //   - waitGone hands over to the user (e.g. "add these modules, then close the window") until a window closes;
-//   - waitUser hands over until the user presses Continue in the app (a rung the app cannot enter: they type it).
+//   - waitUser hands over until the user presses Continue in the app (a rung the app cannot enter: they type it);
+//   - oneOf tries ways to do one thing in turn (CLICK 3 has a File menu, CLICK 4 a ribbon UI Automation cannot see:
+//     the menu, then Ctrl+N, then the key tips), and says which it tried when none works;
+//   - every window a step opens is recorded in the log the first time in a run (its controls), and every window on a failure,
+//     so the log always has what is needed to fit the steps to the user's CLICK.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -28,6 +32,9 @@ namespace ClickBridge
         public bool On = true;
         public List<string> Path;
         public Selector Find;
+        /// <summary>oneOf: what it does ("New project"), and the ways to do it, tried in turn.</summary>
+        public string What;
+        public List<KeyValuePair<string, List<Step>>> Options;
         public int Ms;
         public int TimeoutMs = 15000;
 
@@ -38,6 +45,11 @@ namespace ClickBridge
             var s = new Step { Do = S("do"), Title = S("title"), Text = S("text"), Item = S("item"), Keys = S("keys"), Say = S("say"), Ms = N("ms", 0), TimeoutMs = N("timeoutMs", 15000), Optional = d.TryGetValue("optional", out object o) && o is bool b && b };
             if (d.TryGetValue("on", out object on) && on is bool bo) s.On = bo;
             if (d.TryGetValue("path", out object p) && p is List<object> l) s.Path = l.OfType<string>().ToList();
+            s.What = S("what");
+            if (d.TryGetValue("options", out object opts) && opts is List<object> ol)
+                s.Options = ol.OfType<Dictionary<string, object>>().Select(o => new KeyValuePair<string, List<Step>>(
+                    o.TryGetValue("label", out object lb) ? lb as string ?? "" : "",
+                    (o.TryGetValue("steps", out object st) && st is List<object> sl ? sl : new List<object>()).OfType<Dictionary<string, object>>().Select(From).ToList())).ToList();
             if (d.TryGetValue("find", out object f) && f is Dictionary<string, object> sel)
                 s.Find = new Selector { Id = sel.TryGetValue("id", out object i) ? i as string : null, Name = sel.TryGetValue("name", out object n) ? n as string : null, Type = sel.TryGetValue("type", out object t) ? t as string : null, Index = sel.TryGetValue("index", out object x) && x is double dx ? (int)dx : 0 };
             return s;
@@ -52,6 +64,7 @@ namespace ClickBridge
             "keys" => $"keys {Keys}",
             "wait" => $"wait {Ms} ms",
             "note" => $"note {Text}",
+            "oneOf" => $"{What} (one of: {string.Join(", ", (Options ?? new List<KeyValuePair<string, List<Step>>>()).Select(o => o.Key))})",
             _ => $"{Do} {Find}" + (Text != null ? $" \"{Text}\"" : "") + (Item != null ? $" → {Item}" : ""),
         };
     }
@@ -66,7 +79,11 @@ namespace ClickBridge
         /// <summary>How long a run waits for the user to bring CLICK back to the front.</summary>
         public int PauseLimitMs = 10 * 60 * 1000;
         public int PollMs = 300;
+        /// <summary>The CLICK version, for the messages ("CLICK 4.00: …").</summary>
+        public string Version = "";
         string _window;
+        /// <summary>The windows already recorded in the log in this run (each once per run).</summary>
+        readonly HashSet<string> _recorded = new HashSet<string>();
 
         public Runner(IUi ui, int pid, CancellationToken stop, Action<string> progress, WaitHandle resume = null) { _ui = ui; _pid = pid; _stop = stop; _progress = progress; _resume = resume; }
 
@@ -76,6 +93,7 @@ namespace ClickBridge
         /// <summary>Refuses a step that would save the project (the user saves, never the app).</summary>
         public static void Guard(Step s)
         {
+            foreach (var o in s.Options ?? new List<KeyValuePair<string, List<Step>>>()) foreach (var x in o.Value) Guard(x);
             if (s.Do == "keys" && s.Keys != null && SaveKeys.IsMatch(s.Keys)) throw new BridgeError($"The plan has a step that would save the project ({s.Keys}); the app never saves for you.");
             if (s.Do == "menu" && s.Path != null && s.Path.Any(x => SaveName.IsMatch(x))) throw new BridgeError("The plan has a step that would save the project (a Save menu); the app never saves for you.");
             if ((s.Do == "click" || s.Do == "doubleClick" || s.Do == "select") && s.Find?.Name != null && SaveName.IsMatch(s.Find.Name.TrimStart('^'))) throw new BridgeError("The plan has a step that would press Save; the app never saves for you.");
@@ -84,6 +102,14 @@ namespace ClickBridge
         public int Run(IList<Step> steps)
         {
             foreach (var s in steps) Guard(s);
+            Exec(steps);
+            return steps.Count;
+        }
+
+        string Ver => string.IsNullOrEmpty(Version) ? "CLICK" : $"CLICK {Version}";
+
+        void Exec(IList<Step> steps)
+        {
             bool skipping = false;
             for (int i = 0; i < steps.Count; i++)
             {
@@ -99,12 +125,50 @@ namespace ClickBridge
                 catch (BridgeError) { throw; }
                 catch (Exception e) { throw Fail(i, s, e.InnerException?.Message ?? e.Message); }
             }
-            return steps.Count;
+        }
+
+        /// <summary>The ways to do one thing, in turn; the first that works is kept. Stop ends it at once.</summary>
+        void OneOf(Step s, int i)
+        {
+            var tried = new List<string>();
+            foreach (var o in s.Options ?? new List<KeyValuePair<string, List<Step>>>())
+            {
+                Stopped(i);
+                tried.Add(o.Key);
+                try { Exec(o.Value); Log.Write($"{s.What}: done with {o.Key}"); return; }
+                catch (StoppedError) { throw; }
+                catch (Exception e)
+                {
+                    Log.Write($"{s.What}: {o.Key} did not work ({e.Message})");
+                    RecordAll();
+                    // close what the way that did not work may have opened (a menu, a half-open dialog)
+                    if (_window != null) { try { _ui.Keys(_window, "{ESC}"); } catch (Exception) { /* nothing open */ } }
+                }
+            }
+            throw new BridgeError($"{Ver}: could not find {s.What} (tried: {string.Join(", ", tried)}). Nothing was saved.");
+        }
+
+        /// <summary>A window's controls into the log, the first time a step uses it.</summary>
+        void Record(string window, string title)
+        {
+            if (!_recorded.Add(title)) return;
+            try { Log.Write($"controls of \"{title}\" (recorded the first time it is used):\n" + _ui.Dump(window)); }
+            catch (Exception e) { Log.Write($"could not record \"{title}\": {e.Message}"); }
+        }
+
+        /// <summary>Every window of CLICK (dialogs too) into the log: on a failure.</summary>
+        void RecordAll()
+        {
+            foreach (var t in _ui.Windows(_pid))
+            {
+                try { var w = _ui.Window(_pid, "^" + Regex.Escape(t) + "$", 0); if (w != null) Log.Write($"controls of \"{t}\":\n" + _ui.Dump(w)); }
+                catch (Exception e) { Log.Write($"could not record \"{t}\": {e.Message}"); }
+            }
         }
 
         void Stopped(int i)
         {
-            if (_stop.IsCancellationRequested) throw new BridgeError($"Stopped at step {i + 1}, as you asked. Nothing was saved: close CLICK without saving, or keep what was entered and save it yourself.");
+            if (_stop.IsCancellationRequested) throw new StoppedError($"Stopped at step {i + 1}, as you asked. Nothing was saved: close CLICK without saving, or keep what was entered and save it yourself.");
         }
 
         /// <summary>Waits while another window is in front (the user is doing something else); stops on Stop.</summary>
@@ -125,6 +189,9 @@ namespace ClickBridge
             _progress($"Going on (step {i + 1}).");
         }
 
+        /// <summary>Stop (the app's button or the Pause key): ends the run, whatever way of a oneOf is being tried.</summary>
+        sealed class StoppedError : BridgeError { public StoppedError(string m) : base(m) { } }
+
         /// <summary>A window or control a step needs did not come.</summary>
         sealed class NotThere : Exception { public NotThere(string m) : base(m) { } }
 
@@ -138,7 +205,9 @@ namespace ClickBridge
                 case "wait": Sleep(s.Ms, i); return;
                 case "window":
                     _window = Need(_ui.Window(_pid, s.Title, s.TimeoutMs), s);
+                    Record(_window, s.Title);
                     return;
+                case "oneOf": OneOf(s, i); return;
                 case "waitGone": WaitGone(s, i); return;
                 case "waitUser": WaitUser(s, i); return;
             }
@@ -195,9 +264,10 @@ namespace ClickBridge
         BridgeError Fail(int i, Step s, string why)
         {
             string open = string.Join(", ", _ui.Windows(_pid).Select(w => $"\"{w}\""));
-            Log.Write($"step {i + 1} failed: {why}. Windows: {open}");
-            if (_window != null) { try { Log.Write("controls of the window:\n" + _ui.Dump(_window)); } catch (Exception e) { Log.Write($"could not list the controls: {e.Message}"); } }
-            return new BridgeError($"Step {i + 1} ({s.Say ?? s.ToString()}) did not work: {why}. Open in CLICK: {(open.Length > 0 ? open : "no window")}. Nothing was saved. Send us the log (its path is shown below) so we can fit the steps to your CLICK version.");
+            Log.Write($"step {i + 1} ({s}) failed: {why}. Windows: {open}");
+            RecordAll();
+            // one plain sentence for the user; the details are in the log
+            return new BridgeError($"{Ver}: could not {(s.Say != null ? $"do \"{s.Say}\"" : $"do step {i + 1}")} ({why}). Nothing was saved.");
         }
     }
 }

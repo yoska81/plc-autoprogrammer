@@ -10,6 +10,7 @@
 import { createSimulator, isBitAddress, isWordAddress, type SimOptions, type Simulator } from '../sim/engine';
 import { rungWrites, type LadderProgram } from '../core/ladder';
 import { rungDeps } from './deps';
+import { getProfile } from '../core/profiles';
 import { buildMachineModel, machineInputs, stepMachine, type MachineModel, type SimIOPoint } from '../sim/machineModel';
 
 export interface Difference { sequence: string; scan: number; timeMs: number; address: string; original: boolean | number; reorganized: boolean | number }
@@ -47,6 +48,11 @@ export interface EquivalenceOptions {
   /** Extra sequences: each step sets inputs, then runs dtMs. */
   sequences?: { name: string; steps: { set?: Record<string, boolean | number>; dtMs: number }[] }[];
   sim?: SimOptions;
+  /**
+   * The project's PLC: its scan rules (system bits, memory kept through a power cut) when `sim` is not given. An id,
+   * not the rules themselves, so the options can go to the worker.
+   */
+  profileId?: string;
   /**
    * The I/O list for the plant model: closed-loop sequences where the machine answers the outputs (cylinders reach
    * their sensors, conveyors carry parts) while seeded random operator actions press buttons, turn selectors,
@@ -119,7 +125,14 @@ function longestTimer(p: LadderProgram): number {
   return Math.min(max, 24 * 3_600_000);
 }
 
+/** The simulator options for a PLC: its scan rules (CLICK's when the profile has none of its own). */
+export function simOptionsFor(profileId?: string): SimOptions | undefined {
+  const semantics = profileId ? getProfile(profileId).simSemantics : undefined;
+  return semantics ? { semantics } : undefined;
+}
+
 export function checkEquivalence(original: LadderProgram, reorganized: LadderProgram, o: EquivalenceOptions = {}): EquivalenceResult {
+  const sim = o.sim ?? simOptionsFor(o.profileId);
   const scanMs = o.scanMs ?? 10;
   const maxDiff = o.maxDifferences ?? 5;
   const started = Date.now();
@@ -140,7 +153,7 @@ export function checkEquivalence(original: LadderProgram, reorganized: LadderPro
     if (differences.length >= maxDiff) return;
     if (Date.now() - started > budget) { stoppedEarly = true; return; }
     o.onProgress?.(begun++, total);
-    const a = createSimulator(original, { ...o.sim, lean: true }), b = createSimulator(reorganized, { ...o.sim, lean: true });
+    const a = createSimulator(original, { ...sim, lean: true }), b = createSimulator(reorganized, { ...sim, lean: true });
     // The machine, one per program (the same devices in the same state while the programs agree).
     const models: [MachineModel, MachineModel] | null = withPlant && o.plant ? [buildMachineModel(o.plant, []), buildMachineModel(o.plant, [])] : null;
     if (models) { for (const [k, v] of machineInputs(models[0])) a.setInput(k, v); for (const [k, v] of machineInputs(models[1])) b.setInput(k, v); }
@@ -269,6 +282,6 @@ function kindsText(r: EquivalenceResult): string {
 export function equivalenceSummary(r: EquivalenceResult): string {
   const said = r.differences.length
     ? `Different behaviour: ${r.differences.map((d) => `${d.address} is ${d.original} in the original but ${d.reorganized} in the reorganized program (${d.sequence}, scan ${d.scan})`).join('; ')}.`
-    : `Same behaviour in ${r.sequences} test sequences (${kindsText(r)}; 0 differences; ${r.scans} scans, ${r.observed} values compared every scan).`;
-  return [said, r.notSimulated ? `Not simulated: ${r.notSimulated} rung(s) with kept instructions of the original PLC (kept exactly as they were, in their place); motion / axis registers and communications are not simulated either.` : 'Not simulated: motion / axis registers and communications.', r.stoppedEarly ? 'The check stopped at its time limit before every sequence ran.' : '', !r.differences.length && r.unexercised.length ? `Not exercised by the check (never changed, so a difference there would not show): ${r.unexercised.slice(0, 8).join(', ')}${r.unexercised.length > 8 ? ` and ${r.unexercised.length - 8} more` : ''}.` : ''].filter(Boolean).join(' ');
+    : `Same behaviour in ${r.sequences.toLocaleString('en-US')} test sequences (0 differences). Details: ${kindsText(r)}; ${r.scans.toLocaleString('en-US')} scans, ${r.observed.toLocaleString('en-US')} values compared every scan.`;
+  return [said, r.notSimulated ? `Not simulated: ${r.notSimulated} ${r.notSimulated === 1 ? 'rung' : 'rungs'} with instructions kept from the old PLC (left exactly as they were, in place); motion / axis registers and communications are not simulated either.` : 'Not simulated: motion / axis registers and communications.', r.stoppedEarly ? 'The check stopped at its time limit before every sequence ran.' : '', !r.differences.length && r.unexercised.length ? `Never changed during the check, so a difference there would not show: ${r.unexercised.slice(0, 8).join(', ')}${r.unexercised.length > 8 ? ` and ${r.unexercised.length - 8} more` : ''}.` : ''].filter(Boolean).join(' ');
 }

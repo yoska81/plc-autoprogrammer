@@ -30,13 +30,13 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.getByRole('button', { name: 'Reorganize program…' }).click();
   const panel = page.getByRole('group', { name: 'Reorganize' });
   await panel.waitFor({ timeout: 10000 });
-  check(await panel.getByRole('checkbox').count() === 8, 'each change has its own checkbox (the example has one long rung to split)');
-  check(!(await panel.getByLabel(/Split \d+ long rung/).isChecked().catch(() => true)), 'splitting long rungs is off by default');
-  check(!(await panel.getByLabel(/registers or retentive memory/).isChecked().catch(() => true)) && !(await panel.getByLabel(/can never be true/).isChecked().catch(() => true)), 'registers and never-true removals are off by default');
+  check(await panel.getByRole('checkbox').count() === 2, 'only what has something to do is listed, each with its checkbox (the example: one long rung to split, and grouping)');
+  check(!(await panel.getByLabel(/Split 1 long rung/).isChecked().catch(() => true)), 'splitting long rungs is off by default');
+  check(await panel.getByLabel(/Group the rungs by machine part/).isChecked(), 'grouping is on by default');
   await panel.getByRole('button', { name: 'Check and propose' }).click();
   const approve = page.getByRole('button', { name: 'Approve', exact: true });
   await approve.waitFor({ timeout: 60000 });
-  check(await page.getByText(/Same behaviour in \d+ test sequences \([^)]*0 differences/).count() > 0, 'the proposal says what the simulator check found');
+  check(await page.getByText(/Same behaviour in [\d,]+ test sequences \(0 differences\)/).count() > 0, 'the proposal says what the simulator check found');
   await approve.click();
   const after = await page.evaluate(async () => {
     const st = (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState();
@@ -53,7 +53,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
     const { l5x } = await appImport('/src/plc/import/__fixtures__/bigPrograms.ts');
     const { importProgramFiles } = await appImport('/src/plc/import/index.ts');
     const { applyUpgrade } = await appImport('/src/plc/import/ui/applyUpgrade.ts');
-    applyUpgrade(importProgramFiles([{ name: 'big.L5X', text: l5x(80, 120) }]).program);
+    applyUpgrade(importProgramFiles([{ name: 'big.L5X', text: l5x(80, 128) }]).program);
   });
   const big = await page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.length);
   check(big === 4000, `the synthetic program has ${big} rungs`);

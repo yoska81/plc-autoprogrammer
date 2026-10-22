@@ -21,7 +21,7 @@ import { buildL5x } from '../core/profiles/l5x';
 import { clickRungListing } from '../core/clickExport';
 import { validateProgram } from '../core/validate';
 import type { LadderProgram } from '../core/ladder';
-import { applyReorganize, planReorganize, plcBaseline, type SectionId } from './reorganize';
+import { applyReorganize, describeChanges, planReorganize, plcBaseline, removalCounts, removalPreview, type SectionId } from './reorganize';
 import { checkEquivalence, equivalenceSummary } from './equivalence';
 
 const warn = console.warn;
@@ -96,6 +96,11 @@ const plantOf = (p: ReturnType<typeof collectProject>) => p.io.map((x) => ({ add
   const ids = (s: SectionId[]) => applyReorganize(p, plan, new Set(s)).rungs.map((x) => x.id);
   assert.deepEqual(ids(['remove-internal']), ['tmr', 'cnt', 'out'], 'the timer the kept counter reads stays');
   assert.deepEqual(ids(['remove-internal', 'remove-registers']), ['out']);
+  // The panel says it before the check: one goes, one is kept back; the result line gives the real count.
+  const only = new Set<SectionId>(['remove-internal']);
+  const pv = removalPreview(p.ladder, plan, only);
+  assert.deepEqual(removalCounts(plan, pv, 'remove-internal'), { removed: 1, keptBack: 1 });
+  assert.deepEqual(describeChanges(plan, only, pv), ['Unused rungs: 1 removed, 1 kept (a rung that stays still uses what they set)']);
   const r = checkEquivalence(p.ladder, applyReorganize(p, plan, new Set<SectionId>(['remove-internal'])), { random: 30, steps: 30 });
   assert.deepEqual(r.differences, [], equivalenceSummary(r));
 }
