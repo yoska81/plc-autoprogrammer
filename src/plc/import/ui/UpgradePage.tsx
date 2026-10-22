@@ -22,6 +22,7 @@ import { choosePlcBrand } from '../../core/choosePlc';
 import { notify } from '../../../store/useNoticeStore';
 import { useHmiStore } from '../../../store/useHmiStore';
 import { remakeCoverageAll, remakeCoverageText } from '../remake';
+import { recordConversion } from '../../tidy/changeLog';
 
 /** A kept instruction in plain words ("1 call to another drawing"). */
 function keptPhrase(what: string, n: number): string {
@@ -79,8 +80,10 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
     try { await navigator.clipboard.writeText(text); notify('Coverage numbers copied: paste them in a message.'); } catch { notify('Select the coverage numbers below and copy them.'); }
   };
   const fromReadOnly = Boolean(original && getProfile(original.plcId).readOnly && !readOnly);
+  // "Also make a change report": with the move, the report of the session so far (the move included) is downloaded.
+  const [moveReport, setMoveReport] = useState(false);
   const moveTo = (plcId: string) => {
-    const notes = choosePlcBrand(plcId);
+    const notes = recordConversion(plcId, () => choosePlcBrand(plcId), moveReport);
     if (notes.length) notify(`The I/O was renumbered for the new PLC; the program and the HMI followed. ${notes.join(' ')}`);
   };
 
@@ -171,6 +174,10 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                             </li>
                           ))}
                         </ul>
+                        <label className="flex items-center gap-2 text-xs text-gray-700">
+                          <input type="checkbox" data-testid="upgrade-remake-report" checked={moveReport} onChange={(e) => setMoveReport(e.target.checked)} />
+                          Also make a change report (PDF and Word) with the move
+                        </label>
                         <p className="text-xs text-gray-500">
                           <button data-testid="upgrade-remake-copy" onClick={() => void copyCoverage()} className="underline hover:text-brand-700">Copy coverage numbers</button>
                           {' '}(counts only, no names or values: paste them in a message to help improve the conversion)
