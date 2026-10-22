@@ -42,9 +42,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 
   // HMI page: the "no touch panel" state, the operator station, the earlier screens not shown.
   await page.goto(BASE + '/hmi');
-  await page.waitForTimeout(800);
+  // Waited for, not a fixed pause: a busy machine draws the page later (as the Export check below).
   const note = page.getByTestId('no-hmi');
-  check(await note.isVisible(), 'HMI page: "This machine has no touch panel"');
+  check(await note.waitFor({ timeout: 15000 }).then(() => true, () => false), 'HMI page: "This machine has no touch panel"');
+  await page.getByTestId('operator-station').locator('tr').nth(2).waitFor({ timeout: 15000 }).catch(() => {});
   const stationRows = await page.getByTestId('operator-station').locator('tr').count();
   log(`Operator station on the HMI page: ${stationRows} devices`);
   check(stationRows >= 3, `operator station listed (${stationRows} devices)`);
