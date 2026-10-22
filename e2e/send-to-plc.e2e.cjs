@@ -104,6 +104,8 @@ const FAKE = () => {
   const all = await card.innerText();
   check(['tia-bridge.log', 'click-bridge.log', 'codesys-bridge.log', 'studio5000-bridge.log'].every((l) => all.includes(l)) && /Open log folder/.test(all) && /ISA Auto Programmer\\logs/.test(all), 'each log to send, where the logs are, Open log folder');
   check(/Siemens TIA Openness/.test(all) && /hands off the mouse and keyboard/.test(all), 'what to install and what to do, in plain words');
+  const web = await card.getByTestId('test-card-web').innerText();
+  check(/Connect the Claude app/.test(web) && /Open the ISA Auto Programmer app on this PC; it picks up the file/.test(web) && /plc-helper\.log/.test(web), 'the web page: once, in the Claude app, in any browser, the helper\'s log');
 
   check(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await browser.close();
