@@ -3,6 +3,7 @@ import { testAnthropicConnection } from '../lib/ai/anthropic';
 import { clearAiCache } from '../lib/ai/cache';
 import VoiceSettingsCard from '../voice/VoiceSettingsCard';
 import DwgReaderCard from '../convert/DwgReaderCard';
+import PlcHelperCard from '../plc/ui/PlcHelperCard';
 import { IS_PREVIEW, PREVIEW_ACCOUNT_KEY } from '../preview/mode';
 import {
   useSettingsStore,
@@ -291,6 +292,8 @@ export default function SettingsPage() {
           <VoiceSettingsCard />
           {/* DWG drawings on Import → Drawings (the Windows app's built-in LibreDWG converter). */}
           <DwgReaderCard />
+          {/* Send from the web page: the ISA PLC Helper in the Claude desktop app (Windows app only). */}
+          <PlcHelperCard />
         </div>
       </div>
     </>

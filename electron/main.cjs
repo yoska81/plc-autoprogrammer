@@ -13,6 +13,7 @@ const { registerTiaBridgeIpc } = require('./tiaBridge.cjs');
 const { registerClickBridgeIpc } = require('./clickBridge.cjs');
 const { registerCodesysBridgeIpc } = require('./codesysBridge.cjs');
 const { registerStudio5000BridgeIpc } = require('./studio5000Bridge.cjs');
+const { registerClaudeConfigIpc } = require('./claudeConfig.cjs');
 
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://isa`;
@@ -305,6 +306,8 @@ registerTiaBridgeIpc(ipcMain, app, app.isPackaged ? process.resourcesPath : path
 registerClickBridgeIpc(ipcMain, app, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources'));
 registerCodesysBridgeIpc(ipcMain, app, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources'));
 registerStudio5000BridgeIpc(ipcMain, app, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources'));
+// Settings › Send from the web page: the ISA PLC Helper in the Claude desktop app's settings (electron/claudeConfig.cjs)
+registerClaudeConfigIpc(ipcMain, app, ROOT);
 
 // ── Microphone for voice input: a native question the first time (electron/micPermission.cjs) ──
 let micState = { always: false, session: false };

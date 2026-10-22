@@ -75,6 +75,11 @@ contextBridge.exposeInMainWorld('isaDesktop', {
       return () => ipcRenderer.removeListener('isa:codesys-progress', h);
     },
   },
+  // Settings › Send from the web page: the ISA PLC Helper in the Claude desktop app (electron/claudeConfig.cjs)
+  claudeHelper: {
+    status: () => ipcRenderer.invoke('isa:claude-helper-status'),
+    set: (on) => ipcRenderer.invoke('isa:claude-helper-set', on),
+  },
   // Send to Studio 5000 (electron/studio5000Bridge.cjs): the same shape as codesys.
   studio5000: {
     call: async (cmd, args) => { const r = await ipcRenderer.invoke('isa:studio5000', cmd, args); if (!r.ok) throw new Error(r.error); return r.value; },
