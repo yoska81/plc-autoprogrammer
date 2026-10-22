@@ -157,6 +157,13 @@
         "description": "ISA Auto Programmer project",
         "role": "Editor"
       }
+    ],
+    "asarUnpack": [
+      "electron/plcHelper.cjs",
+      "electron/tiaBridge.cjs",
+      "electron/clickBridge.cjs",
+      "electron/codesysBridge.cjs",
+      "electron/studio5000Bridge.cjs"
     ]
   }
 }

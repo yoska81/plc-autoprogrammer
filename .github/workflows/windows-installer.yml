@@ -85,6 +85,7 @@ jobs:
           node e2e/modbus.test.cjs
           node e2e/tiaBridge.test.cjs
           node e2e/clickBridge.test.cjs
+          node e2e/plcHelper.test.cjs
 
       # The TIA Portal bridge (tools/tia-bridge): its own tests (.NET 8), then the .NET Framework 4.8 exe the
       # installer ships, tried through the app's bridge client (no TIA Portal on the build server: detect says so).
@@ -129,6 +130,11 @@ jobs:
         env:
           # Unsigned for now (see docs/INSTALL-WINDOWS.md); don't look for a certificate.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      # The ISA PLC Helper as the installer ships it, started the way the Claude desktop app starts it.
+      - name: PLC Helper (installed)
+        shell: bash
+        run: APP_DIR=release/win-unpacked node e2e/plcHelper.packaged.cjs
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
