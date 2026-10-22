@@ -38,11 +38,17 @@ Everything except the AI works offline: the drawings, simulation, labels and doc
 
 ## Update to a new version
 
-1. Download the newer `ISA-Auto-Programmer-Setup-<version>.exe` from the Releases page.
-2. Close ISA Auto Programmer.
-3. Run the new installer. It replaces the program and keeps your projects and settings.
+The program updates itself: install it once.
 
-The version number is shown at the bottom right of the window and under **Help → About**.
+1. A little after it starts, it checks quietly for a new version. When there is one, it downloads it in the background while you work.
+2. A green bar then says **A new version is ready — Restart to update**. Click **Restart to update** when it suits you, or **Later**. Nothing is installed or restarted without that click. If you don't click, the update installs the next time you close the program.
+3. Restart closes the program the normal way: if a project file has unsaved changes you are asked first, and **Cancel** calls the update off. The new version then opens by itself.
+
+Your projects and settings stay as they are: they are in `%APPDATA%\ISA Auto Programmer`, which an update never touches. The TIA Portal, CLICK, CODESYS and Studio 5000 bridges are part of the program and are updated with it.
+
+**Help → Check for updates** checks right away. The version number is shown at the bottom right of the window and in the **Help** menu.
+
+Without an internet connection, or if the update server can't be reached, the program works as before. You can still install a newer `ISA-Auto-Programmer-Setup-<version>.exe` by hand: close the program and run it.
 
 ## Uninstall
 
@@ -64,6 +70,8 @@ Windows **Settings → Apps → Installed apps → ISA Auto Programmer → Unins
 | `npm run desktop` | Builds the app into `dist-desktop/` and opens it in Electron. |
 | `npm run dist:win` | Builds the Windows installer into `release/` (on Linux this needs `wine64` + `wine32`). |
 | `xvfb-run -a node e2e/desktop.e2e.cjs` | Desktop test, after `npm run build:desktop`: window and bridge, projects kept after a restart, Save dialog, Modbus through the bridge, printing at real size. |
+| `xvfb-run -a node e2e/desktop-update.e2e.cjs` | Updates, after `npm run build:desktop`: a local update feed, background download (sha512 checked), the "Restart to update" bar, install only on the click, projects and settings kept, a damaged download refused. |
+| `node e2e/updater.test.cjs` | The update logic with a fake updater, and the installer settings an update relies on. |
 | `node e2e/modbus.test.cjs` | The Modbus TCP client (`electron/modbus.cjs`) against a fake PLC (`e2e/fake-modbus.cjs`): reads, writes, exceptions, timeouts, dropped connection, argument checks. |
 
 - **Structure:**
@@ -82,4 +90,9 @@ Windows **Settings → Apps → Installed apps → ISA Auto Programmer → Unins
   - Every argument is checked in the main process, and errors come back in plain English.
 - **Installer:** electron-builder, NSIS, x64, per user. Icon in `build/icon.png`. Version from `package.json`.
 - **CI:** `.github/workflows/windows-installer.yml` builds on `windows-latest` for every push to the integration branch (the installer is attached to the run) and for tags `v*` (also published as a GitHub Release).
-- **Later:** code signing. With a code-signing certificate, the SmartScreen warning goes away. Set `CSC_LINK` / `CSC_KEY_PASSWORD` in the workflow. Automatic updates (electron-updater, `latest.yml` is already produced) can come after signing.
+- **Updates:** `electron/updater.cjs` uses electron-updater. `scripts/desktop-prepare.cjs` bundles it into `electron/vendor/electron-updater.cjs`, because the installer ships no `node_modules`.
+  - **Feed:** the source repo is private, and reading its releases would need a token inside the app. So updates come from a **public releases-only repo**, `yoska81/isa-autoprogrammer-releases` (`package.json` `build.publish`). It holds no source, only the Setup `.exe`, its `.blockmap` and `latest.yml`.
+  - **Publishing:** each push to the integration branch builds version `0.7.<run number>` and publishes it there as a pre-release. This needs the repository secret `RELEASES_TOKEN`: a fine-grained token with Contents: write on that repo only. Without the secret, the step is skipped with a warning.
+  - **Restart:** the bridges are stopped first, because the installer replaces their exes. Then every window closes through its own save checks, and only then does the silent install run, starting the new version.
+  - **Testing against your own feed:** `ISA_UPDATE_URL=<folder with latest.yml>` points a development run at any generic feed. `ISA_UPDATE_DELAY_MS` sets how long after start the first check runs.
+- **Later:** code signing. With a code-signing certificate, the SmartScreen warning goes away. Set `CSC_LINK` / `CSC_KEY_PASSWORD` in the workflow. Updates work unsigned, as today, because no publisher name is set, so electron-updater does not check a signature.
