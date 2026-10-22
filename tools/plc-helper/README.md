@@ -20,6 +20,7 @@ the Claude desktop app** (`host:<name>` in the page's `mcp` capability). The hel
 | --- | --- | --- |
 | `about` | yes | version, the software it sends to |
 | `start` | no | `{software, cmd, args}`: one bridge command as a job, or `pickProject` (Windows' Open dialog); returns `{job}` at once |
+| `look` | yes | like `start`, for the commands that only look: `detect` (all), TIA Portal `portals`, `firmware`, `downloadTargets`, Studio 5000 `info` |
 | `status` | yes | `{job, from}`: progress lines from `from`, `state` (running / done / failed), `result` or `error` |
 | `stop` | no | `{software}`: the bridge's own Stop |
 | `logPath`, `showLog` | yes | the bridge's log, shown in Explorer |

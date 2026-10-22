@@ -47,11 +47,11 @@ process.env.ISA_CLICK_BRIDGE = path.join(__dirname, 'fake-click-bridge.cjs');
   ok('MCP: initialize (the client\'s protocol version), notifications, ping, unknown methods');
 
   const tools = (await rpc('tools/list')).result.tools;
-  assert.deepEqual(tools.map((t) => t.name), ['about', 'start', 'status', 'stop', 'logPath', 'showLog']);
+  assert.deepEqual(tools.map((t) => t.name), ['about', 'start', 'look', 'status', 'stop', 'logPath', 'showLog']);
   const ro = Object.fromEntries(tools.map((t) => [t.name, t.annotations.readOnlyHint]));
-  assert.deepEqual(ro, { about: true, start: false, status: true, stop: false, logPath: true, showLog: true });
+  assert.deepEqual(ro, { about: true, start: false, look: true, status: true, stop: false, logPath: true, showLog: true });
   assert.deepEqual(tools.find((t) => t.name === 'start').inputSchema.properties.software.enum, ['tia', 'click', 'codesys', 'studio5000']);
-  ok('tools/list: start and stop are not read-only (the Claude app may ask the user), the rest are');
+  ok('tools/list: start and stop are not read-only (the Claude app may ask the user), look and the rest are');
 
   const about = await data('about');
   assert.deepEqual(about.software, ['tia', 'click', 'codesys', 'studio5000']);
@@ -64,6 +64,12 @@ process.env.ISA_CLICK_BRIDGE = path.join(__dirname, 'fake-click-bridge.cjs');
   assert.equal(end.result.ready, true);
   assert.deepEqual(end.lines, ['Looking for TIA Portal and TIA Openness…']);
   ok('a bridge command as a job: the id at once, its progress, then its result');
+
+  ({ job } = await data('look', { software: 'codesys', cmd: 'detect' }));
+  assert.equal((await until(job)).result.installs[0].version, '3.5.19.20');
+  const writes = await call('look', { software: 'codesys', cmd: 'build', args: {} });
+  assert.ok(writes.isError && /"build" changes something: send it with start/.test(writes.content[0].text));
+  ok('look: detect runs as a read-only job; a command that changes something is refused there');
 
   ({ job } = await data('start', { software: 'tia', cmd: 'fails' }));
   end = await until(job);

@@ -38,6 +38,11 @@ const SOFTWARE = {
   studio5000: { dir: 'studio5000-bridge', exe: 'Studio5000Bridge.exe', env: 'ISA_STUDIO5000_BRIDGE', log: 'studio5000-bridge.log', label: 'Studio 5000 bridge', what: 'the Logix Designer SDK', timeouts: STUDIO5000_TIMEOUTS, pick: { title: 'Your Studio 5000 project', filter: 'Studio 5000 project (*.ACD)|*.ACD' } },
 };
 const NAMES = Object.keys(SOFTWARE);
+/**
+ * The commands that only look (what is installed, what TIA Portal has open, the controller's path): run through the
+ * read-only tool `look`, so the Claude app does not ask the user each time. Everything else goes through `start`.
+ */
+const LOOK = { tia: ['detect', 'portals', 'firmware', 'downloadTargets'], click: ['detect'], codesys: ['detect'], studio5000: ['detect', 'info'] };
 /** Finished jobs are kept this long for the page's last status call. */
 const KEEP_MS = 10 * 60000;
 
@@ -114,6 +119,9 @@ function createHelper({ resourcesDir, logsDir, pickFile = windowsPick, openFolde
     { name: 'about', description: 'The helper: its version and the PLC software it sends to.', readOnly: true, schema: { type: 'object', properties: {} }, run: () => ({ helper: 'ISA PLC Helper', version: VERSION, software: NAMES, windows: process.platform === 'win32', log: logFile }) },
     { name: 'start', description: 'Runs one command of a PLC software bridge (tia, click, codesys, studio5000) as a job, or pickProject (the Windows Open dialog). Returns the job id at once; read it with status.', readOnly: false,
       schema: { type: 'object', properties: { software: { type: 'string', enum: NAMES }, cmd: { type: 'string' }, args: { type: 'object' } }, required: ['software', 'cmd'] }, run: start },
+    { name: 'look', description: 'Runs one command that only looks (detect, and for TIA Portal portals, firmware, downloadTargets; for Studio 5000 info) as a job, like start.', readOnly: true,
+      schema: { type: 'object', properties: { software: { type: 'string', enum: NAMES }, cmd: { type: 'string' }, args: { type: 'object' } }, required: ['software', 'cmd'] },
+      run: (a) => { const s = software(a); if (!LOOK[s].includes(String(a?.cmd))) throw new Error(`"${a?.cmd}" changes something: send it with start.`); return start(a); } },
     { name: 'status', description: 'A job\'s progress lines from `from` on, its state (running, done, failed), then its result or error.', readOnly: true,
       schema: { type: 'object', properties: { job: { type: 'number' }, from: { type: 'number' } }, required: ['job'] }, run: status },
     { name: 'stop', description: 'Stops what the bridge of that software is doing (nothing is saved).', readOnly: false,
@@ -210,4 +218,4 @@ if (require.main === module) {
   helper.serve(process.stdin, process.stdout);
 }
 
-module.exports = { createHelper, SOFTWARE };
+module.exports = { createHelper, SOFTWARE, LOOK };
