@@ -34,6 +34,21 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   // Its order on the page: the simplify card first.
   const order = await page.evaluate(() => [...document.querySelectorAll('[data-testid]')].map((e) => e.getAttribute('data-testid')).filter((t) => /^upgrade-(simplify|choose-plc)$/.test(t)));
   check(order.join() === 'upgrade-simplify,upgrade-choose-plc', `simplify & explain, then remake (${order.join(' → ')})`);
+  // Comments written on the Yaskawa (Add comments) name its registers; after the remake they name the new PLC's
+  // addresses, as Explain does there ("Horn (Y002)", not "Horn (OB00001)").
+  const onYaskawa = await page.evaluate(async () => {
+    const { rulesComments } = await appImport('/src/plc/tidy/comments.ts');
+    const { collectProject } = await appImport('/src/deliverables/collect.ts');
+    const { useProgramStore } = await appImport('/src/store/useProgramStore.ts');
+    const p = rulesComments(collectProject(), true).program;
+    useProgramStore.getState().editLadder(p);
+    return p.rungs.map((r) => r.comment).join('\n');
+  });
+  check(/\(OB0000[0-9A-F]\)/.test(onYaskawa), 'the comments name Yaskawa registers before the remake');
+  await page.getByTestId('upgrade-move-siemens-s7').click();
+  await page.waitForFunction(async () => (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().plcId === 'siemens-s7', null, { timeout: 15000 });
+  const onSiemens = await page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.map((r) => r.comment).join('\n'));
+  check(!/\([IOM][BWLF][0-9A-F]{4,}\)/.test(onSiemens) && /\(Y00\d\)/.test(onSiemens), `the comments follow the remake (${(onSiemens.match(/[^\n]*\(Y00\d\)[^\n]*/) ?? [''])[0].slice(0, 90)})`);
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);
   await browser.close();
   if (fails.length) { console.error(`FAILED (${fails.length})`); process.exit(1); }

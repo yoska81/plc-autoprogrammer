@@ -8,7 +8,7 @@ import { getPart } from '../../electrical/catalog';
 import { makeTable, specLines, pad, type DocRow, type DocTable } from './table';
 import { projectPlcNames } from '../plcTagNames';
 import { exportContext } from '../exportContext';
-import { layoutFor, yaskawaName } from '../../plc/core/profiles/yaskawa';
+import { shownNamer } from '../../plc/core/shownNames';
 
 /**
  * Program analysis for the documents: plain-word names for addresses, the
@@ -57,10 +57,7 @@ export function programInfo(p: ProjectSnapshot): ProgramInfo {
   const wiring = new Map((p.electrical?.ioWiring ?? []).map((w) => [w.address.toUpperCase(), w] as const));
   const name = (a: string) => names.get(a.trim().toUpperCase()) ?? '';
   // Yaskawa: only MPE720 register names, never the app's DS / C operands (an imported program's names are its registers).
-  const mp = p.profile.id === 'yaskawa-mp' ? projectPlcNames(p) : undefined;
-  const at = mp ? { cpuId: p.cpu.id, modules: exportContext(p).modules, tags: p.ladder.tags, layout: layoutFor(p.ladder, p.yaskawaMemory) } : undefined;
-  // A bit a change is about to add (Split's new internal bits) is not in the program yet: its register from the layout.
-  const shown = (a: string) => (mp && at && !/^-?\d+(\.\d+)?$/.test(a.trim()) ? mp(a)?.name ?? yaskawaName(a, at) ?? a : a);
+  const shown = shownNamer(p.profile.id, p.ladder, exportContext(p));
   const ref = (a: string) => { const s = shown(a), n = name(a); return n && n.toUpperCase() !== s.toUpperCase() ? `${n} (${s})` : s; };
   const kind = (a: string): Kind => (p.profile.parseAddress(a)?.kind as Kind | undefined) ?? (/^-?\d+(\.\d+)?$/.test(a.trim()) ? 'constant' : 'unknown');
   const device = (a: string) => wiring.get(a.toUpperCase())?.deviceTag ?? '';

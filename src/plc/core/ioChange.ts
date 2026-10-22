@@ -15,8 +15,9 @@ import type { IOPoint } from '../../types/io';
 import { getCpu, getProfile } from './profiles';
 import { resolveAddresses } from './profile';
 import { moduleSlots } from './modules';
-import { rungAddresses } from './ladder';
-import { ioRemap, remapIsEmpty, type IoRemap } from './ioRemap';
+import { rungAddresses, type LadderProgram } from './ladder';
+import { ioRemap, remapAddress, remapIsEmpty, type IoRemap } from './ioRemap';
+import { renameInComments, shownNamer } from './shownNames';
 import { remapProgram } from './remapProgram';
 import { legacyClickAddresses, legacyToCurrentAddress } from './profiles/click';
 import { ptoPointsFor } from '../../electrical/highSpeedIo';
@@ -147,9 +148,34 @@ export function withIoRemap(change: () => void, undoLabel?: string): string[] {
       useIOStore.setState({ projectIO: useIOStore.getState().projectIO.map((p) => { const k = p.plcAddress?.trim() ? was.parseAddress(p.plcAddress)?.kind : undefined; if (k !== 'input' && k !== 'output') return p; const q = { ...p }; delete q.plcAddress; delete q.addressNote; return q; }) });
     }
   } finally { wrapping--; }
-  const messages = applyIoChange(prevIo, useIOStore.getState().projectIO, prevSetup, plcSetup()).messages;
+  const prevProgram = useProgramStore.getState().ladder;
+  const { remap, messages } = applyIoChange(prevIo, useIOStore.getState().projectIO, prevSetup, plcSetup());
+  followInComments(prevProgram, prevIo, prevSetup, remap);
   if (put) offerUndo(undoLabel!, put);
   return messages;
+}
+
+/** What the shown names of the operands need from the project (the PLC's I/O and memory layout). */
+function namesCtx(io: IOPoint[], setup: PlcSetup) {
+  return { io, addresses: ioAddresses(io, setup), labels: new Map<string, string>(), header: '', extraTags: [], cpuId: setup.cpuId, modules: moduleSlots(setup.modules), yaskawaMemory: useProjectStore.getState().yaskawaMemory };
+}
+
+/**
+ * The comments follow the operands: a rung or tag comment that quotes an operand by the name shown on the old PLC
+ * ("Horn (OB00001)" on a Yaskawa, X001 before the I/O moved) gets the name shown now ("Horn (Y002)"); whole tokens
+ * only, the rest of the text as written.
+ */
+function followInComments(prev: LadderProgram, prevIo: IOPoint[], prevSetup: PlcSetup, remap: IoRemap) {
+  const now = useProgramStore.getState().ladder;
+  if (!now.rungs.length) return;
+  const setup = plcSetup();
+  const before = shownNamer(prevSetup.plcId, prev, namesCtx(prevIo, prevSetup));
+  const after = shownNamer(setup.plcId, now, namesCtx(useIOStore.getState().projectIO, setup));
+  const operands = new Set([...prev.rungs.flatMap((r) => rungAddresses(r)), ...prev.tags.map((t) => t.address)].map((a) => a.trim().toUpperCase()).filter((a) => a && !remap.gone.has(a)));
+  const names = new Map<string, string>();
+  for (const a of operands) { const was = before(a), is = after(remapAddress(a, remap)); if (was !== is && !names.has(was)) names.set(was, is); }
+  const next = renameInComments(now, names);
+  if (next !== now) useProgramStore.getState().editLadder(next);
 }
 
 /** The I/O list, the PLC choice, the program (and versions) and each participant's design as they are now; the returned function puts them back (no remap). */
