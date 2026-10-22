@@ -58,6 +58,9 @@ export interface ReorgPlan {
 
 export interface SealIn { setId: string; rstId: string; address: string; setFirst: boolean }
 
+/** "1 rung", "1,600 rungs". */
+const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+
 const WORD = /^(DS|DD|DH|DF|TXT|SD|MW|DW|ML|MF|MB|D|DB|R|N|F)\d/i;
 const FUNCS = ['Safety', 'Modes', 'Stations', 'Alarms', 'HMI', 'Other'] as const;
 type Func = (typeof FUNCS)[number];
@@ -343,36 +346,28 @@ export function planReorganize(p: ProjectSnapshot): ReorgPlan {
   const list = (ids: Set<string>) => [...ids].map((id) => `rung ${num.get(id)}: ${rungWrites(l.rungs.find((r) => r.id === id)!).map((a) => info.ref(a)).join(', ')}`);
   const blanks = l.rungs.filter((r) => !r.comment.trim()).length + (l.blocks ?? []).filter((b) => !b.description.trim()).length + l.tags.filter((t) => !t.comment.trim()).length;
   const sections: PlanSection[] = [
-    { id: 'remove-internal', title: `Remove ${internal.size} rung(s) that write internal values nothing reads`, note: 'Internal bits and timers no rung, output or HMI tag reads. On by default.', items: list(internal), defaultOn: true },
-    { id: 'remove-registers', title: `Remove ${registers.size} rung(s) that write registers or retentive memory nothing in the project reads`, note: 'Off by default: a SCADA, another PLC or Modbus master may read registers the project does not know about.', items: list(registers), defaultOn: false },
-    { id: 'remove-never', title: `Remove ${never.size} rung(s) that can never be true`, note: 'Off by default: each needs a bit that nothing in the project sets (another device may set it).', items: list(never), defaultOn: false },
-    ...(nr.uncalled.size ? [{ id: 'remove-uncalled' as const, title: `Remove ${nr.uncalled.size} rung(s) of routines the original PLC never calls`, note: 'Off by default. The app runs every block; the PLC runs a routine only when a JSR calls it. Checked against the program without them (what the PLC really runs).', items: [...nr.uncalled].map(([id, why]) => `rung ${num.get(id)}: ${why}`), defaultOn: false }] : []),
-    ...(nr.jumped.size ? [{ id: 'remove-jumped' as const, title: `Remove ${nr.jumped.size} rung(s) an unconditional jump always skips`, note: 'Off by default. The PLC never runs them; the app runs them (it does not jump). Checked against the program without them.', items: [...nr.jumped].map(([id, why]) => `rung ${num.get(id)}: ${why}`), defaultOn: false }] : []),
-    ...(unusedTags.size ? [{ id: 'remove-tags' as const, title: `Remove ${unusedTags.size} tag entr${unusedTags.size === 1 ? 'y' : 'ies'} nothing uses`, note: 'Names and comments of bits, timers and counters no rung, I/O point or HMI tag uses. Registers and retentive memory are kept (another device may read them).', items: [...unusedTags].map((a) => `${a}${l.tags.find((t) => t.address.trim().toUpperCase() === a)?.nickname ? ` ${l.tags.find((t) => t.address.trim().toUpperCase() === a)!.nickname}` : ''}: no rung reads or writes it`), defaultOn: true }] : []),
-    ...(flatten.size ? [{ id: 'flatten' as const, title: `Flatten the paths of ${flatten.size} rung(s)`, note: 'Repeated contacts and paths, paths with a contact and its opposite, and paths that contain a shorter one (A OR (A AND B) is A) go.', items: [...flatten].map((id) => { const r = l.rungs.find((x) => x.id === id)!; return `rung ${num.get(id)}: ${r.branches.length} paths → ${flattenRung(r)!.branches.length}`; }), defaultOn: true }] : []),
-    ...(seals.length ? [{ id: 'seal' as const, title: `Make ${seals.length} SET / RESET pair(s) one seal-in rung`, note: 'Only for a bit set and reset in neighbouring rungs, written nowhere else and not retentive (a seal-in drops at power-up like the bit does).', items: seals.map((x) => `${info.ref(x.address)}: rungs ${num.get(x.setId)} and ${num.get(x.rstId)} → one rung`), defaultOn: true }] : []),
-    ...(splits.size ? [{ id: 'split' as const, title: `Split ${splits.size} long rung(s)`, note: `Rungs with ${MANY_OUTPUTS} or more outputs or ${MANY_BRANCHES} or more paths, a few at a time; internal bits only where the conditions cannot simply be repeated.`, items: splitItems, defaultOn: false }] : []),
-    { id: 'merge', title: `Merge ${merges.length} pair(s) of neighbouring rungs with the same conditions`, note: 'One rung with all the outputs, where neither reads what the other writes.', items: merges.map(([a, b]) => `rungs ${num.get(a)} and ${num.get(b)}`), defaultOn: true },
-    { id: 'reorder', title: keepBlocks ? 'Order the rungs by machine function inside each block' : 'Group the rungs by machine function (one block each)', note: `${keepBlocks ? 'The blocks (drawings) and their order stay: the program is read-only on its original PLC. ' : ''}Every rung that depends on another keeps its order; kept instructions of the original PLC do not move.`, items: [...FUNCS], defaultOn: true },
-    { id: 'rename', title: `Name ${names.size} unnamed internal bit(s) and register(s)`, note: 'Only the names change, never the addresses.', items: [...names].map(([a, n]) => `${a} → ${n}`), defaultOn: true },
-    { id: 'comment', title: `Fill ${blanks} blank comment(s)`, note: 'Rung comments, block descriptions and tag comments, as Add comments does.', items: [], defaultOn: true },
+    { id: 'remove-internal', title: `Remove ${count(internal.size, 'unused rung')}`, note: 'They only set internal values (bits, timers) that nothing else in the program, the outputs or the screen uses. On by default.', items: list(internal), defaultOn: true },
+    { id: 'remove-registers', title: `Remove ${count(registers.size, 'rung')} that only ${registers.size === 1 ? 'fills' : 'fill'} data registers or saved memory`, note: 'Off by default: a SCADA system, another PLC or a Modbus master may read these registers without the app knowing.', items: list(registers), defaultOn: false },
+    { id: 'remove-never', title: `Remove ${count(never.size, 'rung')} that can never switch on`, note: 'Off by default: each waits for a signal nothing in this program sets (another device might set it).', items: list(never), defaultOn: false },
+    ...(nr.uncalled.size ? [{ id: 'remove-uncalled' as const, title: `Remove ${count(nr.uncalled.size, 'rung')} the old PLC never runs (routines nothing calls)`, note: 'Off by default. The old PLC runs a routine only when another routine calls it, and nothing calls these. Checked against the program as the old PLC really runs it.', items: [...nr.uncalled].map(([id, why]) => `rung ${num.get(id)}: ${why}`), defaultOn: false }] : []),
+    ...(nr.jumped.size ? [{ id: 'remove-jumped' as const, title: `Remove ${count(nr.jumped.size, 'rung')} that a jump always skips`, note: 'Off by default. The old PLC always jumps over them. Checked against the program as the old PLC really runs it.', items: [...nr.jumped].map(([id, why]) => `rung ${num.get(id)}: ${why}`), defaultOn: false }] : []),
+    ...(unusedTags.size ? [{ id: 'remove-tags' as const, title: `Remove ${count(unusedTags.size, 'unused name')}`, note: 'Names and comments of bits, timers and counters that nothing uses. Data registers and saved memory keep theirs (another device may read them).', items: [...unusedTags].map((a) => `${a}${l.tags.find((t) => t.address.trim().toUpperCase() === a)?.nickname ? ` ${l.tags.find((t) => t.address.trim().toUpperCase() === a)!.nickname}` : ''}: no rung reads or writes it`), defaultOn: true }] : []),
+    ...(flatten.size ? [{ id: 'flatten' as const, title: `Simplify the conditions of ${count(flatten.size, 'rung')}`, note: 'Repeated contacts and paths, paths that can never be true, and paths already covered by a shorter one are taken out.', items: [...flatten].map((id) => { const r = l.rungs.find((x) => x.id === id)!; return `rung ${num.get(id)}: ${r.branches.length} paths → ${flattenRung(r)!.branches.length}`; }), defaultOn: true }] : []),
+    ...(seals.length ? [{ id: 'seal' as const, title: `Turn ${count(seals.length, 'latch', 'latches')} (SET / RESET) into one self-holding rung`, note: 'Only where it works the same: the bit is set and reset in neighbouring rungs, nothing else writes it, and it is not kept through a power cut.', items: seals.map((x) => `${info.ref(x.address)}: rungs ${num.get(x.setId)} and ${num.get(x.rstId)} → one rung`), defaultOn: true }] : []),
+    ...(splits.size ? [{ id: 'split' as const, title: `Split ${count(splits.size, 'long rung')} into shorter ones`, note: `Rungs with ${MANY_OUTPUTS} or more outputs or ${MANY_BRANCHES} or more paths, a few at a time. Off by default.`, items: splitItems, defaultOn: false }] : []),
+    { id: 'merge', title: `Combine ${count(merges.length, 'pair')} of neighbouring rungs that have the same conditions`, note: 'One rung with all their outputs.', items: merges.map(([a, b]) => `rungs ${num.get(a)} and ${num.get(b)}`), defaultOn: true },
+    { id: 'reorder', title: keepBlocks ? 'Put the rungs in order by machine part, inside each drawing' : 'Group the rungs by machine part (safety, modes, each station, alarms, screen)', note: `${keepBlocks ? 'The drawings and their order stay: the program stays on its original PLC. ' : ''}Rungs that depend on each other keep their order; instructions kept from the old PLC do not move.`, items: [...FUNCS], defaultOn: true },
+    { id: 'rename', title: `Give names to ${count(names.size, 'unnamed value')}`, note: 'Only names change; addresses stay.', items: [...names].map(([a, n]) => `${a} → ${n}`), defaultOn: true },
+    { id: 'comment', title: `Write ${count(blanks, 'missing description')}`, note: 'Rung comments, block descriptions and tag comments, in plain words.', items: [], defaultOn: true },
   ];
-  return { sections, removals: { 'remove-internal': internal, 'remove-registers': registers, 'remove-never': never, 'remove-uncalled': new Set(nr.uncalled.keys()), 'remove-jumped': new Set(nr.jumped.keys()) }, merges, names, keepBlocks, unusedTags, findings, flatten, seals, splits, freeBits };
+  // Only what has something to do (grouping is always offered; descriptions when some are missing).
+  return { sections: sections.filter((x) => x.items.length || x.id === 'reorder' || (x.id === 'comment' && blanks > 0)), removals: { 'remove-internal': internal, 'remove-registers': registers, 'remove-never': never, 'remove-uncalled': new Set(nr.uncalled.keys()), 'remove-jumped': new Set(nr.jumped.keys()) }, merges, names, keepBlocks, unusedTags, findings, flatten, seals, splits, freeBits };
 }
 
 /** The program with the chosen transforms, in a fixed order: remove, merge, reorder, rename, comment. */
 export function applyReorganize(p: ProjectSnapshot, plan: ReorgPlan, chosen: Set<SectionId>): LadderProgram {
   let l: LadderProgram = structuredClone(p.ladder);
-  const drop = new Set<string>();
-  for (const id of ['remove-internal', 'remove-registers', 'remove-never', ...NEVER_RUN] as const) if (chosen.has(id)) plan.removals[id]?.forEach((x) => drop.add(x));
-  // Unread only once the rungs reading it go too: a rung a kept rung still reads stays (one group on, the other off).
-  // Code the PLC never runs (and never-true rungs) goes whatever reads it.
-  const never = new Set([...(plan.removals['remove-never'] ?? []), ...NEVER_RUN.flatMap((id) => (chosen.has(id) ? [...(plan.removals[id] ?? [])] : []))]);
-  for (let changed = true; changed;) {
-    changed = false;
-    const reads = new Set(l.rungs.filter((r) => !drop.has(r.id)).flatMap(realReads));
-    for (const r of l.rungs) if (drop.has(r.id) && !never.has(r.id) && touchedBy(r).some((a) => reads.has(a))) { drop.delete(r.id); changed = true; }
-  }
+  const { drop } = removalPreview(l, plan, chosen);
   l = { ...l, rungs: l.rungs.filter((r) => !drop.has(r.id)), ...(chosen.has('remove-tags') ? { tags: l.tags.filter((t) => !plan.unusedTags.has(t.address.trim().toUpperCase())) } : {}) };
   if (chosen.has('merge')) {
     for (const [a, b] of plan.merges) {
@@ -450,4 +445,44 @@ export function applyReorganize(p: ProjectSnapshot, plan: ReorgPlan, chosen: Set
 export function plcBaseline(p: ProjectSnapshot, plan: ReorgPlan, chosen: Set<SectionId>): LadderProgram {
   const out = new Set(NEVER_RUN.flatMap((id) => (chosen.has(id) ? [...(plan.removals[id] ?? [])] : [])));
   return out.size ? { ...p.ladder, rungs: p.ladder.rungs.filter((r) => !out.has(r.id)) } : p.ladder;
+}
+
+const REMOVALS: SectionId[] = ['remove-internal', 'remove-registers', 'remove-never', ...NEVER_RUN];
+
+/**
+ * The rungs the chosen removals take out, and the ones kept back: a rung whose values a rung that stays still reads
+ * stays (one group on, the other off). Code the PLC never runs (and never-true rungs) goes whatever reads it.
+ */
+export function removalPreview(l: LadderProgram, plan: ReorgPlan, chosen: Set<SectionId>): { drop: Set<string>; keptBack: Set<string> } {
+  const drop = new Set<string>();
+  for (const id of REMOVALS) if (chosen.has(id)) plan.removals[id]?.forEach((x) => drop.add(x));
+  const asked = new Set(drop);
+  const never = new Set([...(plan.removals['remove-never'] ?? []), ...NEVER_RUN.flatMap((id) => (chosen.has(id) ? [...(plan.removals[id] ?? [])] : []))]);
+  for (let changed = true; changed;) {
+    changed = false;
+    const reads = new Set(l.rungs.filter((r) => !drop.has(r.id)).flatMap(realReads));
+    for (const r of l.rungs) if (drop.has(r.id) && !never.has(r.id) && touchedBy(r).some((a) => reads.has(a))) { drop.delete(r.id); changed = true; }
+  }
+  return { drop, keptBack: new Set([...asked].filter((id) => !drop.has(id))) };
+}
+
+/** For a removal section: how many of its rungs go, and how many are kept back, with the chosen sections. */
+export function removalCounts(plan: ReorgPlan, preview: { drop: Set<string>; keptBack: Set<string> }, id: SectionId): { removed: number; keptBack: number } {
+  const ids = [...(plan.removals[id] ?? [])];
+  return { removed: ids.filter((x) => preview.drop.has(x)).length, keptBack: ids.filter((x) => preview.keptBack.has(x)).length };
+}
+
+const REMOVAL_LABEL: Partial<Record<SectionId, string>> = {
+  'remove-internal': 'Unused rungs', 'remove-registers': 'Rungs that only filled data registers', 'remove-never': 'Rungs that could never switch on',
+  'remove-uncalled': 'Rungs the old PLC never ran', 'remove-jumped': 'Rungs a jump always skipped',
+};
+
+/** What the chosen changes did, one plain line each (removals with their real counts). */
+export function describeChanges(plan: ReorgPlan, chosen: Set<SectionId>, preview: { drop: Set<string>; keptBack: Set<string> }): string[] {
+  return plan.sections.filter((x) => chosen.has(x.id)).flatMap((x) => {
+    if (!REMOVALS.includes(x.id)) return [x.title];
+    const c = removalCounts(plan, preview, x.id);
+    if (!c.removed && !c.keptBack) return [];
+    return [`${REMOVAL_LABEL[x.id]}: ${c.removed.toLocaleString('en-US')} removed${c.keptBack ? `, ${c.keptBack.toLocaleString('en-US')} kept (a rung that stays still uses what they set)` : ''}`];
+  });
 }

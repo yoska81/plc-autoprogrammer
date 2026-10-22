@@ -29,7 +29,7 @@ const quick = { random: 60, steps: 40, plant, plantSequences: 40 };
   assert.notDeepEqual(moved.rungs.map((r) => r.id), LADDER.rungs.map((r) => r.id), 'something moved');
   const r = checkEquivalence(LADDER, moved, quick);
   assert.deepEqual(r.differences, [], equivalenceSummary(r));
-  assert.match(equivalenceSummary(r), /^Same behaviour in \d+ test sequences \(\d+ with one input changed, \d+ random[^;]*; 0 differences; \d+ scans, \d+ values compared every scan\)\./);
+  assert.match(equivalenceSummary(r), /^Same behaviour in [\d,]+ test sequences \(0 differences\)\. Details: [\d,]+ with one input changed, [\d,]+ random[^;]*; [\d,]+ scans, [\d,]+ values compared every scan\./);
   console.log(`  example: ${equivalenceSummary(r)} (${Math.round(performance.now() - t0)} ms for both checks)`);
 }
 
