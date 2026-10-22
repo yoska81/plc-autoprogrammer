@@ -87,6 +87,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   const remake = `${await page.getByTestId('upgrade-remake-siemens-s7').innerText()} ${await page.getByTestId('upgrade-remake-same').innerText().catch(() => '')}`;
   check(/Remake for Siemens S7-1200 \/ S7-1500/.test(remake) && /10 of 11 rungs convert/.test(remake) && /1 instruction the app can't read/.test(remake) && !/SEE|call to another drawing/i.test(remake), `the remake line for Siemens (${remake.replace(/\s+/g, ' ')})`);
   check(await page.getByTestId('upgrade-remake').locator('li').count() >= 6, 'a remake line per PLC the app writes');
+  // The numbers to share: counts only (no register, name or comment of the project).
+  await page.getByTestId('upgrade-remake-copy').click();
+  const shared = await page.getByTestId('upgrade-remake-text').inputValue();
+  check(/^ISA Auto Programmer: remake coverage/.test(shared) && /Siemens S7-1200 \/ S7-1500: 10 of 11 rungs convert \(90%\)/.test(shared) && !/\b[IOM][BWLF][0-9A-F]{4,}/.test(shared), `the coverage numbers to copy (${shared.split('\n')[0]})`);
   check(await page.getByTestId('upgrade-export').count() === 0, 'no "Download for …" until a PLC is chosen');
   await page.screenshot({ path: path.join(OUT, '3-read-only.png'), fullPage: true });
   await noClick('/io');
