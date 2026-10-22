@@ -92,7 +92,7 @@ const VENDOR_STEPS: Record<string, (i: LoadGuideInput) => LoadStep[]> = {
     { title: 'Download and run', text: ['Communications > Who Active: select the controller over Ethernet, Download, then switch to Run (Remote Run or the key switch). Keep the machine safe.'] },
   ],
   micro800: (i) => [
-    { title: 'Create the program in Connected Components Workbench', text: ['CCW has no program import for Micro800: add a Structured Text program to the project and paste the .st file into it.'], files: has(i, '_micro800.st') },
+    { title: 'Create the program in Connected Components Workbench', text: ['CCW has no documented ladder import for Micro800 (its exchange files are not a published format): add a Structured Text program to the project and paste the .st file into it, or redraw it in ladder from the printed ladder.'], files: has(i, '_micro800.st') },
     { title: 'Declare the variables', text: ['Enter the variables from the variable list in the program\'s variable grid (name, data type, comment).'], files: has(i, '_micro800_variables.csv') },
     { title: 'Download and run', text: ['Build, connect to the controller over Ethernet, download and switch to Run. Keep the machine safe.'] },
   ],

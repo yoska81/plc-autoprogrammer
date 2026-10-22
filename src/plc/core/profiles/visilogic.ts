@@ -262,7 +262,7 @@ const KNOWLEDGE = (c: CpuModel) => {
 };
 
 const EXPORTERS: ProgramExporter[] = [
-  { id: 'visilogic-nets', label: 'Net listing to enter in VisiLogic (no program import exists)', fileName: (b) => `${b}_visilogic_nets.txt`, build: (p, c) => visiLogicListing(p, c) },
+  { id: 'visilogic-nets', label: 'Net listing to enter in VisiLogic (it imports only its own subroutine files)', fileName: (b) => `${b}_visilogic_nets.txt`, build: (p, c) => visiLogicListing(p, c) },
   { id: 'visilogic-operands', label: 'Operand descriptions (VisiLogic Excel import layout)', fileName: (b) => `${b}_visilogic_operands.csv`, build: (p, c) => visiLogicOperandsCsv(p, c) },
 ];
 
@@ -303,7 +303,7 @@ export const visionProfile: PlcProfile = {
   mnemonics: VISILOGIC_MNEMONICS,
   ioTag: (a, _modules, cpuId) => visiIo(a, cpuId),
   importSteps: [
-    'VisiLogic has no ladder or program import: enter each net from the net listing (or the printable ladder) in the Ladder editor. The operand map at the top says which VisiLogic operand each app address became.',
+    'VisiLogic imports only its own exported subroutine files (.vlx, a format Unitronics does not publish), so no other program can be imported: enter each net from the net listing (or the printable ladder) in the Ladder editor. The operand map at the top says which VisiLogic operand each app address became.',
     'Open the operands CSV in Excel and save it as .xls with the sheet named "Operands" (header in row 2); then Edit › Import Operand Descriptions names every operand.',
     'In Hardware Configuration, set the snap-in / on-board I/O and link each analog input to the MI named in the listing; set the input jumpers (npn / pnp, analog) as the electrical drawings show.',
     'Download to the controller and test every step with the machine in a safe state.',
