@@ -80,6 +80,14 @@ static class Tests
         public List<PcInterfaceInfo> Interfaces = new List<PcInterfaceInfo> { new PcInterfaceInfo { Name = "Intel(R) Ethernet Connection I219-LM", Number = 1, Targets = { "1 X1" } } };
         public IList<PcInterfaceInfo> DownloadInterfaces() { Calls.Add("interfaces"); return Interfaces; }
         public string PlcAddress() => "192.168.0.1";
+        public List<KeyValuePair<string, string>> Blocks = new List<KeyValuePair<string, string>>();
+        public IList<KeyValuePair<string, string>> ExportBlocks(Action<string> progress, Action<string, string> failed)
+        {
+            Calls.Add("export");
+            failed("Secret_FB", "know-how protected: TIA Portal does not give its content to other programs");
+            return Blocks;
+        }
+        public IList<TagRow> ReadTags() { Calls.Add("readTags"); return Tags.Values.ToList(); }
         public DownloadChoices Downloaded;
         public DownloadOutcome Download(string pc, int number, string target, DownloadChoices c, Action<string> progress)
         {
@@ -390,6 +398,23 @@ static class Tests
             True(!text.Contains("s3cret-pw") && text.Contains("\"password\":\"***\"") && text.Contains("password given"), text);
             Eq("***", Protocol.ForLog(new Dictionary<string, object> { ["password"] = "x" })["password"]);
             Eq(null, Protocol.ForLog(new Dictionary<string, object> { ["password"] = null })["password"]);
+        });
+
+        Test("read back: the blocks as SimaticML, the tags, what TIA kept back; nothing saved", () =>
+        {
+            var output = new StringWriter();
+            var tia = new FakeTia { Plc = new PlcInfo { Name = "PLC_1", OrderNumber = "6ES7 214-1AG40-0XB0", Firmware = "V4.6" } };
+            tia.Blocks.Add(new KeyValuePair<string, string>("Main", "<Document><SW.Blocks.OB ID=\"0\"/></Document>"));
+            tia.Tags["Start"] = new TagRow { Name = "Start", DataType = "Bool", Address = "%I0.0", Comment = "Start button" };
+            var p = Commands.Register(new Protocol(output), ReadyPc(), api => tia);
+            var m = Talk(p, output, "{\"id\":1,\"cmd\":\"open\",\"args\":{\"name\":\"L\"}}", "{\"id\":2,\"cmd\":\"readBack\"}");
+            var r = (Dictionary<string, object>)Answer(m, 2)["result"];
+            var b = ((List<object>)r["blocks"]).Cast<Dictionary<string, object>>().Single();
+            Eq("Main", b["name"]); True(((string)b["xml"]).Contains("SW.Blocks.OB"), (string)b["xml"]);
+            Eq("Secret_FB", ((Dictionary<string, object>)((List<object>)r["failed"])[0])["name"]);
+            var t = ((List<object>)r["tags"]).Cast<Dictionary<string, object>>().Single();
+            Eq("%I0.0", t["address"]); Eq("Start button", t["comment"]);
+            Eq(0, tia.Calls.Count(c => c == "save"), "read only");
         });
 
         Test("download questions: answered from the user's choices, anything else stops it", () =>

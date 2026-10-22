@@ -32,7 +32,20 @@ namespace ClickBridge
         static IEnumerable<AutomationElement> TopWindows(int pid) =>
             AutomationElement.RootElement.FindAll(TreeScope.Children, new PropertyCondition(AutomationElement.ProcessIdProperty, pid)).Cast<AutomationElement>();
 
-        public IList<string> Windows(int pid) => TopWindows(pid).Select(w => w.Current.Name).ToList();
+        public IList<string> Windows(int pid) =>
+            TopWindows(pid).SelectMany(w => new[] { w.Current.Name }.Concat(w.FindAll(TreeScope.Children, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window)).Cast<AutomationElement>().Select(c => c.Current.Name))).ToList();
+
+        public void Show(string window)
+        {
+            var w = El(window);
+            var h = new IntPtr(w.Current.NativeWindowHandle);
+            Log.Write($"ui show {Describe(w)}");
+            if (h == IntPtr.Zero) return;
+            if (IsIconic(h)) ShowWindow(h, 9 /* SW_RESTORE */);
+            ShowWindow(h, 3 /* SW_MAXIMIZE */);
+            SetForegroundWindow(h);
+            Thread.Sleep(300);
+        }
 
         public string Window(int pid, string titlePattern, int timeoutMs)
         {
@@ -197,6 +210,8 @@ namespace ClickBridge
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
         [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
+        [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int cmd);
+        [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
         [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
         [DllImport("user32.dll")] static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
     }

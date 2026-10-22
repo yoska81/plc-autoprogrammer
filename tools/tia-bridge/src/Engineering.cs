@@ -111,6 +111,10 @@ namespace TiaBridge
         /// <summary>The PC interfaces (PN/IE) that reach the PLC, and the PLC's IP address in the project (null: none set).</summary>
         IList<PcInterfaceInfo> DownloadInterfaces();
         string PlcAddress();
+        /// <summary>Every program block of the PLC exported as SimaticML (name, xml), in the project's order; failed(name, why) for one TIA does not export (know-how protected, not compiled). Read only.</summary>
+        IList<KeyValuePair<string, string>> ExportBlocks(Action<string> progress, Action<string, string> failed);
+        /// <summary>Every PLC tag of every tag table. Read only.</summary>
+        IList<TagRow> ReadTags();
         /// <summary>Downloads hardware and software to the PLC through a PC interface; TIA's questions answered by DownloadPolicy.</summary>
         DownloadOutcome Download(string pcInterface, int number, string target, DownloadChoices choices, Action<string> progress);
         void Save();

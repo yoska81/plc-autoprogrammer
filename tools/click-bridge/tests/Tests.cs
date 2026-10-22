@@ -59,8 +59,17 @@ static class Tests
         public void DoubleClick(string el) => Did.Add($"double {el}");
         public void Check(string el, bool on) => Did.Add($"check {el}={on}");
         public void Select(string el, string item) => Did.Add($"select {el}={item}");
-        public void Menu(string window, IList<string> path) => Did.Add($"menu {string.Join(">", path)}");
-        public void Keys(string window, string keys) => Did.Add($"keys {keys}");
+        /// <summary>CLICK 4: a ribbon, no menu UI Automation can see.</summary>
+        public bool NoMenus;
+        public void Menu(string window, IList<string> path) { if (NoMenus) throw new BridgeError($"CLICK has no menu \"{path[0]}\"."); Did.Add($"menu {string.Join(">", path)}"); }
+        public void Show(string window) => Did.Add($"show {window}");
+        /// <summary>A window that opens when keys are typed (CLICK 4's Ctrl+N opens the CPU dialog).</summary>
+        public Dictionary<string, string> KeysOpen = new Dictionary<string, string>();
+        public void Keys(string window, string keys)
+        {
+            Did.Add($"keys {keys}");
+            if (KeysOpen.TryGetValue(keys, out string opens)) Controls[opens] = new List<(string, string, string)> { ("", "OK", "Button") };
+        }
         public int ForegroundProcess() => FrontAt != null ? FrontAt(++_calls) : Front;
         public string Dump(string window) => string.Join("\n", Controls[window].Select(c => $"{c.type} \"{c.name}\" id={c.id}"));
     }
@@ -145,12 +154,11 @@ static class Tests
             }
         });
 
-        Test("runner: a control that is not there names the step, the windows open; nothing saved", () =>
+        Test("runner: a control that is not there: one plain sentence naming the step; nothing saved", () =>
         {
             var ui = Click();
             var e = Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"window\",\"title\":\"^Select a CPU\"},{\"do\":\"click\",\"find\":{\"name\":\"^Apply$\",\"type\":\"Button\"},\"say\":\"Apply the CPU\"}]")));
-            True(e.Message.StartsWith("Step 2 (Apply the CPU) did not work: no control Button \"^Apply$\" in the window"), e.Message);
-            True(e.Message.Contains("\"Select a CPU Module\"") && e.Message.Contains("Send us the log"), e.Message);
+            Eq("CLICK: could not do \"Apply the CPU\" (no control Button \"^Apply$\" in the window). Nothing was saved.", e.Message);
             e = Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"keys\",\"keys\":\"x\"}]")));
             True(e.Message.Contains("names no window first"), e.Message);
         });
@@ -251,6 +259,62 @@ static class Tests
             True(m.FindIndex(x => Equals(x.GetValueOrDefault("id"), 9.0)) < m.FindIndex(x => Equals(x.GetValueOrDefault("id"), 4.0) && x.ContainsKey("ok")), "stop answered before the run ends");
             True(pressKey != null, "the Pause key is watched once a run starts");
             Directory.Delete(folder, true);
+        });
+
+        Test("runner: oneOf (CLICK 4: no menus) tries the File menu, then Ctrl+N, and keeps the one that works; logs the windows", () =>
+        {
+            var ui = Click();
+            ui.NoMenus = true;
+            ui.Controls.Remove("Select a CPU Module");
+            ui.KeysOpen["^n"] = "Select a CPU Module";
+            var steps = Plan("[{\"do\":\"window\",\"title\":\"^CLICK\"},{\"do\":\"oneOf\",\"what\":\"New project\",\"options\":[" +
+                "{\"label\":\"File menu\",\"steps\":[{\"do\":\"menu\",\"path\":[\"File\",\"New Project\"]},{\"do\":\"window\",\"title\":\"^Select a CPU\",\"timeoutMs\":0}]}," +
+                "{\"label\":\"Ctrl+N\",\"steps\":[{\"do\":\"keys\",\"keys\":\"^n\"},{\"do\":\"window\",\"title\":\"^Select a CPU\",\"timeoutMs\":0}]}]}," +
+                "{\"do\":\"click\",\"find\":{\"type\":\"Button\",\"name\":\"^OK$\"}}]");
+            new Runner(ui, 42, CancellationToken.None, _ => { }) { Version = "4.00" }.Run(steps);
+            True(ui.Did.Contains("keys ^n") && ui.Did.Contains("press Select a CPU Module/OK"), string.Join(" | ", ui.Did));
+            True(ui.Did.IndexOf("keys {ESC}") < ui.Did.IndexOf("keys ^n"), "the way that did not work is closed first: " + string.Join(" | ", ui.Did));
+        });
+
+        Test("runner: oneOf where nothing works says what it tried, in one sentence; Stop is not tried around", () =>
+        {
+            var ui = Click();
+            ui.NoMenus = true;
+            ui.Controls.Remove("Select a CPU Module");
+            var steps = Plan("[{\"do\":\"window\",\"title\":\"^CLICK\"},{\"do\":\"oneOf\",\"what\":\"New project\",\"options\":[" +
+                "{\"label\":\"File menu\",\"steps\":[{\"do\":\"menu\",\"path\":[\"File\",\"New Project\"]}]}," +
+                "{\"label\":\"Ctrl+N\",\"steps\":[{\"do\":\"keys\",\"keys\":\"^n\"},{\"do\":\"window\",\"title\":\"^Select a CPU\",\"timeoutMs\":0}]}]}]");
+            try { new Runner(ui, 42, CancellationToken.None, _ => { }) { Version = "4.00" }.Run(steps); throw new Exception("should fail"); }
+            catch (BridgeError e) { Eq("CLICK 4.00: could not find New project (tried: File menu, Ctrl+N). Nothing was saved.", e.Message); }
+            using (var cts = new CancellationTokenSource())
+            {
+                cts.Cancel();
+                try { new Runner(ui, 42, cts.Token, _ => { }).Run(steps); throw new Exception("should stop"); }
+                catch (BridgeError e) { True(e.Message.StartsWith("Stopped at step 1"), e.Message); }
+            }
+        });
+
+        Test("runner: each window is recorded in the log the first time a step opens it; every window on a failure", () =>
+        {
+            var file = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"click-log-{Guid.NewGuid():N}.log");
+            Log.Open(file);
+            var ui = Click();
+            new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"window\",\"title\":\"^Select a CPU\"},{\"do\":\"window\",\"title\":\"^Select a CPU\"},{\"do\":\"click\",\"find\":{\"name\":\"^OK$\"}}]"));
+            string text = System.IO.File.ReadAllText(file);
+            Eq(1, System.Text.RegularExpressions.Regex.Matches(text, "controls of \"\\^Select a CPU\" \\(recorded").Count, "once: " + text);
+            True(text.Contains("ComboBox \"CPU\" id=cboCpu"), text);
+            Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"window\",\"title\":\"^Select a CPU\"},{\"do\":\"click\",\"find\":{\"name\":\"^Apply$\"}}]")));
+            text = System.IO.File.ReadAllText(file);
+            True(text.Contains("controls of \"CLICK Programming Software - [Untitled]\":") && text.Contains("controls of \"Select a CPU Module\":"), "every window on a failure: " + text);
+        });
+
+        Test("runner: a save step inside a oneOf is refused before the run", () =>
+        {
+            var ui = Click();
+            var steps = Plan("[{\"do\":\"window\",\"title\":\"^CLICK\"},{\"do\":\"oneOf\",\"what\":\"x\",\"options\":[{\"label\":\"a\",\"steps\":[{\"do\":\"keys\",\"keys\":\"^s\"}]}]}]");
+            try { new Runner(ui, 42, CancellationToken.None, _ => { }).Run(steps); throw new Exception("should refuse"); }
+            catch (BridgeError e) { True(e.Message.Contains("never saves"), e.Message); }
+            True(!ui.Did.Any(d => d.StartsWith("keys")), "nothing typed");
         });
 
         Test("commands: no CLICK installed says how to get it; run before start says to open CLICK", () =>

@@ -12,7 +12,7 @@ import Notice from './components/Notice.tsx'
 import './plc/core/ioChange'
 import './hmi/ioParticipant'
 import {
-  IOPage, ProgramPage, ExportPage, SettingsPage, ProjectDataPage, PlcSetupPage, PrintPage, ImportPage, ElectricalPage, PrintElectricalPage, SpecPage, HmiPage, ReviewPage, SimulatePage, OnlinePage, EquipmentPage, NewProjectPage, SourcingPage, EngineerPage, CommissioningPage, RedlinesPage,
+  IOPage, ProgramPage, ExportPage, SettingsPage, ProjectDataPage, PlcSetupPage, PrintPage, ImportPage, ElectricalPage, PrintElectricalPage, SpecPage, HmiPage, ReviewPage, SimulatePage, OnlinePage, EquipmentPage, NewProjectPage, SourcingPage, EngineerPage, CommissioningPage, RedlinesPage, TestCardPage,
 } from './pages/lazyPages'
 import { preloadPagesWhenIdle, preloadRoute } from './pages/lazyPages'
 
@@ -66,6 +66,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="project" element={<ProjectDataPage />} />
             <Route path="commissioning" element={<CommissioningPage />} />
             <Route path="redlines" element={<RedlinesPage />} />
+            <Route path="test-card" element={<TestCardPage />} />
           </Route>
         </Routes>
       </Suspense>

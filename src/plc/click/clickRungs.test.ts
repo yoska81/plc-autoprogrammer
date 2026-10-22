@@ -24,8 +24,8 @@ assert.deepEqual(p1.leftForYou, []);
 const s = p1.steps;
 assert.equal(s[1].keys, km.newRung);
 assert.match(s[1].say!, /^Rung 1: Motor run$/);
-const opened = s.filter((x) => x.do === 'doubleClick').map((x) => x.find!.name);
-assert.deepEqual(opened, ['^NO Contact', '^NC Contact', '^NO Contact', '^Out'], 'the instructions in order: row 1, row 2, the output');
+const opened = s.filter((x) => x.do === 'doubleClick').map((x) => x.find!.name!);
+assert.deepEqual(opened.map((x) => ['Contact (NO)', 'Contact (NC)', 'Out', 'NO Contact', 'NC Contact'].filter((n) => new RegExp(x).test(n)).join('|')), ['Contact (NO)|NO Contact', 'Contact (NC)|NC Contact', 'Contact (NO)|NO Contact', 'Out'], 'the instructions in order: row 1, row 2, the output (CLICK 4 and CLICK 3 names)');
 const texts = s.filter((x) => x.do === 'setText').map((x) => x.text);
 assert.deepEqual(texts, ['X001', 'X002', 'Y001', 'Y001', 'Motor run'], 'addresses without their nickname; the comment last');
 // cursor: row 1 col 1 → (a dialog leaves it one to the right) col 2, already there; row 2 col 1; back on that row's
@@ -55,6 +55,12 @@ const turns = p3.steps.filter((x) => x.do === 'waitUser');
 assert.equal(turns.length, 2);
 assert.match(turns[0].text!, /^Type rung 2 \(Run hours\) in CLICK from the entry sheet/);
 assert.ok(p3.steps.indexOf(turns[1]) < p3.steps.findIndex((x) => x.say === 'Rung 4'), 'the rungs stay in order');
+// one click: the user's rungs are left out of the run and listed, each with the rung it goes after
+const p4 = rungsPlan(prog([sealIn, retentive, raw, timer]), labels, km, 'list');
+assert.equal(p4.entered, 2);
+assert.ok(!p4.steps.some((x) => x.do === 'waitUser'), 'nothing waits for the user');
+assert.deepEqual(p4.leftForYou.map((x) => [x.number, x.after]), [[2, 1], [3, 1]]);
+assert.ok(p4.steps.some((x) => x.say === 'Rung 4') && !p4.steps.some((x) => /^Rung [23]\b/.test(x.say ?? '')));
 
 assert.equal(value('X001 (Start)'), 'X001');
 assert.equal(value('500'), '500');

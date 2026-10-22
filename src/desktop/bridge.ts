@@ -94,18 +94,24 @@ export interface DwgReaderBridge {
   read(files: { name: string; bytes: Uint8Array }[]): Promise<{ ok: true; files: { name: string; text: string; version?: string | null; warnings?: string[] }[] } | { ok: false; notConfigured?: boolean; error: string }>;
 }
 
+/** electron/claudeConfig.cjs: the Claude app is installed; the helper is in its settings, as this installation has it. */
+export interface ClaudeHelperStatus { claude: boolean; connected: boolean; current: boolean; file: string; error?: string }
+
 export interface IsaDesktop {
   /** Always true inside the desktop app. */
   isDesktop?: boolean;
   /** App version (package.json). */
   version?: string;
+  /** Updates of the desktop app (electron/updater.cjs). */
+  update?: UpdateBridge;
   print(job: DesktopPrintJob): Promise<DesktopPrintResult>;
   listPrinters?(): Promise<DesktopPrinter[]>;
   /** Native Save dialog, then write the file. */
   saveFile?(name: string, bytes: Uint8Array): Promise<DesktopSaveResult>;
-  /** A project file (.isap) opened from Explorer (double-click / "Open with"). */
+  /** A project file (.isap) opened from Explorer (double-click / "Open with"), or handed over from the web page
+   * (no path; then: 'program', the page to go to). */
   /** Returns an unsubscribe (older app builds return nothing). */
-  onOpenFile?(cb: (name: string, bytes: Uint8Array, filePath: string) => void): (() => void) | void;
+  onOpenFile?(cb: (name: string, bytes: Uint8Array, filePath: string, then?: 'program') => void): (() => void) | void;
   /** Closing the window waits for `flush` (the projects' last writes to IndexedDB), at most 10 s. */
   onFlushStorage?(flush: () => Promise<void>): void;
   /** Write again to a file chosen earlier in a Save dialog (or opened from Explorer). */
@@ -116,10 +122,14 @@ export interface IsaDesktop {
   modbus?: ModbusBridge;
   /** DWG import (desktop app only; older builds don't have it). */
   dwg?: DwgReaderBridge;
+  /** The ISA PLC Helper in the Claude desktop app's settings (Send from the web page; older builds don't have it). */
+  claudeHelper?: { status(): Promise<ClaudeHelperStatus>; set(on: boolean): Promise<ClaudeHelperStatus> };
   /** Send to TIA Portal through TIA Openness (Windows desktop app only; older builds don't have it). */
   tia?: TiaBridge;
   /** Send to CLICK: drives CLICK Programming Software while the user watches (Windows desktop app only). */
   click?: ClickBridge;
+  codesys?: CodesysBridge;
+  studio5000?: Studio5000Bridge;
 }
 
 /** The CLICK bridge (electron/clickBridge.cjs → tools/click-bridge/ClickBridge.exe): the same shape as TiaBridge. */
@@ -127,7 +137,53 @@ export interface ClickBridge {
   call(cmd: 'detect', args?: Record<string, never>): Promise<ClickDetect>;
   call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
   logPath(): Promise<string>;
+  /** Shows the log file in Explorer (to send it to support). Older desktop apps lack it. */
+  showLog?(): Promise<boolean>;
   onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** The CODESYS bridge (electron/codesysBridge.cjs → tools/codesys-bridge/CodesysBridge.exe): the same shape. */
+export interface CodesysBridge {
+  call(cmd: 'detect', args?: Record<string, never>): Promise<CodesysDetect>;
+  call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
+  logPath(): Promise<string>;
+  showLog(): Promise<boolean>;
+  /** The user's CODESYS project from Windows' Open dialog (null: cancelled). */
+  pickProject(): Promise<string | null>;
+  onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** The Studio 5000 bridge (electron/studio5000Bridge.cjs → tools/studio5000-bridge/Studio5000Bridge.exe): the same shape. */
+export interface Studio5000Bridge {
+  call(cmd: 'detect', args?: Record<string, never>): Promise<Studio5000Detect>;
+  call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
+  logPath(): Promise<string>;
+  showLog(): Promise<boolean>;
+  /** The user's Studio 5000 project (.ACD) from Windows' Open dialog (null: cancelled). */
+  pickProject(): Promise<string | null>;
+  onProgress(cb: (p: { id: number; text: string }) => void): () => void;
+}
+
+/** Studio 5000 and the Logix Designer SDK on this PC (tools/studio5000-bridge/src/StudioDetect.cs). */
+export interface Studio5000Detect {
+  /** Logix Designer and the SDK's Python client are there. */
+  ready: boolean;
+  logix: { name: string; version: string }[];
+  /** The SDK's folder (null: not installed). */
+  sdk: string | null;
+  /** Which Python has the SDK's client (null: none). */
+  python: string | null;
+  projectsDir: string;
+  steps: string[];
+}
+
+/** CODESYS on this PC (tools/codesys-bridge/src/CodesysDetect.cs), newest first. */
+export interface CodesysDetect {
+  ready: boolean;
+  installs: { name: string; version: string; exe: string; profile: string }[];
+  /** Where the app's new CODESYS projects go (Documents\ISA Auto Programmer\CODESYS). */
+  projectsDir: string;
+  steps: string[];
 }
 
 /** CLICK Programming Software on this PC (tools/click-bridge/src/ClickDetect.cs), newest first. */
@@ -149,6 +205,8 @@ export interface TiaBridge {
   call(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
   /** Where the bridge's log is (to send it to support). */
   logPath(): Promise<string>;
+  /** Shows the log file in Explorer. Older desktop apps lack it. */
+  showLog?(): Promise<boolean>;
   /** Returns an unsubscribe. */
   onProgress(cb: (p: { id: number; text: string }) => void): () => void;
 }
@@ -177,4 +235,26 @@ declare global {
 /** The desktop bridge, when running inside the Windows app. */
 export function desktopBridge(): IsaDesktop | null {
   return typeof window !== 'undefined' && window.isaDesktop ? window.isaDesktop : null;
+}
+
+/** Where the desktop app's update stands. 'off': not a packaged app (development) and no test feed. */
+export interface UpdateState {
+  status: 'off' | 'idle' | 'checking' | 'none' | 'downloading' | 'ready' | 'error';
+  /** Version running now. */
+  current: string;
+  /** Version found / downloaded. */
+  version?: string | null;
+  percent?: number;
+  /** Plain-words reason (status 'error'). */
+  message?: string;
+  /** The last check was asked for by the user ("Check for updates"): say the result even when there is none. */
+  manual?: boolean;
+}
+
+export interface UpdateBridge {
+  state(): Promise<UpdateState>;
+  check(): Promise<UpdateState>;
+  /** Closes the app (its usual save checks) and installs; false when the user called it off. */
+  install(): Promise<boolean>;
+  onState(cb: (s: UpdateState) => void): () => void;
 }

@@ -34,6 +34,7 @@ e2e/out-field/
 e2e/out-photos/
 e2e/out-journeys/
 e2e/out-click-online/
+e2e/out-desktop-update/
 e2e/out-troubleshoot/
 e2e/out-yaskawa/
 e2e/out-enclosure-fit/
@@ -82,3 +83,18 @@ tools/click-bridge/obj/
 tools/click-bridge/tests/bin/
 tools/click-bridge/tests/obj/
 resources/click-bridge/
+
+# CODESYS bridge: built by scripts/build-codesys-bridge.cjs into resources/codesys-bridge for the installer
+tools/codesys-bridge/bin/
+tools/codesys-bridge/obj/
+tools/codesys-bridge/tests/bin/
+tools/codesys-bridge/tests/obj/
+resources/codesys-bridge/
+
+# Studio 5000 bridge: built by scripts/build-studio5000-bridge.cjs into resources/studio5000-bridge for the installer
+tools/studio5000-bridge/bin/
+tools/studio5000-bridge/obj/
+tools/studio5000-bridge/tests/bin/
+tools/studio5000-bridge/tests/obj/
+tools/studio5000-bridge/tests/fake_sdk/**/__pycache__/
+resources/studio5000-bridge/

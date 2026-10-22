@@ -12,6 +12,17 @@ const mb = async (op, ...args) => {
 contextBridge.exposeInMainWorld('isaDesktop', {
   isDesktop: true,
   version: ipcRenderer.sendSync('isa:version'),
+  // Updates (electron/updater.cjs): the state, a check by the user, Restart to install; onState returns an unsubscribe.
+  update: {
+    state: () => ipcRenderer.invoke('isa:update-state'),
+    check: () => ipcRenderer.invoke('isa:update-check'),
+    install: () => ipcRenderer.invoke('isa:update-install'),
+    onState: (cb) => {
+      const h = (_e, s) => cb(s);
+      ipcRenderer.on('isa:update-state', h);
+      return () => ipcRenderer.removeListener('isa:update-state', h);
+    },
+  },
   print: (job) => ipcRenderer.invoke('isa:print', job),
   listPrinters: () => ipcRenderer.invoke('isa:list-printers'),
   saveFile: (name, bytes) => ipcRenderer.invoke('isa:save-file', name, bytes),
@@ -23,7 +34,7 @@ contextBridge.exposeInMainWorld('isaDesktop', {
   },
   // Returns an unsubscribe: a page that registers again (re-render) must not open one file twice.
   onOpenFile: (cb) => {
-    const h = (_e, name, bytes, filePath) => cb(name, bytes, filePath);
+    const h = (_e, name, bytes, filePath, then) => cb(name, bytes, filePath, then);
     ipcRenderer.on('isa:open-file', h);
     return () => { ipcRenderer.removeListener('isa:open-file', h); };
   },
@@ -45,6 +56,7 @@ contextBridge.exposeInMainWorld('isaDesktop', {
   tia: {
     call: async (cmd, args) => { const r = await ipcRenderer.invoke('isa:tia', cmd, args); if (!r.ok) throw new Error(r.error); return r.value; },
     logPath: () => ipcRenderer.invoke('isa:tia-log'),
+    showLog: () => ipcRenderer.invoke('isa:tia-show-log'),
     onProgress: (cb) => {
       const h = (_e, p) => cb(p);
       ipcRenderer.on('isa:tia-progress', h);
@@ -55,10 +67,40 @@ contextBridge.exposeInMainWorld('isaDesktop', {
   click: {
     call: async (cmd, args) => { const r = await ipcRenderer.invoke('isa:click', cmd, args); if (!r.ok) throw new Error(r.error); return r.value; },
     logPath: () => ipcRenderer.invoke('isa:click-log'),
+    showLog: () => ipcRenderer.invoke('isa:click-show-log'),
     onProgress: (cb) => {
       const h = (_e, p) => cb(p);
       ipcRenderer.on('isa:click-progress', h);
       return () => ipcRenderer.removeListener('isa:click-progress', h);
+    },
+  },
+  // Send to CODESYS (electron/codesysBridge.cjs): the same shape, and the Open dialog for the user's project.
+  codesys: {
+    call: async (cmd, args) => { const r = await ipcRenderer.invoke('isa:codesys', cmd, args); if (!r.ok) throw new Error(r.error); return r.value; },
+    logPath: () => ipcRenderer.invoke('isa:codesys-log'),
+    showLog: () => ipcRenderer.invoke('isa:codesys-show-log'),
+    pickProject: () => ipcRenderer.invoke('isa:codesys-pick'),
+    onProgress: (cb) => {
+      const h = (_e, p) => cb(p);
+      ipcRenderer.on('isa:codesys-progress', h);
+      return () => ipcRenderer.removeListener('isa:codesys-progress', h);
+    },
+  },
+  // Settings › Send from the web page: the ISA PLC Helper in the Claude desktop app (electron/claudeConfig.cjs)
+  claudeHelper: {
+    status: () => ipcRenderer.invoke('isa:claude-helper-status'),
+    set: (on) => ipcRenderer.invoke('isa:claude-helper-set', on),
+  },
+  // Send to Studio 5000 (electron/studio5000Bridge.cjs): the same shape as codesys.
+  studio5000: {
+    call: async (cmd, args) => { const r = await ipcRenderer.invoke('isa:studio5000', cmd, args); if (!r.ok) throw new Error(r.error); return r.value; },
+    logPath: () => ipcRenderer.invoke('isa:studio5000-log'),
+    showLog: () => ipcRenderer.invoke('isa:studio5000-show-log'),
+    pickProject: () => ipcRenderer.invoke('isa:studio5000-pick'),
+    onProgress: (cb) => {
+      const h = (_e, p) => cb(p);
+      ipcRenderer.on('isa:studio5000-progress', h);
+      return () => ipcRenderer.removeListener('isa:studio5000-progress', h);
     },
   },
   modbus: {

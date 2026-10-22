@@ -5,6 +5,7 @@ import { useProjectStore } from '../../../store/useProjectStore';
 import { isUnreadBox } from '../mpe720';
 import { applyUpgrade } from './applyUpgrade';
 import PrintoutReader from './PrintoutReader';
+import ReadFromTia from './ReadFromTia';
 import type { UpgradePlan } from '../upgrade';
 
 const ACCEPT = '.l5x,.L5X,.l5k,.L5K,.xml,.st,.scl,.csv,.txt,.il,.sdf,.awl,.stl,.acd,.ACD,.rss,.ckp,.ap13,.ap14,.ap15,.ap16,.ap17,.ap18,.ap19,.ap20,.s7p,.gx3,.gxw,.isp,.vlp,.ulpr,.ccwsln,.project,.mwt,.zwt,.pcwex,.jbi,.JBI,.ymw7,.YMW7,.emtp';
@@ -35,15 +36,19 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
   const read = async (list: FileList | null) => {
     const files = [...(list ?? [])];
     if (!files.length) return;
+    await readFiles(`${files.map((f) => f.name).join(', ')} (${(files.reduce((n, f) => n + f.size, 0) / 1e6).toFixed(1)} MB)`, () => Promise.all(files.map(async (f) => {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      return BINARY.test(f.name) ? { name: f.name, text: '', bytes } : { name: f.name, text: decodeFile(f.name, bytes) };
+    })));
+  };
+
+  /** Reads the files of one program (chosen here, or read from TIA Portal). */
+  const readFiles = async (label: string, files: () => Promise<{ name: string; text: string; bytes?: Uint8Array }[]>) => {
     setError(null); setImp(null);
-    setBusy(`Reading ${files.map((f) => f.name).join(', ')} (${(files.reduce((n, f) => n + f.size, 0) / 1e6).toFixed(1)} MB)…`);
+    setBusy(`Reading ${label}…`);
     try {
-      const texts = await Promise.all(files.map(async (f) => {
-        const bytes = new Uint8Array(await f.arrayBuffer());
-        return BINARY.test(f.name) ? { name: f.name, text: '', bytes } : { name: f.name, text: decodeFile(f.name, bytes) };
-      }));
       // a long program takes seconds to read: off the main thread
-      const { program, main } = await parseOffThread({ op: 'program', files: texts });
+      const { program, main } = await parseOffThread({ op: 'program', files: await files() });
       setImp(program);
       setFileText(main.text || null);
     } catch (e) {
@@ -76,6 +81,7 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
           <span className="text-xs text-gray-400 mt-1">.L5X · .L5K · PLCopen .xml · .scl · .st · Mitsubishi GX Works .csv · Delta / Inovance / Xinje instruction list · CLICK .csv · Yaskawa .YMW7</span>
           <input data-testid="program-file" type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { void read(e.target.files); e.target.value = ''; }} />
         </label>
+        <ReadFromTia disabled={Boolean(busy)} onFiles={(files, label) => void readFiles(label, async () => files)} />
         {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
       </div>
 

@@ -3,7 +3,7 @@
 // Same protocol and client as the TIA bridge (electron/tiaBridge.cjs). Contract: src/desktop/bridge.ts
 // (ClickBridge). ISA_CLICK_BRIDGE=<path> runs another bridge instead (a .cjs file: the tests' fake). Main process only.
 const path = require('node:path');
-const { createBridge } = require('./tiaBridge.cjs');
+const { createBridge, showLogFile } = require('./tiaBridge.cjs');
 
 /** A run of steps can take long (the user may pause it); detect and start are quick. */
 const TIMEOUT_MS = { detect: 60000, start: 120000, default: 2 * 60 * 60000 };
@@ -27,6 +27,8 @@ function registerClickBridgeIpc(ipcMain, app, resourcesDir) {
     catch (err) { return { ok: false, error: err instanceof Error ? err.message : String(err) }; }
   });
   ipcMain.handle('isa:click-log', () => path.join(app.getPath('logs'), 'click-bridge.log'));
+  // "Open folder" for support: the log selected in Explorer (only this file: the path is the app's own)
+  ipcMain.handle('isa:click-show-log', () => showLogFile(path.join(app.getPath('logs'), 'click-bridge.log')));
   app.on('will-quit', () => bridge.stop());
   return bridge;
 }

@@ -11,6 +11,11 @@ const mic = require('./micPermission.cjs');
 const { registerDwgReaderIpc } = require('./dwgReader.cjs');
 const { registerTiaBridgeIpc } = require('./tiaBridge.cjs');
 const { registerClickBridgeIpc } = require('./clickBridge.cjs');
+const { registerCodesysBridgeIpc } = require('./codesysBridge.cjs');
+const { registerStudio5000BridgeIpc } = require('./studio5000Bridge.cjs');
+const { registerClaudeConfigIpc } = require('./claudeConfig.cjs');
+const { registerUpdater } = require('./updater.cjs');
+const { watchSends, seenStore, projectName } = require('./sendWatch.cjs');
 
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://isa`;
@@ -49,6 +54,30 @@ function sendProjectFile(win, file) {
   fs.promises.readFile(file)
     .then((buf) => { writablePaths.add(file); win.webContents.send('isa:open-file', path.basename(file), new Uint8Array(buf), file); })
     .catch(() => { /* unreadable file: nothing to open */ });
+}
+
+// ── A project handed over from the web page (electron/sendWatch.cjs): asked in the app's own window ──
+function helperLog(what) {
+  const file = path.join(app.getPath('logs'), 'plc-helper.log');
+  try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.appendFileSync(file, `${new Date().toISOString()} [app] ${what}\n`); } catch { /* no log */ }
+}
+async function offerHandedOver(file) {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show(); win.focus();
+  const name = projectName(path.basename(file));
+  const r = await dialog.showMessageBox(win, {
+    type: 'question', buttons: ['Open it', 'Not now'], defaultId: 0, cancelId: 1, noLink: true,
+    title: 'Project from the web page',
+    message: `The web page sent "${name.replace(/\.isap$/i, '')}" to this PC.`,
+    detail: 'Open it here? Then press Send to PLC software on the Program page: nothing goes to the PLC software before that.',
+  });
+  helperLog(`${path.basename(file)}: ${r.response === 0 ? 'opened' : 'not now'}`);
+  if (r.response !== 0) return;
+  fs.promises.readFile(file)
+    .then((buf) => win.webContents.send('isa:open-file', name, new Uint8Array(buf), '', 'program'))
+    .catch((e) => helperLog(`${path.basename(file)} could not be read: ${e.message}`));
 }
 
 // ── Static files: app://isa/<path> → dist-desktop, with SPA fallback to index.html ──
@@ -249,7 +278,7 @@ function askOnUnsaved(win, waitAgain) {
       detail: 'Cancel, then press Save (Ctrl+S) to keep them in the project file.',
     });
     if (choice === 0) e.preventDefault();
-    else waitAgain();
+    else { waitAgain(); app.emit('isa-close-cancelled'); }
   });
 }
 
@@ -298,9 +327,44 @@ registerModbusIpc(ipcMain);
 // ── DWG import: GNU LibreDWG's dwg2dxf shipped with the installer, or another reader (electron/dwgReader.cjs) ──
 registerDwgReaderIpc(ipcMain, app, dialog, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources'));
 // ── Send to TIA Portal: the TIA Openness bridge shipped with the installer (electron/tiaBridge.cjs) ──
-registerTiaBridgeIpc(ipcMain, app, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources'));
+const bridges = [];
+bridges.push(registerTiaBridgeIpc(ipcMain, app, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources')));
 // ── Send to CLICK: the CLICK bridge (UI Automation of CLICK Programming Software, electron/clickBridge.cjs) ──
-registerClickBridgeIpc(ipcMain, app, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources'));
+bridges.push(registerClickBridgeIpc(ipcMain, app, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources')));
+bridges.push(registerCodesysBridgeIpc(ipcMain, app, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources')));
+bridges.push(registerStudio5000BridgeIpc(ipcMain, app, app.isPackaged ? process.resourcesPath : path.join(ROOT, 'resources')));
+// Settings › Send from the web page: the ISA PLC Helper in the Claude desktop app's settings (electron/claudeConfig.cjs)
+registerClaudeConfigIpc(ipcMain, app, ROOT);
+
+// ── Updates (electron/updater.cjs): installed only when the user clicks Restart ──
+// The bridges stop first (the installer replaces their exes), then every window closes through its own save
+// checks; Cancel on "unsaved changes" calls the restart off. Once all windows are closed the installer runs.
+let updateRestart = false;
+registerUpdater({
+  app, ipcMain, BrowserWindow,
+  stopBridges: async () => {
+    const running = bridges.some((b) => b?.running);
+    for (const b of bridges) b?.stop();
+    // A bridge gets 3 s to quit before it is killed (stop()).
+    if (running) await new Promise((r) => setTimeout(r, 3500));
+  },
+  closeWindowsForUpdate: () => new Promise((resolve) => {
+    const wins = BrowserWindow.getAllWindows();
+    if (!wins.length) { resolve(true); return; }
+    updateRestart = true;
+    const done = (ok) => {
+      app.removeListener('window-all-closed', onAll);
+      app.removeListener('isa-close-cancelled', onCancel);
+      if (!ok) updateRestart = false;
+      resolve(ok);
+    };
+    const onAll = () => done(true);
+    const onCancel = () => done(false);
+    app.on('window-all-closed', onAll);
+    app.on('isa-close-cancelled', onCancel);
+    for (const w of wins) w.close();
+  }),
+});
 
 // ── Microphone for voice input: a native question the first time (electron/micPermission.cjs) ──
 let micState = { always: false, session: false };
@@ -355,6 +419,9 @@ app.whenReady().then(() => {
   buildMenu();
   createWindow();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
+  // Projects handed over from the web page while the app is open
+  const stopWatching = watchSends({ dir: app.getPath('downloads'), onFile: (f) => void offerHandedOver(f), log: helperLog, seen: seenStore(path.join(app.getPath('userData'), 'handed-over.json')) });
+  app.on('will-quit', stopWatching);
 });
 
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => { if (updateRestart) return; /* the updater quits and installs */ if (process.platform !== 'darwin') app.quit(); });

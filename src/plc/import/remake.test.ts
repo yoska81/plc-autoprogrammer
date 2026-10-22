@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { readYmw7 } from './mpe720';
 import { convertForeign } from './convert';
 import { applyUpgrade } from './ui/applyUpgrade';
-import { remakeCoverage, remakeCoverageAll } from './remake';
+import { remakeCoverage, remakeCoverageAll, remakeCoverageText } from './remake';
 import { choosePlcBrand } from '../core/choosePlc';
 import { collectProject } from '../../deliverables/collect';
 import { useProjectStore } from '../../store/useProjectStore';
@@ -43,12 +43,60 @@ for (const c of all) {
   const bad = new Set(s.issues.filter((i) => i.severity === 'error' && i.rungId && !/cannot run on|not run, rewrite by hand|not converted/i.test(i.message)).map((i) => i.rungId));
   const raw = s.ladder.rungs.filter((r) => [...r.branches.flat(), ...r.outputs].some((x) => x.type === 'RAW'));
   assert.equal(c.converted, s.ladder.rungs.filter((r) => !raw.includes(r) && !bad.has(r.id)).length, `${c.plcId}: as many rungs convert as after the move`);
-  // The demo: 11 rungs, one with the drawing call (SEE) and an instruction the reader does not know.
+  // The demo: 11 rungs, one with an instruction the reader does not know (its drawing call is the drawing itself, mpe720.ts).
   assert.deepEqual([c.rungs, c.converted, c.percent], [11, 10, 90], `${c.plcId}: ${JSON.stringify(c)}`);
-  assert.deepEqual(c.kept.map((k) => k.what).sort(), ['SEE', 'unknown instruction']);
+  assert.deepEqual(c.kept.map((k) => k.what).sort(), ['unknown instruction']);
   assert.deepEqual(c.errors, [], `${c.plcId}: no checker errors (generic ST reads the program's timers as timers)`);
 }
 load();
 assert.equal(remakeCoverage(project(), 'generic-st').errors.length, 0);
+
+// The text to share: counts and instruction kinds only. No tag, register, value or comment of the program, even
+// when a kept instruction starts with a tag name or the checker names operands.
+{
+  load();
+  const base = project();
+  const tag = base.program.tags.find((t) => t.nickname)!;
+  const odd = { ...base, program: { ...base.program, rungs: [...base.program.rungs,
+    { id: 'r_x1', comment: 'secret comment', branches: [], outputs: [{ type: 'RAW' as const, vendor: 'yaskawa-mp', text: `${tag.nickname.toUpperCase()} := 42` }] },
+    { id: 'r_x2', comment: '', branches: [], outputs: [{ type: 'RAW' as const, vendor: 'yaskawa-mp', text: 'MOVW MW00123, #77' }] },
+  ] } };
+  const text = remakeCoverageText(odd);
+  assert.match(text, /^ISA Auto Programmer: remake coverage \(counts only/);
+  assert.match(text, /Siemens S7-1200 \/ S7-1500: 10 of 13 rungs convert \(76%\); kept: unknown instruction \(codes 0xaf\) ×1; other instruction ×1; MOVW ×1\./);
+  const secrets = [
+    ...odd.program.tags.flatMap((t) => [t.address, t.nickname, t.comment]),
+    ...odd.io.flatMap((x) => [x.description, x.plcAddress ?? '']),
+    'secret comment', 'MW00123', '#77', '42',
+  ].filter((x) => x && x.length > 2);
+  for (const x of secrets) assert.ok(!text.toUpperCase().includes(x.toUpperCase()), `the shared text names "${x}"`);
+  assert.doesNotMatch(text, /\b[IOM][BWLF][0-9A-F]{4,}/, 'no MPE720 register');
+}
+
+// Servo (motion) registers: the import keeps them as memory, but on another PLC they are the axis itself. Their
+// rungs do not count as converted: they wait for the axis to be set up there (a synthetic two-rung program).
+{
+  const fp = {
+    format: 'yaskawa-mpe720' as const, vendor: 'Yaskawa', controller: 'CPU-301', modules: [], projectName: 'servo', notes: [], outside: [],
+    tags: [
+      { name: 'IB00000', dataType: 'BOOL' as const, address: 'IB00000', comment: 'Start', io: 'input' as const },
+      { name: 'OW8008', dataType: 'INT' as const, address: 'OW8008', comment: '' },
+      { name: 'IL8016', dataType: 'DINT' as const, address: 'IL8016', comment: '' },
+      { name: 'MW00010', dataType: 'INT' as const, address: 'MW00010', comment: '' },
+      { name: 'MW00011', dataType: 'INT' as const, address: 'MW00011', comment: '' },
+    ],
+    routines: [{ name: 'H01', language: 'ladder' as const, untranslated: [], rungs: [
+      { id: 'a', comment: '', branches: [[{ type: 'NO' as const, address: 'IB00000' }]], outputs: [{ type: 'COPY' as const, source: '1', dest: 'OW8008' }] },
+      { id: 'b', comment: '', branches: [], outputs: [{ type: 'COPY' as const, source: 'IL8016', dest: 'MW00010' }] },
+      { id: 'c', comment: '', branches: [], outputs: [{ type: 'COPY' as const, source: 'MW00010', dest: 'MW00011' }] },
+    ] }],
+  };
+  applyUpgrade(convertForeign(fp, 'servo.YMW7'));
+  const c = remakeCoverage(project(), 'siemens-s7');
+  assert.deepEqual([c.rungs, c.converted], [3, 1], 'only the rung without a servo register converts');
+  assert.deepEqual(c.kept, [{ what: 'servo register', count: 2 }]);
+  assert.deepEqual(c.motion, [{ circuit: 1, axis: 1, rungs: 2 }]);
+  assert.match(remakeCoverageText(project()), /Siemens S7-1200 \/ S7-1500: 1 of 3 rungs convert \(33%\); kept: servo register ×2; servo axes to set up: circuit 1 axis 1 \(2 rungs\)\./);
+}
 
 console.log('remake coverage tests passed');

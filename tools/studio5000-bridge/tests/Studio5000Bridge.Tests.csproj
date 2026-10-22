@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The Studio 5000 bridge's tests: a console program (dotnet run) with a fake PC and SDK. The job script has its own
+       (python3 tests/test_job.py). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../src/StudioDetect.cs;../src/Jobs.cs;../src/Commands.cs" />
+    <Compile Include="../../tia-bridge/src/Json.cs;../../tia-bridge/src/Protocol.cs;../../tia-bridge/src/Log.cs" />
+    <Compile Include="*.cs" />
+  </ItemGroup>
+</Project>

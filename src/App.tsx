@@ -18,6 +18,9 @@ import ResizablePane from './components/ResizablePane';
 import { useOpenCounts } from './components/questions/useQuestionStore';
 import { useProjectFile } from './project/useProjectFile';
 import AiJobsIndicator from './components/AiJobsIndicator';
+import UpdateBanner from './desktop/UpdateBanner';
+import { canUpdate, checkForUpdatesNow } from './desktop/updates';
+import { desktopBridge } from './desktop/bridge';
 import { useFileStore } from './project/useFileStore';
 
 
@@ -243,6 +246,12 @@ export default function App() {
           <MenuItem onClick={() => navigate('/settings')}>Settings (AI provider, keys)…</MenuItem>
           <MenuItem onClick={() => navigate('/settings#voice')}>Voice (microphone, language, read aloud)…</MenuItem>
         </Menu>
+        <Menu label="Help">
+          <MenuItem onClick={() => navigate('/test-card')}>Test card (Send to PLC software)…</MenuItem>
+          {canUpdate() && <MenuItem onClick={checkForUpdatesNow}>Check for updates</MenuItem>}
+          <div className="border-t border-steel-200 my-1" />
+          <div className="px-4 py-1.5 text-steel-500" data-testid="help-version">ISA Auto Programmer version {desktopBridge()?.version ?? __APP_VERSION__}</div>
+        </Menu>
       </div>
 
       {/* Toolbar */}
@@ -287,6 +296,7 @@ export default function App() {
         )}
 
         <main className="flex-1 flex flex-col overflow-hidden">
+          <UpdateBanner />
           {IS_PREVIEW && (
             <div className="px-4 py-1.5 bg-brand-50 border-b border-brand-200 text-brand-900 text-xs flex items-center gap-2">
               <InformationCircleIcon className="w-4 h-4 text-brand-600 flex-shrink-0" />

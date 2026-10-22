@@ -11,7 +11,8 @@ import type { HmiDesign } from '../../hmi/types';
 import type { IOPoint } from '../../types/io';
 import { ptoPointsFor } from '../../electrical/highSpeedIo';
 import { needFromIo } from '../../spec/equipmentRules';
-import type { LadderProgram, Rung } from '../core/ladder';
+import { rungAddresses, type LadderProgram, type Rung } from '../core/ladder';
+import { servoRegister, type ServoRegister } from './mpServo';
 import { modulesToFit } from '../core/fit';
 import { ioAddresses } from '../core/ioChange';
 import { ioRemap } from '../core/ioRemap';
@@ -28,10 +29,12 @@ export interface RemakeCoverage {
   converted: number;
   /** Whole percent of the rungs that convert. */
   percent: number;
-  /** Kept vendor instructions, grouped by their first word ("SEE" ×3; "unknown instruction" ×1). */
-  kept: { what: string; count: number }[];
+  /** Kept vendor instructions, grouped by their first word ("SEE" ×3; "unknown instruction" ×1), with the codes the reader did not know. */
+  kept: { what: string; count: number; codes?: string[] }[];
   /** Rungs without kept instructions that the target's checker rejects, with its first message. */
   errors: { rungId: string; message: string }[];
+  /** Servo axes whose motion registers rungs use (kept as "servo register"): set the axis up on the target first. */
+  motion: { circuit: number; axis: number; rungs: number }[];
 }
 
 interface Project { io: IOPoint[]; plcId: string; cpuId: string; modules: string[]; program: LadderProgram; hmi?: HmiDesign | null }
@@ -55,11 +58,27 @@ export function remakeCoverage(p: Project, plcId: string): RemakeCoverage {
   const issues = validateProgram(program, profile, new Set(after.values()), p.hmi ?? undefined, profile.id === 'click' ? { pulseOutputs: ptoPointsFor(cpuId, modules) } : {});
 
   const kept = new Map<string, number>();
+  const codes = new Map<string, Set<string>>();
   const errors: RemakeCoverage['errors'] = [];
   let converted = 0;
+  // Yaskawa motion registers kept as memory by the import (nickname OW8008 …): on another PLC they are the axis
+  // itself, so their rungs wait for the axis to be set up there (mpServo.ts).
+  const servo = new Map(program.tags.flatMap((t) => { const x = servoRegister(t.native ?? t.nickname ?? ''); return x ? [[t.address.toUpperCase(), x] as const] : []; }));
+  const axes = new Map<string, { circuit: number; axis: number; rungs: number }>();
   for (const r of program.rungs) {
     const raw = rawTexts(r);
-    for (const t of raw) { const w = /^unknown instruction/i.test(t.trim()) ? 'unknown instruction' : t.trim().split(/\s+/)[0] || 'instruction'; kept.set(w, (kept.get(w) ?? 0) + 1); }
+    const moving = [...new Set(rungAddresses(r).map((a) => servo.get(a.trim().toUpperCase())).filter((x): x is ServoRegister => Boolean(x)).map((x) => `${x.circuit}.${x.axis}`))];
+    if (moving.length) {
+      kept.set('servo register', (kept.get('servo register') ?? 0) + 1);
+      for (const k of moving) { const [c, a] = k.split('.').map(Number); const e = axes.get(k) ?? { circuit: c, axis: a, rungs: 0 }; e.rungs++; axes.set(k, e); }
+      continue;
+    }
+    for (const t of raw) {
+      const w = /^unknown instruction/i.test(t.trim()) ? 'unknown instruction' : t.trim().split(/\s+/)[0] || 'instruction';
+      kept.set(w, (kept.get(w) ?? 0) + 1);
+      const code = /\bcode (0x[0-9a-f]+)/i.exec(t)?.[1];
+      if (code) codes.set(w, (codes.get(w) ?? new Set()).add(code.toLowerCase()));
+    }
     const err = issues.find((i) => i.severity === 'error' && i.rungId === r.id && !/cannot run on|not run, rewrite by hand|not converted/i.test(i.message));
     if (raw.length) continue;
     if (err) errors.push({ rungId: r.id, message: err.message });
@@ -69,12 +88,37 @@ export function remakeCoverage(p: Project, plcId: string): RemakeCoverage {
   return {
     plcId, label: `${profile.vendor} ${profile.name}`, cpuId, rungs, converted,
     percent: rungs ? Math.floor((100 * converted) / rungs) : 100,
-    kept: [...kept].map(([what, count]) => ({ what, count })).sort((a, b) => b.count - a.count),
+    kept: [...kept].map(([what, count]) => ({ what, count, ...(codes.has(what) ? { codes: [...codes.get(what)!].sort() } : {}) })).sort((a, b) => b.count - a.count),
     errors,
+    motion: [...axes.values()].sort((x, y) => x.circuit - y.circuit || x.axis - y.axis),
   };
 }
 
 /** The coverage on every PLC the app can write (not the program's own read-only one). */
 export function remakeCoverageAll(p: Project): RemakeCoverage[] {
   return PLC_PROFILES.filter((x) => x.available && x.id !== p.plcId).map((x) => remakeCoverage(p, x.id));
+}
+
+/**
+ * The coverage as plain text to copy or paste (the owner shares it to get the conversion improved): counts and
+ * instruction kinds only. No tag names, register addresses, values, comments or checker messages (they name
+ * operands): a kept instruction is named by its instruction word only when that word is no name of the program
+ * (an all-capital word of 2 to 6 letters), else "other instruction"; unknown codes are opcodes of the original PLC.
+ */
+export function remakeCoverageText(p: Project, coverage: RemakeCoverage[] = remakeCoverageAll(p)): string {
+  const names = new Set(p.program.tags.flatMap((t) => [t.address, t.nickname]).filter(Boolean).map((x) => x.toUpperCase()));
+  const kind = (w: string) => { if (w === 'unknown instruction' || w === 'servo register') return w; const m = /^([A-Z]{2,6})(?=$|\()/.exec(w)?.[1]; return m && !names.has(m) ? m : 'other instruction'; };
+  const blocks = new Set(p.program.rungs.map((r) => r.block ?? '')).size;
+  const from = getProfile(p.plcId);
+  const lines = [
+    'ISA Auto Programmer: remake coverage (counts only: no names, addresses, values or comments)',
+    `From: ${from.vendor} ${from.name}. ${p.program.rungs.length} rungs in ${blocks} block${blocks === 1 ? '' : 's'}.`,
+  ];
+  for (const c of coverage) {
+    const kept = new Map<string, { count: number; codes: Set<string> }>();
+    for (const k of c.kept) { const w = kind(k.what); const e = kept.get(w) ?? { count: 0, codes: new Set<string>() }; e.count += k.count; for (const x of k.codes ?? []) e.codes.add(x); kept.set(w, e); }
+    const keptText = [...kept].map(([w, e]) => `${w}${e.codes.size ? ` (codes ${[...e.codes].sort().join(', ')})` : ''} ×${e.count}`).join('; ');
+    lines.push(`${c.label}: ${c.converted} of ${c.rungs} rungs convert (${c.percent}%)${keptText ? `; kept: ${keptText}` : ''}${c.errors.length ? `; rejected by its checker: ${c.errors.length} rung${c.errors.length === 1 ? '' : 's'}` : ''}${c.motion.length ? `; servo axes to set up: ${c.motion.map((m) => `circuit ${m.circuit} axis ${m.axis} (${m.rungs} rung${m.rungs === 1 ? '' : 's'})`).join(', ')}` : ''}.`);
+  }
+  return lines.join('\n');
 }
