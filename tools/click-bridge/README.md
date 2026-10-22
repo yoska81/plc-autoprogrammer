@@ -2,6 +2,9 @@
 
 `ClickBridge.exe` lets the ISA Auto Programmer desktop app work **CLICK Programming Software**
 (AutomationDirect) for the user, while the user watches: the "Send to CLICK" button on the PLC program page.
+**One click** ("Put the project into CLICK"): the open CLICK is used (else started), restored and maximized; a new
+project with the CPU, the nicknames into the Address Picker, every rung in order. What the app cannot do (the
+modules, added in System Configuration; a rung it cannot enter) is listed at the end, never asked in the middle.
 
 AutomationDirect publishes no API, command line or ladder import for CLICK (only the Address Picker's nickname
 CSV import), and the project file (.ckp) is not documented. So the bridge does what a person would do, through
@@ -16,7 +19,16 @@ is reverse-engineered and no file of CLICK's is written by the app.
   `src/plc/click/clickVerify.ts` for the check: the nickname export and the printed ladder against the project;
   `src/plc/click/clickCalibrate.ts` for the calibration: three sample rungs entered and read back). They name CLICK's windows,
   menus and controls; when a CLICK version names them differently, the plan is corrected in the app, from the
-  controls the bridge records on the user's PC ("Record CLICK's windows for us").
+  controls the bridge records in its log on the user's PC (by itself: below).
+- **CLICK 4 and CLICK 3.** CLICK 4 has a ribbon UI Automation cannot see into (no menus), a Navigation tree
+  (Program tab: Address Picker, Ladder Program › Main Program …) and an Instruction List whose entries are named
+  ("Contact (NO)", "Out", "Timer" …); CLICK 3 has classic menus. Each action is a `oneOf`: the ways to do it, tried
+  in turn, CLICK 4's first (New project: Ctrl+N, the File menu, the ribbon key tips Alt › F › N; the Address Picker:
+  the tree, the View menu; Print: Ctrl+P, the File menu). When none works the run stops with one sentence: "CLICK
+  4.00: could not find New project (tried: Ctrl+N, the File menu, the ribbon key tips (Alt, F, N))."
+- **Records itself.** Every window a step opens is written to the log with its controls the first time in a run,
+  and every window of CLICK (dialogs too) on any failure: the log alone is enough to fit the steps. The user only
+  sends the log ("Open folder" next to the message).
 - Every step and every UI action is written to `<user data>\logs\click-bridge.log`.
 
 ## Safety rules (the bridge enforces them, whatever the plan says)
@@ -26,8 +38,8 @@ is reverse-engineered and no file of CLICK's is written by the app.
 - **Pauses** before any step that touches CLICK when another window is in front (the user clicked elsewhere),
   and goes on when CLICK is in front again.
 - **Stop** in the app, or the **Pause** key anywhere on the desktop, ends the run before its next step.
-- A step that does not work stops the run and names the step and the windows open; the controls of the window
-  go to the log.
+- A step that does not work stops the run with one plain sentence (what it could not do; nothing saved); the
+  windows open and their controls go to the log.
 
 ## Protocol and commands
 
@@ -41,10 +53,10 @@ while a run goes.
 | `writeFile` `{name, text}` | Writes a file the plan imports (the nickname CSV) into the bridge's folder; `{path}`. |
 | `folder` | The bridge's folder (the files CLICK exports there); `{path}`. |
 | `readFile` `{name}` | A file in the bridge's folder (only there), for the check; `{base64}`. |
-| `run` `{steps}` | Runs a plan: `window`, `menu`, `click`, `doubleClick`, `setText`, `select`, `check`, `keys`, `wait`, `note`, `waitGone` (the user's turn: until a window is closed), `waitUser` (the user's turn: until Continue); `optional` steps are skipped when their window does not come. `{steps}`. |
+| `run` `{steps}` | Restores and maximizes CLICK, then runs a plan: `window`, `menu`, `click`, `doubleClick`, `setText`, `select`, `check`, `keys`, `wait`, `note`, `waitGone` (the user's turn: until a window is closed), `waitUser` (the user's turn: until Continue), `oneOf` (`{what, options: [{label, steps}]}`: the ways tried in turn); `optional` steps are skipped when their window does not come. `{steps}`. |
 | `stop` | Ends the run before its next step. |
 | `resume` | The user's turn is done (Continue): the run goes on. Urgent, like `stop`. |
-| `dump` | Writes the controls of CLICK's windows to a file (and the log); `{file, lines}`. |
+| `dump` | Writes the controls of every window of CLICK, dialogs included, to a file (and the log); `{file, lines}`. Support only: the runs record by themselves. |
 
 ## Build and test
 
@@ -63,38 +75,26 @@ Only the user's PC can show whether the steps fit their CLICK version and screen
 
 ## Test card (the user's PC, once per CLICK version)
 
-Before you start: CLICK Programming Software installed; no unsaved project open in it; the example project
+Before you start: CLICK Programming Software installed (open or not); no unsaved project in it; the example project
 (or yours) open in ISA Auto Programmer on a **CLICK** PLC.
 
-1. PLC program page › **Send to CLICK**. It says which CLICK version it found. (No CLICK: it says how to get it.)
-2. **Start CLICK** (or "Use the open CLICK"). CLICK opens; the dialog says "CLICK 3.x started".
-3. **Record CLICK's windows for us**. Note the file it names.
-4. **Check the keys first** (once per CLICK version): **Try three sample rungs**. CLICK starts a new, empty
-   project and the three sample rungs go in (a contact and a coil, a seal-in with a parallel row, a timer); then
-   Print opens: choose "Microsoft Print to PDF", the file name is filled in, press **Save**. The dialog says "All 3
-   sample rungs … fit your CLICK" or names the sample rung that went wrong. Either way it names the report file
-   (`click_calibration.txt`): send it to us with the log when it does not fit. Close that test project without saving.
-5. **Set up the project in CLICK**. Hands off the mouse and keyboard; watch CLICK:
-   - File › New Project opens, the CPU of your project is picked, OK.
-   - With expansion modules: System Configuration opens and the dialog says which module goes in which slot.
-     Add them, press OK there; the run goes on by itself.
-   - The Address Picker opens and imports the nicknames.
-   - The dialog says the project is set up. Nothing was saved: check, then save in CLICK yourself if you want.
-6. **Pause**: run step 5 again and click on another window while it runs: the dialog says "Paused"; click on CLICK:
-   it goes on.
-7. **Stop**: run step 5 again and press **Stop** (then once more with the **Pause** key on the keyboard): it
-   stops at once and says nothing was saved.
-8. **Rungs**: after the set-up, **Enter the rungs in CLICK**. Watch the first rungs closely: each instruction
-   should land in its row and column with its address, parallel rows joined, outputs at the right rail. A rung the
-   app cannot enter (a retentive timer's reset input, an instruction kept from an old program) is your turn: the
-   dialog says which rung; type it from the entry sheet (Load into PLC), then **Continue**. If a rung goes wrong,
-   **Stop** at once and send us the log.
-9. **Check what CLICK has**: CLICK's Address Picker exports the nicknames, then CLICK's Print goes to
-   "Microsoft Print to PDF". In both Save dialogs the file name is filled in: press **Save** yourself. The dialog
-   then says how many rungs match the project and names any rung with an address not where it should be (change
-   one address in CLICK first to see it named), and any nickname missing or different.
-10. If any step does not work: the dialog names the step. Press **Record CLICK's windows for us** with that
-   window still open, then send us the log and the recorded file (both paths are in the dialog). With them we fit
-   the steps to your CLICK version.
+1. PLC program page › **Send to CLICK**. It says which CLICK it found (no CLICK: how to get it).
+2. **Put the project into CLICK**. Hands off the mouse and keyboard; watch CLICK:
+   - CLICK comes to the front, maximized (also when it was minimized);
+   - a new project opens (CLICK 4: Ctrl+N) and the project's CPU is chosen;
+   - the Address Picker opens (CLICK 4: from the Navigation tree) and imports the nicknames;
+   - the rungs go in one by one, in order: each instruction in its row and column with its address, parallel rows
+     joined, outputs at the right rail.
+3. The dialog says "Done in CLICK x.xx: …, 39 of 42 rungs entered" and lists what is left: the modules to add in
+   System Configuration, the rungs to type (each "after rung N"). Nothing was saved: save in CLICK (Ctrl+S).
+4. If it stops: one sentence says what it could not do. Press **Open folder** and send us `click-bridge.log`: it has
+   every CLICK window the app opened, with its controls. Nothing else is needed from you.
+5. **Pause**: run it again and click on another window: the dialog says "Paused"; click on CLICK: it goes on.
+6. **Stop**: run it again and press **Stop** (then once more with the **Pause** key): it stops at once and says
+   nothing was saved.
+7. **Support** (folded away under the dialog): **Check what CLICK has** (CLICK exports its nicknames and prints the
+   ladder to "Microsoft Print to PDF"; you press Save in the two dialogs, the file names are filled in; the dialog
+   names any rung whose addresses differ), **Try three sample rungs** (a new test project, printed and read back;
+   don't save it; a report file for us), **Record** (open the CLICK window you want recorded first).
 
 Note your CLICK version, Windows version and screen scaling (Settings › Display) with the result.
