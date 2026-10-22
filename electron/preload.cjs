@@ -12,6 +12,17 @@ const mb = async (op, ...args) => {
 contextBridge.exposeInMainWorld('isaDesktop', {
   isDesktop: true,
   version: ipcRenderer.sendSync('isa:version'),
+  // Updates (electron/updater.cjs): the state, a check by the user, Restart to install; onState returns an unsubscribe.
+  update: {
+    state: () => ipcRenderer.invoke('isa:update-state'),
+    check: () => ipcRenderer.invoke('isa:update-check'),
+    install: () => ipcRenderer.invoke('isa:update-install'),
+    onState: (cb) => {
+      const h = (_e, s) => cb(s);
+      ipcRenderer.on('isa:update-state', h);
+      return () => ipcRenderer.removeListener('isa:update-state', h);
+    },
+  },
   print: (job) => ipcRenderer.invoke('isa:print', job),
   listPrinters: () => ipcRenderer.invoke('isa:list-printers'),
   saveFile: (name, bytes) => ipcRenderer.invoke('isa:save-file', name, bytes),
@@ -74,6 +85,11 @@ contextBridge.exposeInMainWorld('isaDesktop', {
       ipcRenderer.on('isa:codesys-progress', h);
       return () => ipcRenderer.removeListener('isa:codesys-progress', h);
     },
+  },
+  // Settings › Send from the web page: the ISA PLC Helper in the Claude desktop app (electron/claudeConfig.cjs)
+  claudeHelper: {
+    status: () => ipcRenderer.invoke('isa:claude-helper-status'),
+    set: (on) => ipcRenderer.invoke('isa:claude-helper-set', on),
   },
   // Send to Studio 5000 (electron/studio5000Bridge.cjs): the same shape as codesys.
   studio5000: {
