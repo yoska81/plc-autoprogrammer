@@ -5,6 +5,7 @@ import { collectProject } from '../../deliverables/collect';
 import { studioImport } from '../studio5000/studioSend';
 
 interface Imported { project: string; imported: string[] }
+interface Downloaded { mode: 'run' | 'program'; commPath: string }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 /** "Controller/Programs/Program[@Name='MainProgram']" → "MainProgram". */
@@ -18,6 +19,9 @@ const part = (xpath: string) => /@Name='([^']+)'/.exec(xpath)?.[1] ?? xpath.repl
  * a new project from it). 2. The user's project (.ACD): the app works on its copy next to it (<name>_ISA.ACD),
  * theirs is only read. 3. The program in: the data types, the controller tags and MainProgram imported over what is
  * there (the controller, its I/O configuration and its tasks stay the user's); then Open in Studio 5000.
+ * 4. Download, only from the confirm screen: the path to the controller (the project's own, as Studio 5000 has it),
+ * "it is safe" and leave to put the controller in Program mode (a Logix download needs it: the controller stops)
+ * ticked; Run mode afterwards only when ticked. The bridge refuses a download without that confirm.
  */
 export default function SendToStudio5000({ profileId }: { profileId: string }) {
   const s5k = desktopBridge()?.studio5000;
@@ -31,6 +35,12 @@ export default function SendToStudio5000({ profileId }: { profileId: string }) {
   const [logPath, setLogPath] = useState('');
   // Stop pressed between the bridge calls (while the L5X is written): the import does not start
   const stopAsked = useRef(false);
+  const [confirming, setConfirming] = useState(false);
+  const [commPath, setCommPath] = useState('');
+  const [safe, setSafe] = useState(false);
+  const [programAllowed, setProgramAllowed] = useState(false);
+  const [runAfter, setRunAfter] = useState(false);
+  const [downloaded, setDownloaded] = useState<Downloaded | null>(null);
 
   useEffect(() => (open && s5k ? s5k.onProgress((p) => setProgress(p.text)) : undefined), [open, s5k]);
 
@@ -53,8 +63,9 @@ export default function SendToStudio5000({ profileId }: { profileId: string }) {
     return { path, xpaths: s.xpaths };
   };
   const openL5x = () => void step('open', async () => { const { path } = await writeL5x(); return s5k.call('open', { file: path }); });
+  const closeConfirm = () => { setConfirming(false); setSafe(false); setProgramAllowed(false); setRunAfter(false); };
   const send = async () => {
-    setImported(null);
+    setImported(null); setDownloaded(null); closeConfirm();
     stopAsked.current = false;
     const r = await step('import', async () => {
       const { path, xpaths } = await writeL5x();
@@ -62,6 +73,20 @@ export default function SendToStudio5000({ profileId }: { profileId: string }) {
       return s5k.call('import', { acd, l5x: path, xpaths }) as Promise<Imported>;
     });
     if (r) setImported(r);
+  };
+  /** The confirm screen, with the path the project has to the controller. Nothing is downloaded here. */
+  const askDownload = async () => {
+    setDownloaded(null);
+    const r = await step('download', () => s5k.call('info', { project: imported!.project }) as Promise<{ commPath: string }>);
+    if (!r) return;
+    closeConfirm();
+    setCommPath(r.commPath);
+    setConfirming(true);
+  };
+  const download = async () => {
+    if (!imported || !safe || !programAllowed || !commPath.trim()) return;
+    const r = await step('download', () => s5k.call('download', { confirmed: true, project: imported.project, commPath: commPath.trim(), programAllowed, runAfter }) as Promise<Downloaded>);
+    if (r) { setDownloaded(r); closeConfirm(); }
   };
   const stop = () => { stopAsked.current = true; void s5k.call('stop').catch(() => undefined); setProgress('Stopping…'); };
 
@@ -86,7 +111,7 @@ export default function SendToStudio5000({ profileId }: { profileId: string }) {
               {busy && (
                 <div className="flex items-center gap-3">
                   <p className="flex flex-1 items-center gap-2 text-steel-600" role="status"><ArrowPathIcon className="h-4 w-4 animate-spin" /> {progress || 'Working…'}</p>
-                  {busy === 'import' && <button onClick={stop} data-testid="studio5000-stop" className="inline-flex items-center gap-1 rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"><StopIcon className="h-4 w-4" /> Stop</button>}
+                  {(busy === 'import' || busy === 'download') && <button onClick={stop} data-testid="studio5000-stop" className="inline-flex items-center gap-1 rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"><StopIcon className="h-4 w-4" /> Stop</button>}
                 </div>
               )}
 
@@ -132,6 +157,33 @@ export default function SendToStudio5000({ profileId }: { profileId: string }) {
                       <button onClick={() => void step('open', () => s5k.call('open', { file: imported.project }))} disabled={Boolean(busy)} data-testid="studio5000-open" className={sub}>Open in Studio 5000</button>
                     </div>
                   )}
+                </section>
+              )}
+
+              {imported && (
+                <section className="space-y-2" data-testid="studio5000-download">
+                  <h3 className="font-semibold text-steel-900">4. Download to the controller</h3>
+                  {!confirming && <button onClick={() => void askDownload()} disabled={Boolean(busy)} data-testid="studio5000-download-button" className="rounded border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-800 hover:bg-red-50 disabled:opacity-40">Download to the controller…</button>}
+                  {confirming && (
+                    <div className="space-y-2 rounded border-2 border-red-300 bg-red-50 p-3 text-red-950" data-testid="studio5000-confirm">
+                      <p className="font-semibold">Download <span className="font-mono text-xs">{imported.project}</span> to the controller?</p>
+                      <p className="text-xs">The controller then runs this program. Outputs can switch as soon as it runs.</p>
+                      <label className="block text-xs">Path to the controller (as in Studio 5000's Who Active){' '}
+                        <input value={commPath} onChange={(e) => setCommPath(e.target.value)} placeholder="AB_ETH-1\192.168.1.10\Backplane\0" aria-label="Path to the controller" className="mt-1 w-full rounded border border-red-300 bg-white px-1.5 py-0.5 font-mono" />
+                      </label>
+                      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={safe} onChange={(e) => setSafe(e.target.checked)} data-testid="studio5000-safe" />
+                        <span>I am at the machine, and it is safe for the controller to stop and to run this program (nobody in the machine, moving parts and outputs checked).</span></label>
+                      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={programAllowed} onChange={(e) => setProgramAllowed(e.target.checked)} data-testid="studio5000-program-allowed" />
+                        <span>The controller may be put in Program mode (it stops: a Logix download needs it).</span></label>
+                      <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={runAfter} onChange={(e) => setRunAfter(e.target.checked)} data-testid="studio5000-run-after" />
+                        <span>Put it in Run mode after the download.</span></label>
+                      <div className="flex gap-2">
+                        <button onClick={() => void download()} disabled={Boolean(busy) || !safe || !programAllowed || !commPath.trim()} data-testid="studio5000-download-now" className="rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-800 disabled:opacity-40">Download now</button>
+                        <button onClick={closeConfirm} disabled={Boolean(busy)} className="rounded border border-steel-300 bg-white px-3 py-1.5 text-xs font-medium text-steel-800 hover:bg-steel-50 disabled:opacity-40">Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                  {downloaded && <p className="text-steel-700" data-testid="studio5000-downloaded"><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />Downloaded to <span className="font-mono text-xs">{downloaded.commPath}</span>; the controller is in {downloaded.mode === 'run' ? 'Run' : 'Program'} mode.{downloaded.mode === 'program' ? ' Put it in Run mode from Studio 5000 when you are ready.' : ''}</p>}
                 </section>
               )}
 

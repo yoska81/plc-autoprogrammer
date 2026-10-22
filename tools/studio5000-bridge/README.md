@@ -36,6 +36,7 @@ Same as the TIA bridge (`tools/tia-bridge/README.md`): one JSON object per line.
 | `writeL5x` `{name, text}` | The app's L5X into `projectsDir` (Documents › ISA Auto Programmer › Studio 5000); `{path}`. |
 | `import` `{acd, l5x, xpaths}` | The user's project copied to `<name>_ISA.ACD`, the parts imported (overwrite on collision), saved: `{project, imported}`. |
 | `info` `{project}` | The project's communication path: `{commPath}` (for the download's confirm screen). |
+| `download` `{confirmed: true, project, commPath, programAllowed: true, runAfter}` | **Refused without `confirmed: true`** (the app sends it only from its confirm screen), without `programAllowed` (a Logix download needs the controller in Program mode: it stops) and without a path. The app's project to the controller at `commPath`: `set_communications_path`, Program mode, `download`, Run mode only when `runAfter`. `{mode, commPath}`. |
 | `open` `{file}` | An `.ACD` or `.L5X` opened with Studio 5000. |
 | `stop` | Ends a running SDK job (the user's project is not changed). |
 
@@ -64,7 +65,12 @@ Programmer a project on the **Logix** PLC with its program.
 3. **Open in Studio 5000**: the copy opens; Logic › Verify Controller: no errors (or the ones a rung of yours causes).
 4. Run it again: the program and tags are replaced, not doubled.
 5. **Stop** while it runs: it ends, your project is not changed.
-6. If anything goes wrong: one sentence; **Open folder** and send us `studio5000-bridge.log`. When it says the SDK
+6. **Download, confirm**: after the program is in, **Download to the controller…** shows the copy and its path to
+   the controller (the project's, as in Who Active); **Download now** stays off until "I am at the machine…" and
+   "The controller may be put in Program mode" are ticked. Cancel: nothing happens (no `download` in the log).
+7. **Download**: the controller goes to Program mode, gets the program, stays in Program mode (Studio 5000 online:
+   the copy's rungs); with "Put it in Run mode after" ticked it goes to Run.
+8. If anything goes wrong: one sentence; **Open folder** and send us `studio5000-bridge.log`. When it says the SDK
    has no `partial_import_from_xml_file`, the log lists the names your SDK has: send it, we fit the script.
 
 Note your Logix Designer version, SDK version (its folder name or Help › About) and Python version with the result.
