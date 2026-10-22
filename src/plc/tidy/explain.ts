@@ -131,6 +131,8 @@ export function blockFingerprint(rungs: Rung[]): string {
 
 export function explainProgram(p: ProjectSnapshot, ai: AiSummaries = {}): ProgramExplanation {
   const info = programInfo(p);
+  // A preset held in a register is named like any operand (on Yaskawa its MPE720 register).
+  const preset = (v: string) => (/^-?\d+(\.\d+)?$/.test(v.trim()) ? v : info.ref(v));
   const l = p.ladder;
   const blockOf = (r: Rung) => (r.block && (l.blocks ?? []).some((b) => b.id === r.block) ? r.block : GENERAL);
   const defs = [...(l.blocks ?? []).map((b) => ({ id: b.id, name: b.name, description: b.description, never: b.called === false })), ...(l.rungs.some((r) => blockOf(r) === GENERAL) ? [{ id: GENERAL, name: 'General', description: '', never: false }] : [])];
@@ -157,8 +159,8 @@ export function explainProgram(p: ProjectSnapshot, ai: AiSummaries = {}): Progra
     const others = (m: Map<string, Set<string>>, a: string) => [...(m.get(a) ?? [])].filter((b) => b !== d.id).map((b) => nameOf.get(b) ?? 'General');
     const uses = reads.filter((a) => !fieldInput(info, a) && !writes.includes(a) && others(writers, a).length).map((a) => `${info.ref(a)} from ${others(writers, a).join(', ')}`);
     const gives = writes.filter((a) => !fieldOutput(info, a) && others(readers, a).length).map((a) => `${info.ref(a)} to ${others(readers, a).join(', ')}`);
-    const timers = rungs.flatMap((r) => r.outputs.filter((o): o is Extract<LadderOutput, { type: 'TMR' }> => o.type === 'TMR').map((o) => `${info.ref(o.address)}: ${o.preset} ${o.unit}${o.mode === 'OFF_DELAY' ? ' off-delay' : ''}, runs while ${info.conditionText(r) || 'always'}`));
-    const counters = rungs.flatMap((r) => r.outputs.filter((o): o is Extract<LadderOutput, { type: 'CNT' }> => o.type === 'CNT').map((o) => `${info.ref(o.address)}: counts ${o.direction === 'DOWN' ? 'down' : 'up'} to ${o.preset} when ${info.conditionText(r) || 'always'}${o.resetAddress ? `; reset by ${info.ref(o.resetAddress)}` : ''}`));
+    const timers = rungs.flatMap((r) => r.outputs.filter((o): o is Extract<LadderOutput, { type: 'TMR' }> => o.type === 'TMR').map((o) => `${info.ref(o.address)}: ${preset(o.preset)} ${o.unit}${o.mode === 'OFF_DELAY' ? ' off-delay' : ''}, runs while ${info.conditionText(r) || 'always'}`));
+    const counters = rungs.flatMap((r) => r.outputs.filter((o): o is Extract<LadderOutput, { type: 'CNT' }> => o.type === 'CNT').map((o) => `${info.ref(o.address)}: counts ${o.direction === 'DOWN' ? 'down' : 'up'} to ${preset(o.preset)} when ${info.conditionText(r) || 'always'}${o.resetAddress ? `; reset by ${info.ref(o.resetAddress)}` : ''}`));
     const reg = stepRegister(rungs, l.sequence?.register);
     const fieldOuts = list(writes.filter((a) => fieldOutput(info, a)).map((a) => info.name(a) || a));
     // An import's own description ("Imported from … routine …") says nothing about what the block does.
@@ -175,7 +177,7 @@ export function explainProgram(p: ProjectSnapshot, ai: AiSummaries = {}): Progra
       outputs: list(outputs),
       uses: list(uses), gives: list(gives), timers, counters,
       sequence: reg ? { register: info.ref(reg), steps: stepsOf(rungs, reg, info) } : null,
-      alarms: alarms.filter((a) => writes.includes(a.address)).map((a) => `${a.message} (${a.address}): ${a.cause.split('\n')[0]}`),
+      alarms: alarms.filter((a) => writes.includes(a.address)).map((a) => `${a.message} (${info.shown(a.address)}): ${a.cause.split('\n')[0]}`),
       notRead: rungs.filter(hasRaw).map((r) => `rung ${info.rungNo(r)}: ${rawText(r)}${r.comment.trim() ? ` (${r.comment.trim()})` : ''}`),
     };
   });

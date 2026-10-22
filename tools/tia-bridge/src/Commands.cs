@@ -1,6 +1,8 @@
 // The commands the bridge answers:
 //   ping · detect · portals · open (attach to a running TIA Portal or start one, open or create the project)
-//   · firmware (of an order number, newest first) · plc (add the CPU and its local modules) · tags (PLC tag table).
+//   · firmware (of an order number, newest first) · plc (add the CPU and its local modules) · tags (PLC tag table)
+//   · blocks (import the program's files in order: SimaticML blocks, SCL sources) · compile (with the messages)
+//   · downloadTargets (this PC's interfaces that reach the PLC) · download (only with the app's confirm: confirmed).
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -117,6 +119,58 @@ namespace TiaBridge
                 int created = e.WriteTags(TagTable, rows, (name, why) => failed.Add(new Dictionary<string, object> { ["name"] = name, ["error"] = why }));
                 e.Save();
                 return new Dictionary<string, object> { ["table"] = TagTable, ["created"] = created, ["updated"] = rows.Count - created - failed.Count, ["failed"] = failed };
+            });
+            p.On("blocks", (args, progress) =>
+            {
+                var e = Tia();
+                var files = (args.TryGetValue("files", out object f) && f is List<object> list ? list : new List<object>())
+                    .OfType<Dictionary<string, object>>()
+                    .Select(x => new BlockFile { Name = Str(x, "name"), Kind = Str(x, "kind") == "scl" ? "scl" : "xml", Text = x.TryGetValue("text", out object t) ? t as string : null })
+                    .ToList();
+                if (files.Count == 0 || files.Any(x => x.Name == null || x.Text == null)) throw new BridgeError("The app sent no program files (build the program first).");
+                var failed = new List<object>();
+                e.ImportBlocks(files, progress, (name, why) => failed.Add(new Dictionary<string, object> { ["name"] = name, ["error"] = why }));
+                e.Save();
+                return new Dictionary<string, object> { ["imported"] = files.Count - failed.Count, ["failed"] = failed };
+            });
+            p.On("compile", (args, progress) =>
+            {
+                progress("Compiling the PLC program in TIA Portal…");
+                var r = Tia().Compile();
+                Tia().Save();
+                return new Dictionary<string, object>
+                {
+                    ["errors"] = r.Errors,
+                    ["warnings"] = r.Warnings,
+                    ["messages"] = r.Messages.Select(m => (object)new Dictionary<string, object> { ["severity"] = m.Severity, ["path"] = m.Path, ["text"] = m.Text, ["block"] = m.Block, ["network"] = m.Network }).ToList(),
+                };
+            });
+            p.On("downloadTargets", (args, progress) =>
+            {
+                progress("Looking for the network cards that reach the PLC…");
+                var e = Tia();
+                return new Dictionary<string, object>
+                {
+                    ["plc"] = Plc(e.FindPlc()),
+                    ["address"] = e.PlcAddress(),
+                    ["interfaces"] = e.DownloadInterfaces().Select(i => (object)new Dictionary<string, object> { ["name"] = i.Name, ["number"] = i.Number, ["targets"] = i.Targets.Cast<object>().ToList() }).ToList(),
+                };
+            });
+            p.On("download", (args, progress) =>
+            {
+                // A download changes what runs on the machine: only from the app's confirm screen.
+                if (!(args.TryGetValue("confirmed", out object c) && c is bool yes && yes)) throw new BridgeError("A download needs the confirm screen in the app (nothing was sent to the PLC).");
+                string pc = Str(args, "pcInterface") ?? throw new BridgeError("Choose the network card that reaches the PLC.");
+                var choices = new DownloadChoices
+                {
+                    StopAllowed = args.TryGetValue("stopAllowed", out object s1) && s1 is bool b1 && b1,
+                    StartAfter = args.TryGetValue("startAfter", out object s2) && s2 is bool b2 && b2,
+                    Password = args.TryGetValue("password", out object pw) && pw is string ps && ps.Length > 0 ? ps : null,
+                };
+                Log.Write($"download confirmed: interface {pc} {Num(args, "number") ?? 1}, target {Str(args, "target")}, stop {choices.StopAllowed}, start {choices.StartAfter}, password {(choices.Password != null ? "given" : "none")}");
+                var r = Tia().Download(pc, Num(args, "number") ?? 1, Str(args, "target"), choices, progress);
+                Log.Write($"download {r.State}: {r.Errors} errors, {r.Warnings} warnings; {string.Join(" | ", r.Answers)}");
+                return new Dictionary<string, object> { ["state"] = r.State, ["errors"] = r.Errors, ["warnings"] = r.Warnings, ["messages"] = r.Messages.Cast<object>().ToList(), ["answers"] = r.Answers.Cast<object>().ToList() };
             });
             return p;
         }
