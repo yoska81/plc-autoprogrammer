@@ -781,6 +781,7 @@ function sse(model, text) {
   if (!Object.keys(zip.files).some((f) => f.startsWith('purchasing/') && f.endsWith('_purchase_summary.pdf'))) throw new Error('ZIP has no purchase summary');
   if (!Object.keys(zip.files).some((f) => /^purchasing\/.*_spares_order\.csv$/.test(f))) throw new Error('ZIP has no separate spares order file');
   if (!Object.keys(zip.files).some((f) => /^commissioning\/.*_IO_checkout\.pdf$/.test(f))) throw new Error('ZIP has no I/O check-out sheet');
+  for (const ext of ['pdf', 'docx']) if (!Object.keys(zip.files).some((f) => new RegExp(`^plc/.*_how_the_program_works\\.${ext}$`).test(f))) throw new Error(`ZIP has no "How the program works" ${ext}`);
   await snap(page, 'deliverables');
   // Full machine specification: one text with every part of the project.
   await page.getByTestId('machine-spec').getByRole('button', { name: 'Show' }).click();

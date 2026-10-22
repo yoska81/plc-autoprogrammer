@@ -18,12 +18,14 @@ namespace ClickBridge
 {
     public sealed class Step
     {
-        /// <summary>window · menu · click · doubleClick · setText · select · keys · wait · note · waitGone · waitUser</summary>
+        /// <summary>window · menu · click · doubleClick · setText · select · check · keys · wait · note · waitGone · waitUser</summary>
         public string Do;
         /// <summary>The step may not happen (its window or control does not come): then it, and the steps up to the next
         /// non-optional one, are skipped.</summary>
         public bool Optional;
         public string Title, Text, Item, Keys, Say;
+        /// <summary>check: the box on (true) or off.</summary>
+        public bool On = true;
         public List<string> Path;
         public Selector Find;
         public int Ms;
@@ -34,6 +36,7 @@ namespace ClickBridge
             string S(string k) => d.TryGetValue(k, out object v) ? v as string : null;
             int N(string k, int def) => d.TryGetValue(k, out object v) && v is double x ? (int)x : def;
             var s = new Step { Do = S("do"), Title = S("title"), Text = S("text"), Item = S("item"), Keys = S("keys"), Say = S("say"), Ms = N("ms", 0), TimeoutMs = N("timeoutMs", 15000), Optional = d.TryGetValue("optional", out object o) && o is bool b && b };
+            if (d.TryGetValue("on", out object on) && on is bool bo) s.On = bo;
             if (d.TryGetValue("path", out object p) && p is List<object> l) s.Path = l.OfType<string>().ToList();
             if (d.TryGetValue("find", out object f) && f is Dictionary<string, object> sel)
                 s.Find = new Selector { Id = sel.TryGetValue("id", out object i) ? i as string : null, Name = sel.TryGetValue("name", out object n) ? n as string : null, Type = sel.TryGetValue("type", out object t) ? t as string : null, Index = sel.TryGetValue("index", out object x) && x is double dx ? (int)dx : 0 };
@@ -149,6 +152,7 @@ namespace ClickBridge
                 case "doubleClick": _ui.DoubleClick(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s)); break;
                 case "setText": _ui.SetText(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s), s.Text ?? ""); break;
                 case "select": _ui.Select(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s), s.Item ?? ""); break;
+                case "check": _ui.Check(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s), s.On); break;
                 default: throw new BridgeError($"Step {i + 1}: the bridge cannot do \"{s.Do}\" (update the app).");
             }
         }

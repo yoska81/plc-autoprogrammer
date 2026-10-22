@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SPEC_SECTIONS } from '../../../spec/types';
 import { useIOStore } from '../../../store/useIOStore';
 import { looksLeftOver } from '../../../spec/leftovers';
-import { ArrowsPointingInIcon, ArrowsPointingOutIcon, ArrowsRightLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, MagnifyingGlassMinusIcon, MagnifyingGlassPlusIcon, PrinterIcon } from '@heroicons/react/20/solid';
+import { ArrowsPointingInIcon, ArrowsPointingOutIcon, ArrowsRightLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, MagnifyingGlassMinusIcon, MagnifyingGlassPlusIcon, PrinterIcon, SparklesIcon } from '@heroicons/react/20/solid';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useReviewStore } from '../../../review/useReviewStore';
 import { replaceProgramQuestion, useProgramStore } from '../../../store/useProgramStore';
@@ -41,15 +41,20 @@ import { startAiJob, useAiJobError } from '../../../lib/ai/jobs';
 import VoiceTextarea from '../../../voice/VoiceTextarea';
 import { collectProject } from '../../../deliverables/collect';
 import { addComments } from '../../tidy/comments';
-import { applyReorganize, externalAddresses, planReorganize, type ReorgPlan, type SectionId } from '../../tidy/reorganize';
-import { checkEquivalence, equivalenceSummary } from '../../tidy/equivalence';
+import { applyReorganize, externalAddresses, planReorganize, plcBaseline, type ReorgPlan, type SectionId } from '../../tidy/reorganize';
+import { equivalenceSummary } from '../../tidy/equivalence';
+import { checkEquivalenceOffThread } from '../../tidy/equivalenceOffThread';
+import { explainWithAi } from '../../tidy/explain';
+import { explainSummaries, saveExplainSummaries } from '../../tidy/explainStore';
+import ExplainPanel from './ExplainPanel';
+import { rewriteCandidates, simplifyBlocks, type RewriteCandidate } from '../../tidy/rewrite';
 import SpeakButton from '../../../voice/SpeakButton';
 import { usePlcNames } from '../ladder/plcNames';
 import { withPlcNamesAndIo, type PlcNameOf } from '../../core/plcNames';
 import { useProjectStore } from '../../../store/useProjectStore';
 import { ptoPointsFor } from '../../../electrical/highSpeedIo';
 
-type Tab = 'describe' | 'fix' | 'history';
+type Tab = 'describe' | 'fix' | 'explain' | 'history';
 
 interface Props {
   ai: AIConfig;
@@ -160,7 +165,27 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const [xrefOpen, setXrefOpen] = useUi('program.xrefOpen', false);
   // Phones: one pane at a time (the assistant, the program, its blocks, the cross-reference) from a tab strip.
   const narrow = useNarrow();
-  const [phonePane, setPhonePane] = useState<'assistant' | 'ladder' | 'blocks' | 'xref'>('ladder');
+  const [phonePane, setPhonePane] = useState<'assistant' | 'ladder' | 'blocks' | 'xref'>(() => (searchParams.get('tidy') === '1' ? 'assistant' : 'ladder'));
+  /**
+   * "Simplify & explain" (the toolbar button, or /program?tidy=1 from the Upgrade page): the Change tab with the
+   * Tidy up group in view and marked for a moment.
+   */
+  const tidyRef = useRef<HTMLDivElement>(null);
+  const [tidyAsk, setTidyAsk] = useState(() => (searchParams.get('tidy') === '1' ? 1 : 0));
+  const tidyShown = useRef(0);
+  const openTidy = () => { setTab('fix'); if (narrow) setPhonePane('assistant'); setTidyAsk((n) => n + 1); };
+  useEffect(() => {
+    if (!tidyAsk || tidyShown.current === tidyAsk) return;
+    if (tab !== 'fix') { setTab('fix'); return; }
+    const el = tidyRef.current;
+    if (!el) return;
+    tidyShown.current = tidyAsk;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const mark = ['bg-brand-50', 'ring-2', 'ring-brand-400'];
+    el.classList.add(...mark);
+    const t = setTimeout(() => el.classList.remove(...mark), 2000);
+    return () => { clearTimeout(t); el.classList.remove(...mark); };
+  }, [tidyAsk, tab, setTab]);
   // Full screen (button, Ctrl+Shift+F, Esc), zoom of the diagram, undo / redo of hand edits.
   const { full, toggle: toggleFull } = useFullScreen();
   const [zoom, setZoom] = useUi('program.zoom', 1);
@@ -249,14 +274,14 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
   const rungNumber = (id: string) => (review?.display ?? ladder).rungs.findIndex((r) => r.id === id) + 1;
 
   /** Run an AI step as a global job: it keeps going (and its result is applied) when the user leaves the page. */
-  const runAI = <T,>(kind: 'program' | 'program-revise', label: string, run: (signal: AbortSignal) => Promise<T>, apply: (r: T) => void, needsKey = true) => {
+  const runAI = <T,>(kind: 'program' | 'program-revise', label: string, run: (signal: AbortSignal, stage: (text: string) => void) => Promise<T>, apply: (r: T) => void, needsKey = true) => {
     if ((needsKey && !ready) || isGenerating) return;
     setError(null);
     void startAiJob({
       kind, label,
       run: async (h) => {
         useProgramStore.getState().setIsGenerating(true);
-        try { return await run(h.signal); } finally { useProgramStore.getState().setIsGenerating(false); }
+        try { return await run(h.signal, h.stage); } finally { useProgramStore.getState().setIsGenerating(false); }
       },
       apply,
     });
@@ -292,10 +317,6 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     });
   };
 
-  /**
-   * Add comments: every blank rung comment, block description and tag comment in plain words (the AI's with a key,
-   * else from the I/O names and the cross-reference). Only comments change; it comes as a proposal to approve.
-   */
   /** Reorganize: the transforms found (each with its checkbox), then the chosen ones checked in the simulator. */
   const [reorg, setReorg] = useState<{ plan: ReorgPlan; chosen: Set<SectionId> } | null>(null);
   const openReorganize = () => {
@@ -306,23 +327,65 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     if (!reorg) return;
     const { plan, chosen } = reorg;
     setReorg(null);
-    return runAI('program-revise', 'Reorganize program', async () => {
+    return runAI('program-revise', 'Reorganize program', async (signal, stage) => {
       const p = collectProject();
       const program = applyReorganize(p, plan, chosen);
       const plant = p.io.map((x) => ({ address: p.addresses.get(x.id) ?? '', description: x.description, type: x.type, category: x.category }));
-      const check = checkEquivalence(p.ladder, program, { observe: [...externalAddresses(p)], plant, budgetMs: 15_000 });
-      return { program, check, titles: plan.sections.filter((x) => chosen.has(x.id)).map((x) => x.title) };
+      // In a worker: the page stays free, the job bar shows how far it got, Cancel stops it.
+      // Against the program as the original PLC runs it (without the code it never runs, when that is removed).
+      const check = await checkEquivalenceOffThread(plcBaseline(p, plan, chosen), program, { observe: [...externalAddresses(p)], plant }, {
+        signal, onProgress: (done, total) => stage(`checking in the simulator, sequence ${done + 1} of ${total}`),
+      });
+      return { program, check, before: p.ladder.rungs.length, titles: plan.sections.filter((x) => chosen.has(x.id)).map((x) => x.title) };
     }, (r) => {
       const st = useProgramStore.getState();
       st.addChat({ role: 'user', text: `Reorganize the program: ${r.titles.join('; ')}.` });
       const said = equivalenceSummary(r.check);
       if (r.check.differences.length) { st.addChat({ role: 'assistant', text: `${said}\nNothing is proposed: the reorganized program would not behave the same. Choose fewer changes and try again.`, outcome: 'no-change' }); return; }
-      const text = `Reorganized: ${r.titles.join('; ')}.\n${said}\nAddresses, the I/O and what the HMI reads did not move; kept instructions of the original PLC stay as they were.`;
+      const text = `Reorganized: ${r.titles.join('; ')} (${r.before} rungs → ${r.program.rungs.length}; a removal is kept back when a rung that stays reads it).\n${said}\nAddresses, the I/O and what the HMI reads did not move; kept instructions of the original PLC stay as they were.`;
       st.addChat({ role: 'assistant', text });
       st.setProposal({ program: r.program, explanation: text, reasoning: null });
     }, false);
   };
 
+  /** Simplify blocks with AI: the blocks it may rewrite (each with its checkbox); each rewrite checked before it is kept. */
+  const [simp, setSimp] = useState<{ cands: RewriteCandidate[]; chosen: Set<string> } | null>(null);
+  const openSimplify = () => {
+    const cands = rewriteCandidates(useProgramStore.getState().ladder);
+    setSimp({ cands, chosen: new Set(cands.filter((c) => c.ok).map((c) => c.id)) });
+  };
+  const runSimplify = () => {
+    if (!simp) return;
+    const chosen = simp.cands.filter((c) => simp.chosen.has(c.id)).map((c) => c.id);
+    setSimp(null);
+    return runAI('program-revise', 'Simplify blocks with AI', async (signal, stage) => {
+      let step = '';
+      const r = await simplifyBlocks(collectProject(), ctx, { ...ai, signal }, chosen,
+        (a, b, o) => checkEquivalenceOffThread(a, b, o, { signal, onProgress: (done, total) => stage(`${step}, sequence ${done + 1} of ${total}`) }),
+        { stage: (t) => { step = t; stage(t); } });
+      return { ...r, before: useProgramStore.getState().ladder.rungs.length };
+    }, (r) => {
+      const st = useProgramStore.getState();
+      st.addChat({ role: 'user', text: `Simplify blocks with AI: ${chosen.length} block(s).` });
+      const dropped = r.dropped.length ? `\nNot changed:\n${r.dropped.map((d) => `- ${d.name}: ${d.why}`).join('\n')}` : '';
+      if (!r.kept.length) { st.addChat({ role: 'assistant', text: `No block was rewritten.${dropped}`, outcome: 'no-change' }); return; }
+      const text = `Rewritten by the AI and checked in the simulator (${r.before} rungs → ${r.program.rungs.length}):\n${r.kept.map((k) => `- ${k.name}: ${k.rungsBefore} → ${k.rungsAfter} rungs, ${k.before} → ${k.after} parts. ${k.summary.split(' Not simulated')[0]} ${k.explanation.split('\n')[0]}`).join('\n')}${r.final ? `\nAll of them together: ${r.final.differences.length ? 'different' : r.final.sequences ? `same behaviour in ${r.final.sequences} test sequences (0 differences)` : ''}.` : ''}${dropped}\nAddresses, the I/O and what the HMI reads did not move. Approve to keep it; the current program stays in History.`;
+      st.addChat({ role: 'assistant', text });
+      st.setProposal({ program: r.program, explanation: text, reasoning: null });
+    });
+  };
+
+  /** Explain with AI: a paragraph per block, saved with the project (kept while the block's logic stays the same). */
+  const handleExplainAi = () => runAI('program-revise', 'Explain the program', (signal, stage) =>
+    explainWithAi(collectProject(), { ...ai, signal }, (done, total) => stage(`part ${Math.min(done + 1, total)} of ${total}`)), (r) => {
+    saveExplainSummaries({ ...explainSummaries(), ...r.summaries });
+    if (r.notes.length) setError(r.notes.join(' '));
+  });
+
+  /**
+   * Add comments: every blank rung comment, block description and tag comment in plain words (the AI's with a key,
+   * else from the I/O names and the cross-reference). Only comments change; it comes as a proposal to approve.
+   */
   const handleComments = (rewrite: boolean) => {
     if (rewrite && !confirm('Rewrite every comment of the program, also the ones already there? You approve the result first, and the current program is kept in History.')) return;
     setTab('fix');
@@ -399,6 +462,7 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
         <div className="flex border-b border-gray-200">
           {tabButton('describe', 'Build')}
           {tabButton('fix', 'Change')}
+          {tabButton('explain', 'Explain')}
           {tabButton('history', `History (${versions.length})`)}
         </div>
 
@@ -493,6 +557,10 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
             </>
           )}
 
+          {tab === 'explain' && (
+            <ExplainPanel aiReady={ready} busy={isGenerating} onExplainWithAi={handleExplainAi}
+              onShowBlock={(id) => { setBlock(id || GENERAL); if (narrow) setPhonePane('ladder'); }} />
+          )}
           {tab === 'history' && (
             <>
               {!versions.length && <p className="text-sm text-gray-500">A copy of the program is saved here before every AI change, new generation or restore.</p>}
@@ -530,17 +598,36 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                 Ask AI to fix the {issues.length} checker issue{issues.length !== 1 && 's'}
               </button>
             )}
-            {!proposal && ladder.rungs.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Tidy up">
-                <button onClick={() => handleComments(false)} disabled={isGenerating}
+            {ladder.rungs.length > 0 && (
+              <div ref={tidyRef} className="flex flex-wrap items-center gap-2 rounded p-1.5 -m-1.5 transition-colors" role="group" aria-label="Tidy up" data-testid="tidy-up">
+                <p className="w-full text-xs font-semibold text-gray-700">Simplify &amp; explain</p>
+                {proposal && <p className="w-full text-xs text-amber-800" data-testid="tidy-wait">Approve or reject the current proposal first.</p>}
+                <button onClick={() => handleComments(false)} disabled={isGenerating || Boolean(proposal)}
                   title="Fill in every missing rung comment, block description and tag comment in plain words; the logic is not changed"
                   className="flex-1 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Add comments</button>
-                <button onClick={() => handleComments(true)} disabled={isGenerating}
+                <button onClick={() => handleComments(true)} disabled={isGenerating || Boolean(proposal)}
                   title="Write every comment again, also the ones already there (you approve the result first)"
                   className="py-1.5 px-2 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Rewrite all comments</button>
-                <button onClick={() => (reorg ? setReorg(null) : openReorganize())} disabled={isGenerating} aria-expanded={Boolean(reorg)}
+                <p className="w-full text-[11px] text-gray-500 -mt-1">Adds a plain-words note on every rung, then you can simplify.</p>
+                <button onClick={() => (simp ? setSimp(null) : openSimplify())} disabled={isGenerating || Boolean(proposal) || !ready} aria-expanded={Boolean(simp)}
+                  title={ready ? 'The AI rewrites the blocks you choose in a simpler shape; each one is kept only if the simulator finds the same behaviour' : 'Add your API key in Settings to use the AI'}
+                  className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Simplify blocks with AI…</button>
+                <button onClick={() => (reorg ? setReorg(null) : openReorganize())} disabled={isGenerating || Boolean(proposal)} aria-expanded={Boolean(reorg)}
                   title="Rebuild the same behaviour in a simpler shape: grouped by machine function, dead code out, names and comments; checked in the simulator before you approve"
                   className="w-full py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">Reorganize program…</button>
+              </div>
+            )}
+            {simp && !proposal && (
+              <div className="rounded border border-gray-200 bg-gray-50 p-2 text-xs space-y-1.5" role="group" aria-label="Simplify blocks">
+                <p className="text-gray-600">The AI rewrites each block you choose (one request per block, only that block sent). A rewrite is kept only if it is simpler, writes nothing new and behaves the same in the simulator; nothing changes until you approve.</p>
+                {simp.cands.map((c) => (
+                  <label key={c.id || 'general'} className="flex items-start gap-2">
+                    <input type="checkbox" className="mt-0.5" checked={simp.chosen.has(c.id)} disabled={!c.ok}
+                      onChange={(e) => { const s2 = new Set(simp.chosen); if (e.target.checked) s2.add(c.id); else s2.delete(c.id); setSimp({ ...simp, chosen: s2 }); }} />
+                    <span><span className="font-medium text-gray-800">{c.name}</span> <span className="text-gray-500">({c.rungs} rung{c.rungs === 1 ? '' : 's'}){c.why ? `: ${c.why}` : ''}</span></span>
+                  </label>
+                ))}
+                <button onClick={runSimplify} disabled={!simp.chosen.size || isGenerating} className="w-full py-1.5 bg-brand-600 text-white rounded font-medium hover:bg-brand-700 disabled:opacity-50">Rewrite and check {simp.chosen.size} block{simp.chosen.size === 1 ? '' : 's'}</button>
               </div>
             )}
             {reorg && !proposal && (
@@ -554,6 +641,11 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
                       {sec.items.length > 0 && sec.id !== 'reorder' && <span className="block text-gray-500">{sec.items.slice(0, 4).join(' · ')}{sec.items.length > 4 ? ` · and ${sec.items.length - 4} more` : ''}</span>}</span>
                   </label>
                 ))}
+                {reorg.plan.findings.length > 0 && (
+                  <div className="text-gray-600" data-testid="reorg-findings"><span className="font-medium text-gray-800">Also found (nothing to change):</span>
+                    <ul className="list-disc ml-5">{reorg.plan.findings.slice(0, 6).map((f, i) => <li key={i}>{f}</li>)}{reorg.plan.findings.length > 6 && <li>… and {reorg.plan.findings.length - 6} more</li>}</ul>
+                  </div>
+                )}
                 <button onClick={runReorganize} disabled={!reorg.chosen.size || isGenerating} className="w-full py-1.5 bg-brand-600 text-white rounded font-medium hover:bg-brand-700 disabled:opacity-50">Check and propose</button>
               </div>
             )}
@@ -622,6 +714,12 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
               </button>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
+              <button onClick={openTidy} data-testid="simplify-explain"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-sm border border-brand-600 bg-brand-600 text-white hover:bg-brand-700"
+                title="Comments in plain words on every rung, dead code found, the program grouped by machine function; every change checked in the simulator before you approve">
+                <SparklesIcon className="h-3.5 w-3.5" /> Simplify &amp; explain
+              </button>
+              <span className="mx-1 h-4 border-l border-gray-300" />
               <button onClick={history.undo} disabled={!history.canUndo || isGenerating} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Undo the last hand edit (Ctrl+Z)"><ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo</button>
               <button onClick={history.redo} disabled={!history.canRedo || isGenerating} className="inline-flex items-center gap-1 px-2 py-1 rounded-sm border bg-white border-gray-300 text-gray-700 hover:bg-brand-50 disabled:opacity-40" title="Redo (Ctrl+Shift+Z / Ctrl+Y)"><ArrowUturnRightIcon className="h-3.5 w-3.5" /> Redo</button>
               <span className="mx-1 h-4 border-l border-gray-300" />

@@ -7,7 +7,7 @@
  *  - extra sequences given by the caller (the machine model's cycle).
  * The inputs are what the program reads but never writes (X terminals, HMI commands and setpoints).
  */
-import { createSimulator, isWordAddress, type SimOptions, type Simulator } from '../sim/engine';
+import { createSimulator, isBitAddress, isWordAddress, type SimOptions, type Simulator } from '../sim/engine';
 import { rungWrites, type LadderProgram } from '../core/ladder';
 import { rungDeps } from './deps';
 import { buildMachineModel, machineInputs, stepMachine, type MachineModel, type SimIOPoint } from '../sim/machineModel';
@@ -17,6 +17,8 @@ export interface Difference { sequence: string; scan: number; timeMs: number; ad
 export interface EquivalenceResult {
   /** Input sequences run and scans compared. */
   sequences: number;
+  /** Of them: each input on its own, random, given by the caller, closed loop with the machine. */
+  kinds: { inputs: number; random: number; given: number; machine: number };
   scans: number;
   /** Addresses compared every scan. */
   observed: number;
@@ -54,6 +56,8 @@ export interface EquivalenceOptions {
   plantSequences?: number;
   /** Stop at this many differences (default 5). */
   maxDifferences?: number;
+  /** Called as each sequence starts: how many have run, of how many. */
+  onProgress?: (done: number, total: number) => void;
 }
 
 /** Small seeded generator (mulberry32): the same sequences every run. */
@@ -80,11 +84,17 @@ export function programInputs(p: LadderProgram): string[] {
   return [...reads].filter((a) => !writes.has(a) && !SYSTEM.test(a) && /^[A-Z]+\d+$/.test(a)).sort();
 }
 
-/** Everything compared: outputs, timers and counters (done bit and value), and what the caller adds. */
+/**
+ * Everything compared: the outputs of either program, the timers and counters (done bit and value) both still run,
+ * and what the caller adds (what the HMI or another device reads). A timer or counter only the original has was
+ * removed as dead code: nothing outside the PLC reads it, or it would be among the caller's addresses.
+ */
 function observedOf(a: LadderProgram, b: LadderProgram, extra: string[]): string[] {
   const out = new Set<string>(extra.map((x) => x.trim().toUpperCase()));
-  for (const p of [a, b]) for (const r of p.rungs) for (const w of rungDeps(r).writes) {
-    if (/^(Y|T|TD|CT|CTD)\d+$/.test(w)) out.add(w);
+  const written = (p: LadderProgram) => new Set(p.rungs.flatMap((r) => [...rungDeps(r).writes]));
+  const wa = written(a), wb = written(b);
+  for (const w of new Set([...wa, ...wb])) {
+    if (/^Y\d+$/.test(w) || (/^(T|TD|CT|CTD)\d+$/.test(w) && wa.has(w) && wb.has(w))) out.add(w);
   }
   return [...out].sort();
 }
@@ -116,6 +126,7 @@ export function checkEquivalence(original: LadderProgram, reorganized: LadderPro
   const budget = o.budgetMs ?? 20_000;
   const inputs = [...new Set([...programInputs(original), ...programInputs(reorganized), ...(o.inputs ?? []).map((x) => x.trim().toUpperCase())])];
   const observed = observedOf(original, reorganized, o.observe ?? []);
+  const observedBit = observed.map(isBitAddress);
   const notSimulated = reorganized.rungs.filter((r) => rungDeps(r).barrier).length;
   const differences: Difference[] = [];
   let sequences = 0, scans = 0, stoppedEarly = false;
@@ -123,17 +134,23 @@ export function checkEquivalence(original: LadderProgram, reorganized: LadderPro
   const first = new Map<string, boolean | number>(), changed = new Set<string>();
   const longest = longestTimer(original);
 
+  const total = inputs.length + (o.random ?? 200) + (o.sequences?.length ?? 0) + (o.plant?.length ? o.plantSequences ?? 60 : 0);
+  let begun = 0;
   const run = (name: string, drive: (step: (set: Record<string, boolean | number>, dtMs: number) => boolean, reset: () => void, models: [MachineModel, MachineModel] | null) => void, withPlant = false) => {
     if (differences.length >= maxDiff) return;
     if (Date.now() - started > budget) { stoppedEarly = true; return; }
-    const a = createSimulator(original, o.sim), b = createSimulator(reorganized, o.sim);
+    o.onProgress?.(begun++, total);
+    const a = createSimulator(original, { ...o.sim, lean: true }), b = createSimulator(reorganized, { ...o.sim, lean: true });
     // The machine, one per program (the same devices in the same state while the programs agree).
     const models: [MachineModel, MachineModel] | null = withPlant && o.plant ? [buildMachineModel(o.plant, []), buildMachineModel(o.plant, [])] : null;
     if (models) { for (const [k, v] of machineInputs(models[0])) a.setInput(k, v); for (const [k, v] of machineInputs(models[1])) b.setInput(k, v); }
     let scan = 0;
     const compare = (x: Simulator, y: Simulator): boolean => {
-      for (const addr of observed) {
-        const va = x.read(addr), vb = y.read(addr);
+      for (let k = 0; k < observed.length; k++) {
+        const addr = observed[k];
+        // Straight from memory (what read() returns for a bit or a register).
+        const va = observedBit[k] ? x.state.bits.get(addr) ?? false : x.state.words.get(addr) ?? 0;
+        const vb = observedBit[k] ? y.state.bits.get(addr) ?? false : y.state.words.get(addr) ?? 0;
         if (va !== (first.get(addr) ?? va)) changed.add(addr); else if (!first.has(addr)) first.set(addr, va);
         if (va !== vb && !(typeof va === 'number' && typeof vb === 'number' && Math.abs(va - vb) < 1e-9)) {
           differences.push({ sequence: name, scan, timeMs: x.state.timeMs, address: addr, original: va, reorganized: vb });
@@ -162,9 +179,16 @@ export function checkEquivalence(original: LadderProgram, reorganized: LadderPro
     drive(step, reset, models);
   };
 
+  // The sequences of each kind in a queue. Each input on its own first (short, and every input changes at least
+  // once), then the others in turn (one of each kind, again): a check that stops at its time limit has run some of
+  // every kind, not only the first.
+  const queues: (() => void)[][] = [[], [], [], []];
+  const ran = [0, 0, 0, 0];
+  const queue = (k: number, ...args: Parameters<typeof run>) => { queues[k].push(() => { const n = sequences; run(...args); ran[k] += sequences - n; }); };
+
   // Every input on its own: on (long enough for every timer), off; a word through the values it is compared with.
   for (const i of inputs) {
-    run(`${i} on its own`, (step) => {
+    queue(0, `${i} on its own`, (step) => {
       if (isWordAddress(i)) { for (const v of interestingValues(original, i)) if (!step({ [i]: v }, longest + scanMs)) return; step({ [i]: 0 }, scanMs); return; }
       if (step({ [i]: true }, scanMs) && step({}, longest + scanMs) && step({ [i]: false }, scanMs)) step({}, longest + scanMs);
     });
@@ -173,7 +197,7 @@ export function checkEquivalence(original: LadderProgram, reorganized: LadderPro
   const rand = rng(o.seed ?? 1);
   const words = new Map(inputs.filter(isWordAddress).map((i) => [i, interestingValues(original, i)] as const));
   for (let s = 0; s < (o.random ?? 200); s++) {
-    run(`random sequence ${s + 1}`, (step, reset) => {
+    queue(1, `random sequence ${s + 1}`, (step, reset) => {
       for (let k = 0; k < (o.steps ?? 60); k++) {
         const set: Record<string, boolean | number> = {};
         for (let c = 0; c < 1 + Math.floor(rand() * 3) && inputs.length; c++) {
@@ -189,7 +213,7 @@ export function checkEquivalence(original: LadderProgram, reorganized: LadderPro
       step({}, longest + scanMs);
     });
   }
-  for (const q of o.sequences ?? []) run(q.name, (step) => { for (const st of q.steps) if (!step(st.set ?? {}, st.dtMs)) return; });
+  for (const q of o.sequences ?? []) queue(2, q.name, (step) => { for (const st of q.steps) if (!step(st.set ?? {}, st.dtMs)) return; });
   // Closed loop with the machine: operator actions on the devices (the same in both machines), HMI commands, now and
   // then an E-stop or a sensor that sticks; the machine answers the outputs.
   if (o.plant?.length) {
@@ -197,7 +221,7 @@ export function checkEquivalence(original: LadderProgram, reorganized: LadderPro
     const modelInputs = new Set(machineInputs(buildMachineModel(o.plant, [])).keys());
     const commands = inputs.filter((i) => !modelInputs.has(i));
     for (let s = 0; s < (o.plantSequences ?? 60); s++) {
-      run(`machine sequence ${s + 1}`, (step, _reset, models) => {
+      queue(3, `machine sequence ${s + 1}`, (step, _reset, models) => {
         if (!models) return;
         const act = () => {
           const kinds = models[0].devices.map((d, i) => ({ d, i })).filter(({ d }) => d.kind === 'pushbutton' || d.kind === 'selector' || d.kind === 'estop' || d.kind === 'sensor');
@@ -227,16 +251,24 @@ export function checkEquivalence(original: LadderProgram, reorganized: LadderPro
     }
   }
 
-  return { sequences, scans, observed: observed.length, differences, notSimulated, stoppedEarly, unexercised: observed.filter((a) => !changed.has(a)) };
+  queues[0].forEach((f) => f());
+  for (let k = 0; queues.some((q) => k < q.length); k++) for (const q of queues.slice(1)) q[k]?.();
+
+  return { sequences, kinds: { inputs: ran[0], random: ran[1], given: ran[2], machine: ran[3] }, scans, observed: observed.length, differences, notSimulated, stoppedEarly, unexercised: observed.filter((a) => !changed.has(a)) };
 }
 
 /**
  * One line for the user: "Same behaviour in 412 test sequences (0 differences)" or the first differences. Testing
  * shows sameness only over what was tested: what was not simulated is listed, never "identical" or "proven".
  */
+function kindsText(r: EquivalenceResult): string {
+  const k = r.kinds;
+  return [k.inputs && `${k.inputs} with one input changed`, k.random && `${k.random} random`, k.given && `${k.given} given`, k.machine && `${k.machine} with the machine model answering`].filter(Boolean).join(', ');
+}
+
 export function equivalenceSummary(r: EquivalenceResult): string {
   const said = r.differences.length
     ? `Different behaviour: ${r.differences.map((d) => `${d.address} is ${d.original} in the original but ${d.reorganized} in the reorganized program (${d.sequence}, scan ${d.scan})`).join('; ')}.`
-    : `Same behaviour in ${r.sequences} test sequences (0 differences; ${r.scans} scans, ${r.observed} values compared every scan).`;
+    : `Same behaviour in ${r.sequences} test sequences (${kindsText(r)}; 0 differences; ${r.scans} scans, ${r.observed} values compared every scan).`;
   return [said, r.notSimulated ? `Not simulated: ${r.notSimulated} rung(s) with kept instructions of the original PLC (kept exactly as they were, in their place); motion / axis registers and communications are not simulated either.` : 'Not simulated: motion / axis registers and communications.', r.stoppedEarly ? 'The check stopped at its time limit before every sequence ran.' : '', !r.differences.length && r.unexercised.length ? `Not exercised by the check (never changed, so a difference there would not show): ${r.unexercised.slice(0, 8).join(', ')}${r.unexercised.length > 8 ? ` and ${r.unexercised.length - 8} more` : ''}.` : ''].filter(Boolean).join(' ');
 }

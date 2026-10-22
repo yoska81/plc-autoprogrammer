@@ -109,6 +109,8 @@ export interface ProgramBlock {
   id: string;
   name: string;
   description: string;
+  /** false: an imported routine the original PLC never runs (no call names it); the app's simulator runs every block. */
+  called?: boolean;
 }
 
 export interface LadderProgram {

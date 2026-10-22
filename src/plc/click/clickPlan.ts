@@ -11,7 +11,7 @@
 export interface ClickSelector { id?: string; name?: string; type?: string; index?: number }
 
 export interface ClickStep {
-  do: 'window' | 'menu' | 'click' | 'doubleClick' | 'setText' | 'select' | 'keys' | 'wait' | 'note' | 'waitGone' | 'waitUser';
+  do: 'window' | 'menu' | 'click' | 'doubleClick' | 'setText' | 'select' | 'check' | 'keys' | 'wait' | 'note' | 'waitGone' | 'waitUser';
   title?: string;
   find?: ClickSelector;
   text?: string;
@@ -23,6 +23,8 @@ export interface ClickStep {
   timeoutMs?: number;
   /** Shown to the user while the step runs. */
   say?: string;
+  /** check: the box on (default) or off. */
+  on?: boolean;
   /** May not happen (a confirmation that does not come): skipped, with the optional steps after it. */
   optional?: boolean;
 }

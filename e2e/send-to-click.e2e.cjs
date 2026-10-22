@@ -5,6 +5,7 @@
 // no CLICK installed says how to get it. Real CLICK is tried by hand: tools/click-bridge/README.md.
 //   npm run dev -- --port 5215 &  ;  BASE_URL=http://localhost:5215 node e2e/send-to-click.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { PDFDocument, StandardFonts } = require('pdf-lib');
 const { useAppModules } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5215';
 const log = (...a) => console.log('•', ...a);
@@ -24,6 +25,8 @@ const FAKE = () => {
         t.calls.push({ cmd, args });
         if (cmd === 'stop') { stopped = true; return { stopping: true }; }
         if (cmd === 'resume') { t.resumed = true; return { resumed: true }; }
+        if (cmd === 'folder') return { path: 'C:\\Users\\tech\\AppData\\Local\\Temp\\isa-click' };
+        if (cmd === 'readFile') { const f = (t.files ?? {})[args.name]; if (!f) throw new Error(`There is no ${args.name}: save it there from CLICK's dialog.`); return { name: args.name, base64: f, bytes: f.length }; }
         await new Promise((r) => setTimeout(r, 100));
         if (cmd === 'detect') return t.installed ? { ready: true, installs: [{ name: 'CLICK Programming Software Ver. 3.71', version: '3.71', exe: 'C:\\AD\\CLICK.exe' }], running: false, steps: [] } : { ready: false, installs: [], running: false, steps: ['Install CLICK Programming Software from AutomationDirect (free download), then Check again.'] };
         if (cmd === 'start') return { version: '3.71', processId: 4242, windows: ['CLICK Programming Software - [Untitled]'], attached: false };
@@ -132,6 +135,43 @@ const FAKE = () => {
   check(new Set(rungNumbers).size === 42 && rungNumbers.every((n, i) => i === 0 || n >= rungNumbers[i - 1]), 'every rung, in order');
   check(turns > 0 && new RegExp(`, ${turns} typed by you`).test(await dialog.getByTestId('click-done').innerText()), 'the user\'s turns counted in the result');
   check(!rungRun.args.steps.some((x) => /save/i.test(JSON.stringify(x.path ?? x.find ?? x.keys ?? ''))), 'no rung step saves');
+
+  // Check what CLICK has: CLICK's nickname export (ours) and a printed ladder (a PDF of the example's rungs with one
+  // address changed in one rung): the rung is named, the nicknames are all there.
+  const made = await page.evaluate(async () => {
+    const v = await appImport('/src/plc/click/clickVerify.ts');
+    const { collectProject } = await appImport('/src/deliverables/collect.ts');
+    const { clickNicknameCsv } = await appImport('/src/plc/core/clickExport.ts');
+    const { hmiExtraTags } = await appImport('/src/deliverables/exportContext.ts');
+    const p = collectProject();
+    return { rungs: v.rungAddressesInOrder(p.ladder), csv: clickNicknameCsv(p.ladder, p.io, p.addresses, hmiExtraTags(p)) };
+  });
+  // a rung whose first address is used nowhere else, so the printout's change points at that rung only
+  const uses = (a) => made.rungs.reduce((n, r) => n + r.addresses.filter((x) => x === a).length, 0);
+  const changed = made.rungs.find((r) => r.addresses.length && uses(r.addresses[0]) === 1);
+  const wrongAddress = changed.addresses[0];
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  // a wide rung goes on over several lines, as on paper (a line past the page edge is cut)
+  const lines = ['Conveyor Cell  CLICK ladder  Page 1', ...made.rungs.flatMap((r) => {
+    const a = r === changed ? ['C999', ...r.addresses.slice(1)] : r.addresses;
+    return Array.from({ length: Math.max(1, Math.ceil(a.length / 8)) }, (_, k) => `${k ? '' : r.rung}   ${a.slice(k * 8, k * 8 + 8).join('   ')}`);
+  }), 'END'];
+  for (let i = 0; i < lines.length; i += 40) {
+    const pg = pdf.addPage([612, 792]);
+    lines.slice(i, i + 40).forEach((l, k) => pg.drawText(l, { x: 30, y: 760 - k * 18, size: 9, font }));
+  }
+  const pdfB64 = Buffer.from(await pdf.save()).toString('base64');
+  await page.evaluate(([csv, pdfData]) => { window.__click.files = { 'click_nicknames.csv': btoa(unescape(encodeURIComponent(csv))), 'click_ladder.pdf': pdfData }; }, [made.csv, pdfB64]);
+  await dialog.getByTestId('click-verify-button').click();
+  await dialog.getByTestId('click-checked').waitFor({ timeout: 30000 });
+  const report = await dialog.getByTestId('click-checked').innerText();
+  log('check:', report.replace(/\s+/g, ' ').slice(0, 200));
+  check(new RegExp(`${made.rungs.length - 1} of ${made.rungs.length} rungs match`).test(report) && new RegExp(`Rung ${changed.rung}: ${wrongAddress} not where it should be`).test(report), 'the changed rung named, with its address');
+  check(/In CLICK but not in the project: C999/.test(report), 'the wrong address in CLICK named');
+  check(/All \d+ nicknames are in CLICK/.test(report), 'nicknames all there');
+  const vcalls = (await page.evaluate(() => window.__click.calls)).filter((c) => c.cmd === 'run').slice(-2);
+  check(vcalls.every((c) => !c.args.steps.some((x) => /save/i.test(JSON.stringify(x.path ?? x.find ?? x.keys ?? '')))) && vcalls.every((c) => c.args.steps.some((x) => x.do === 'waitGone' && /press Save/.test(x.say))), 'the export and print plans leave Save to the user');
 
   // Stop during a run.
   await page.evaluate(() => { window.__click.stepMs = 400; });

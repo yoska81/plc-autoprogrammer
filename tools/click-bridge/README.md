@@ -12,7 +12,8 @@ is reverse-engineered and no file of CLICK's is written by the app.
   It shares the protocol, JSON and log of the TIA bridge (`tools/tia-bridge/src`).
 - The **steps** are not in the exe: the app sends them (`src/plc/click/clickPlan.ts` for the project set-up,
   `src/plc/click/clickRungs.ts` for the rungs: the entry sheet's cells and dialog fields, entered through the
-  keymap: cursor keys, the Instruction List entry that opens each instruction, its dialog's fields). They name CLICK's windows,
+  keymap: cursor keys, the Instruction List entry that opens each instruction, its dialog's fields;
+  `src/plc/click/clickVerify.ts` for the check: the nickname export and the printed ladder against the project). They name CLICK's windows,
   menus and controls; when a CLICK version names them differently, the plan is corrected in the app, from the
   controls the bridge records on the user's PC ("Record CLICK's windows for us").
 - Every step and every UI action is written to `<user data>\logs\click-bridge.log`.
@@ -37,7 +38,9 @@ while a run goes.
 | `detect` | `{ready, installs: [{name, version, exe}], running, steps}` from the Windows programs list. |
 | `start` | Uses the CLICK that is open, else starts it; `{version, processId, windows, attached}`. |
 | `writeFile` `{name, text}` | Writes a file the plan imports (the nickname CSV) into the bridge's folder; `{path}`. |
-| `run` `{steps}` | Runs a plan: `window`, `menu`, `click`, `doubleClick`, `setText`, `select`, `keys`, `wait`, `note`, `waitGone` (the user's turn: until a window is closed), `waitUser` (the user's turn: until Continue); `optional` steps are skipped when their window does not come. `{steps}`. |
+| `folder` | The bridge's folder (the files CLICK exports there); `{path}`. |
+| `readFile` `{name}` | A file in the bridge's folder (only there), for the check; `{base64}`. |
+| `run` `{steps}` | Runs a plan: `window`, `menu`, `click`, `doubleClick`, `setText`, `select`, `check`, `keys`, `wait`, `note`, `waitGone` (the user's turn: until a window is closed), `waitUser` (the user's turn: until Continue); `optional` steps are skipped when their window does not come. `{steps}`. |
 | `stop` | Ends the run before its next step. |
 | `resume` | The user's turn is done (Continue): the run goes on. Urgent, like `stop`. |
 | `dump` | Writes the controls of CLICK's windows to a file (and the log); `{file, lines}`. |
@@ -51,6 +54,7 @@ node e2e/clickBridge.test.cjs                          # the app's client agains
 CLICK_BRIDGE_EXE=resources/click-bridge/ClickBridge.exe node e2e/clickBridge.test.cjs   # … and the real exe
 BASE_URL=http://localhost:5215 node e2e/send-to-click.e2e.cjs                            # the dialog, fake bridge
 npx tsx src/plc/click/clickPlan.test.ts                # the step plans
+npx tsx src/plc/click/clickVerify.test.ts              # the check (nicknames, rungs against a printout)
 ```
 
 Only the user's PC can show whether the steps fit their CLICK version and screen: the test card below.
@@ -78,7 +82,11 @@ Before you start: CLICK Programming Software installed; no unsaved project open 
    app cannot enter (a retentive timer's reset input, an instruction kept from an old program) is your turn: the
    dialog says which rung; type it from the entry sheet (Load into PLC), then **Continue**. If a rung goes wrong,
    **Stop** at once and send us the log.
-8. If any step does not work: the dialog names the step. Press **Record CLICK's windows for us** with that
+8. **Check what CLICK has**: CLICK's Address Picker exports the nicknames, then CLICK's Print goes to
+   "Microsoft Print to PDF". In both Save dialogs the file name is filled in: press **Save** yourself. The dialog
+   then says how many rungs match the project and names any rung with an address not where it should be (change
+   one address in CLICK first to see it named), and any nickname missing or different.
+9. If any step does not work: the dialog names the step. Press **Record CLICK's windows for us** with that
    window still open, then send us the log and the recorded file (both paths are in the dialog). With them we fit
    the steps to your CLICK version.
 

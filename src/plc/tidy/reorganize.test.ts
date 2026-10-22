@@ -21,7 +21,7 @@ import { buildL5x } from '../core/profiles/l5x';
 import { clickRungListing } from '../core/clickExport';
 import { validateProgram } from '../core/validate';
 import type { LadderProgram } from '../core/ladder';
-import { applyReorganize, planReorganize, type SectionId } from './reorganize';
+import { applyReorganize, planReorganize, plcBaseline, type SectionId } from './reorganize';
 import { checkEquivalence, equivalenceSummary } from './equivalence';
 
 const warn = console.warn;
@@ -78,6 +78,113 @@ const plantOf = (p: ReturnType<typeof collectProject>) => p.io.map((x) => ({ add
   const some = applyReorganize(p, plan, new Set<SectionId>(['rename', 'comment']));
   assert.equal(some.rungs.length, l.rungs.length);
   assert.deepEqual(some.rungs.map((x) => x.id), l.rungs.map((x) => x.id), 'nothing moved without reorder');
+}
+
+// Removal across groups: a timer read only by a counter (registers group, off) stays when only internal bits go.
+{
+  seedSampleProject();
+  const l: LadderProgram = { tags: [], rungs: [
+    { id: 'tmr', comment: '', branches: [[{ type: 'NO', address: 'X001' }]], outputs: [{ type: 'TMR', address: 'T5', mode: 'ON_DELAY', preset: '1', unit: 'sec', accumulate: false, resetAddress: null }] },
+    { id: 'cnt', comment: '', branches: [[{ type: 'NO', address: 'T5' }]], outputs: [{ type: 'CNT', address: 'CT5', direction: 'UP', preset: '3', resetAddress: null }] },
+    { id: 'done', comment: '', branches: [[{ type: 'NO', address: 'CT5' }]], outputs: [{ type: 'OUT', address: 'C40' }] },
+    { id: 'out', comment: '', branches: [[{ type: 'NO', address: 'X002' }]], outputs: [{ type: 'OUT', address: 'Y001' }] },
+  ] };
+  useProgramStore.getState().setGeneratedLadder(l, 'x', null);
+  const p = collectProject();
+  const plan = planReorganize(p);
+  assert.deepEqual([[...plan.removals['remove-internal']!].sort(), [...plan.removals['remove-registers']!]], [['done', 'tmr'], ['cnt']], 'the counter is retentive: its own group');
+  const ids = (s: SectionId[]) => applyReorganize(p, plan, new Set(s)).rungs.map((x) => x.id);
+  assert.deepEqual(ids(['remove-internal']), ['tmr', 'cnt', 'out'], 'the timer the kept counter reads stays');
+  assert.deepEqual(ids(['remove-internal', 'remove-registers']), ['out']);
+  const r = checkEquivalence(p.ladder, applyReorganize(p, plan, new Set<SectionId>(['remove-internal'])), { random: 30, steps: 30 });
+  assert.deepEqual(r.differences, [], equivalenceSummary(r));
+}
+
+// Code the original PLC never runs: a routine no JSR calls (L5X, synthetic fixture with one call taken out), rungs an
+// unconditional JMP skips; a label no jump goes to is a finding. Off by default; checked against what the PLC runs.
+{
+  const text = readFileSync(join(here, '..', 'import', '__fixtures__', 'capper.L5X'), 'utf8').replace('JSR(Scaling,0)', 'NOP()');
+  applyUpgrade(importProgramText('capper.L5X', text));
+  const p = collectProject();
+  const plan = planReorganize(p);
+  const sec = plan.sections.find((x) => x.id === 'remove-uncalled');
+  assert.ok(sec && !sec.defaultOn && sec.items.every((i) => /routine "Scaling" is never called/.test(i)), JSON.stringify(sec));
+  const chosen = new Set<SectionId>(['remove-uncalled']);
+  const after = applyReorganize(p, plan, chosen);
+  const scaling = p.ladder.blocks!.find((b) => b.name === 'Scaling')!.id;
+  assert.ok(!after.rungs.some((r) => r.block === scaling) && p.ladder.rungs.some((r) => r.block === scaling));
+  const r = checkEquivalence(plcBaseline(p, plan, chosen), after, { random: 20, steps: 20 });
+  assert.deepEqual(r.differences, [], equivalenceSummary(r));
+}
+{
+  seedSampleProject();
+  const raw = (text: string) => ({ type: 'RAW' as const, text, vendor: 'logix' });
+  const l: LadderProgram = { tags: [{ address: 'C77', nickname: 'Old_Flag', comment: '' }, { address: 'DS300', nickname: 'Old_Word', comment: '' }], rungs: [
+    { id: 'j', comment: '', branches: [], outputs: [raw('JMP(L1)') as never] },
+    { id: 's1', comment: '', branches: [[{ type: 'NO', address: 'X001' }]], outputs: [{ type: 'OUT', address: 'Y001' }] },
+    { id: 's2', comment: '', branches: [[{ type: 'NO', address: 'X002' }]], outputs: [{ type: 'OUT', address: 'Y002' }] },
+    { id: 'lbl', comment: '', branches: [[raw('LBL(L1)') as never, { type: 'NO', address: 'X003' }]], outputs: [{ type: 'OUT', address: 'Y003' }] },
+    { id: 'orphan', comment: '', branches: [[raw('LBL(L9)') as never, { type: 'NO', address: 'X004' }]], outputs: [{ type: 'OUT', address: 'Y004' }] },
+  ] };
+  useProgramStore.getState().setGeneratedLadder(l, 'x', null);
+  const p = collectProject();
+  const plan = planReorganize(p);
+  assert.deepEqual([...plan.removals['remove-jumped']!], ['s1', 's2']);
+  assert.match(plan.sections.find((x) => x.id === 'remove-jumped')!.items[0], /skipped by the unconditional JMP L1 in rung 1 \(its label is in rung 4\)/);
+  assert.ok(plan.findings.some((f) => /label L9 — no JMP goes to it/.test(f)), plan.findings.join(' | '));
+  assert.deepEqual([...plan.unusedTags], ['C77'], 'a register is kept');
+  const tagsSec = plan.sections.find((x) => x.id === 'remove-tags')!;
+  assert.ok(tagsSec.defaultOn && /C77 Old_Flag: no rung reads or writes it/.test(tagsSec.items[0]));
+  const chosen = new Set<SectionId>(['remove-jumped', 'remove-tags']);
+  const after = applyReorganize(p, plan, chosen);
+  assert.deepEqual(after.rungs.map((x) => x.id), ['j', 'lbl', 'orphan']);
+  assert.deepEqual(after.tags.map((t) => t.address), ['DS300']);
+  const r = checkEquivalence(plcBaseline(p, plan, chosen), after, { random: 20, steps: 20 });
+  assert.deepEqual(r.differences, [], equivalenceSummary(r));
+  // Against the program as the app simulates it (every rung run), the removal would show: hence the baseline.
+  assert.ok(checkEquivalence(p.ladder, after, { random: 20, steps: 20 }).differences.length > 0);
+}
+
+// Simplify: flatten paths, SET / RESET pairs into seal-ins (both orders), split long rungs (CLICK: free C bits from
+// the top); each alone and all together behave the same.
+{
+  seedSampleProject();
+  const NO = (address: string) => ({ type: 'NO' as const, address }), NC = (address: string) => ({ type: 'NC' as const, address });
+  const OUT = (address: string) => ({ type: 'OUT' as const, address });
+  const l: LadderProgram = { tags: [], rungs: [
+    { id: 'f', comment: '', branches: [[NO('X001')], [NO('X001'), NO('X002')], [NO('X003'), NO('X003')], [NO('X004'), NC('X004')]], outputs: [OUT('Y001')] },
+    { id: 's', comment: 'Start latch', branches: [[NO('X005')]], outputs: [{ type: 'SET', address: 'C40' }] },
+    { id: 'r', comment: 'Stop', branches: [[NO('X006')]], outputs: [{ type: 'RST', address: 'C40' }] },
+    { id: 'r2', comment: '', branches: [[NO('X007')]], outputs: [{ type: 'RST', address: 'C41' }] },
+    { id: 's2', comment: '', branches: [[NO('X008'), NC('X005')]], outputs: [{ type: 'SET', address: 'C41' }] },
+    { id: 'use', comment: '', branches: [[NO('C40')], [NO('C41')]], outputs: [OUT('Y002')] },
+    { id: 'many', comment: 'Lots of outputs', branches: [[NO('X001'), NC('X002')], [NO('X003')]], outputs: ['C50', 'C51', 'C52', 'C53', 'C54', 'C55', 'Y003'].map(OUT) },
+    { id: 'paths', comment: 'Lots of paths', branches: ['X001', 'X002', 'X003', 'X004', 'X005', 'X006', 'X007'].map((a) => [NO(a), NC('X008')]), outputs: [OUT('Y004')] },
+  ] };
+  useProgramStore.getState().setGeneratedLadder(l, 'x', null);
+  const p = collectProject();
+  const plan = planReorganize(p);
+  assert.deepEqual([...plan.flatten], ['f']);
+  const flat = applyReorganize(p, plan, new Set<SectionId>(['flatten'])).rungs.find((x) => x.id === 'f')!;
+  assert.deepEqual(flat.branches, [[NO('X001')], [NO('X003')]]);
+  assert.deepEqual(plan.seals.map((x) => [x.address, x.setFirst]), [['C40', true], ['C41', false]]);
+  const sealed = applyReorganize(p, plan, new Set<SectionId>(['seal']));
+  assert.deepEqual(sealed.rungs.map((x) => x.id), ['f', 's', 's2', 'use', 'many', 'paths']);
+  assert.deepEqual(sealed.rungs[1].branches, [[NO('X005'), NC('X006')], [NO('C40'), NC('X006')]]);
+  assert.deepEqual(sealed.rungs[2].branches, [[NO('C41'), NC('X007')], [NO('X008'), NC('X005')]]);
+  assert.deepEqual([...plan.splits].sort(), ['many', 'paths']);
+  assert.ok(!plan.sections.find((x) => x.id === 'split')!.defaultOn);
+  const split = applyReorganize(p, plan, new Set<SectionId>(['split']));
+  assert.ok(split.rungs.filter((x) => /^(many|paths)/.test(x.id)).every((x) => x.outputs.length <= 3 && x.branches.length <= 3), split.rungs.map((x) => `${x.id}:${x.outputs.length}/${x.branches.length}`).join(' '));
+  assert.ok(split.tags.some((t) => t.address === 'C1999'), 'internal bits from the top of C memory, as tags');
+  for (const chosen of [['flatten'], ['seal'], ['split'], ['flatten', 'seal', 'split', 'merge', 'reorder']] as SectionId[][]) {
+    const r = checkEquivalence(p.ladder, applyReorganize(p, plan, new Set(chosen)), { random: 60, steps: 40 });
+    assert.deepEqual(r.differences, [], `${chosen.join('+')}: ${equivalenceSummary(r)}`);
+  }
+  // A wrong seal-in (reset wins the other way round) would be caught: the check is what keeps the transform honest.
+  const wrong = structuredClone(sealed);
+  wrong.rungs[1].branches = [[NO('X005')], [NO('C40'), NC('X006')]];
+  assert.ok(checkEquivalence(p.ladder, wrong, { random: 60, steps: 40 }).differences.length > 0);
 }
 
 // Read-only Yaskawa program (synthetic fixture): its blocks (drawings) and their order kept, kept boxes in place.
