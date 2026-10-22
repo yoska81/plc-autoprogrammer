@@ -8,7 +8,11 @@ import { readFileSync } from 'node:fs';
 import { readYmw7 } from './mpe720';
 import { convertForeign } from './convert';
 import { applyUpgrade } from './ui/applyUpgrade';
-import { remakeCoverage, remakeCoverageAll, remakeCoverageText } from './remake';
+import { remakeCoverage, remakeCoverageAll, remakeCoverageText, withServoPlaceholders } from './remake';
+import { TODO_VENDOR } from '../core/ladder';
+import { explainProgram, explanationText } from '../tidy/explain';
+import { validateProgram } from '../core/validate';
+import { getProfile, PLC_PROFILES } from '../core/profiles';
 import { choosePlcBrand } from '../core/choosePlc';
 import { collectProject } from '../../deliverables/collect';
 import { useProjectStore } from '../../store/useProjectStore';
@@ -97,6 +101,44 @@ assert.equal(remakeCoverage(project(), 'generic-st').errors.length, 0);
   assert.deepEqual(c.kept, [{ what: 'servo register', count: 2 }]);
   assert.deepEqual(c.motion, [{ circuit: 1, axis: 1, rungs: 2 }]);
   assert.match(remakeCoverageText(project()), /Siemens S7-1200 \/ S7-1500: 1 of 3 rungs convert \(33%\); kept: servo register ×2; servo axes to set up: circuit 1 axis 1 \(2 rungs\)\./);
+
+  // The remade program gets one placeholder block per axis: notes to complete, no logic, the axis's tags renamed.
+  const before = project().program;
+  const placed = withServoPlaceholders(before, 'siemens-s7', () => 'Feed roll');
+  const block = placed.blocks!.find((b) => b.id === 'b_servo_c1_a1')!;
+  assert.equal(block.name, 'SERVO AXIS 1 Feed roll — to set up on Siemens S7-1200 / S7-1500');
+  const note = placed.rungs.find((r) => r.block === block.id)!;
+  assert.equal(note.branches.length, 0);
+  assert.ok(note.outputs.every((o) => o.type === 'RAW' && o.vendor === TODO_VENDOR), 'notes only');
+  const text = note.outputs[0].type === 'RAW' ? note.outputs[0].text : '';
+  assert.match(text, /^SERVO AXIS 1 Feed roll — to set up on Siemens S7-1200 \/ S7-1500: in TIA Portal add a technology object TO_PositioningAxis/);
+  assert.match(text, /Axis1_motion_command \(was OW8008, motion command\); Axis1_actual_position \(was IL8016, actual position \(APOS\)\)/);
+  assert.deepEqual(placed.tags.filter((t) => t.native).map((t) => [t.nickname, t.native]), [['Axis1_motion_command', 'OW8008'], ['Axis1_actual_position', 'IL8016']]);
+  assert.equal(withServoPlaceholders(placed, 'siemens-s7').rungs.length, placed.rungs.length, 'once per axis');
+  assert.match(withServoPlaceholders(before, 'logix').rungs.at(-1)!.outputs[0].type === 'RAW' ? (withServoPlaceholders(before, 'logix').rungs.at(-1)!.outputs[0] as { text: string }).text : '', /AXIS_CIP_DRIVE[\s\S]*MSO[\s\S]*MAM/);
+  // Not counted as rungs of the original; the checker says "to complete", never "cannot run".
+  const p2 = { ...project(), program: placed };
+  assert.deepEqual([remakeCoverage(p2, 'siemens-s7').rungs, remakeCoverage(p2, 'siemens-s7').converted], [3, 1]);
+  const issues = validateProgram(placed, getProfile('siemens-s7'), new Set(), undefined).filter((i) => i.rungId === note.id);
+  assert.deepEqual(issues.map((i) => [i.severity, i.message.slice(0, 40)]), [['warning', 'To complete by hand: SERVO AXIS 1 Feed r']]);
+  // Explain lists it apart: to complete by hand, not an instruction of the old PLC.
+  choosePlcBrand('siemens-s7');
+  useProgramStore.getState().editLadder(withServoPlaceholders(useProgramStore.getState().ladder, 'siemens-s7'));
+  const explained = explanationText(explainProgram(collectProject()));
+  assert.match(explained, /To complete by hand: SERVO AXIS 1 — to set up on Siemens S7-1200 \/ S7-1500\./);
+  assert.match(explained, /To complete by hand:\n- SERVO AXIS 1 — to set up on Siemens/);
+  assert.doesNotMatch(explained, /cannot read[\s\S]*SERVO AXIS/);
+  // Every PLC's export writes the note as a comment / TODO, and nothing that runs.
+  for (const profile of PLC_PROFILES.filter((x) => x.available && x.exporters?.length)) {
+    const ctx = { io: [], addresses: new Map<string, string>(), labels: new Map<string, string>(), header: 'test', extraTags: [], cpuId: profile.defaultCpuId, modules: [], projectName: 'servo', now: new Date(0) };
+    const just = { ...placed, rungs: placed.rungs.filter((r) => r.id === note.id) };
+    for (const ex of profile.exporters!) {
+      // The program files (not the tag, variable, operand and I/O lists).
+      if (/nicknames|vars|tags|-io$|operands/.test(ex.id)) continue;
+      const out = ex.files ? ex.files(just, ctx, 'servo').map((f) => f.content).join('\n') : ex.build(just, ctx);
+      assert.ok(/SERVO AXIS 1/.test(out), `${profile.id} ${ex.id}: the note is in the export`);
+    }
+  }
 }
 
 console.log('remake coverage tests passed');

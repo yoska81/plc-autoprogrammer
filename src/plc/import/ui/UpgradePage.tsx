@@ -21,7 +21,7 @@ import { getProfile, PLC_PROFILES } from '../../core/profiles';
 import { choosePlcBrand } from '../../core/choosePlc';
 import { notify } from '../../../store/useNoticeStore';
 import { useHmiStore } from '../../../store/useHmiStore';
-import { remakeCoverageAll, remakeCoverageText } from '../remake';
+import { remakeCoverageAll, remakeCoverageText, withServoPlaceholders } from '../remake';
 
 /** A kept instruction in plain words ("1 call to another drawing"). */
 function keptPhrase(what: string, n: number): string {
@@ -79,8 +79,16 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
     try { await navigator.clipboard.writeText(text); notify('Coverage numbers copied: paste them in a message.'); } catch { notify('Select the coverage numbers below and copy them.'); }
   };
   const fromReadOnly = Boolean(original && getProfile(original.plcId).readOnly && !readOnly);
+  // Servo axes the program drives through motion registers: a placeholder block each on the new PLC (no logic).
+  const [servoBlocks, setServoBlocks] = useState(true);
   const moveTo = (plcId: string) => {
     const notes = choosePlcBrand(plcId);
+    if (servoBlocks) {
+      const axes = useProjectStore.getState().networkAxes ?? [];
+      const { ladder: now, editLadder } = useProgramStore.getState();
+      const next = withServoPlaceholders(now, plcId, (c, a) => axes.find((x) => x.circuit === c && x.axis === a)?.name || undefined);
+      if (next.rungs.length !== now.rungs.length) { editLadder(next); notes.push(`${next.rungs.length - now.rungs.length} servo axis placeholder block${next.rungs.length - now.rungs.length === 1 ? '' : 's'} added: set the axes up on the new PLC.`); }
+    }
     if (notes.length) notify(`The I/O was renumbered for the new PLC; the program and the HMI followed. ${notes.join(' ')}`);
   };
 
@@ -171,6 +179,12 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                             </li>
                           ))}
                         </ul>
+                        {coverage.some((c) => c.motion.length > 0) && (
+                          <label className="flex items-center gap-1.5 text-xs text-gray-700" data-testid="upgrade-remake-servo">
+                            <input type="checkbox" checked={servoBlocks} onChange={(e) => setServoBlocks(e.target.checked)} />
+                            Add a placeholder block per servo axis (no logic: what to set up on the new PLC, with the axis's tags)
+                          </label>
+                        )}
                         <p className="text-xs text-gray-500">
                           <button data-testid="upgrade-remake-copy" onClick={() => void copyCoverage()} className="underline hover:text-brand-700">Copy coverage numbers</button>
                           {' '}(counts only, no names or values: paste them in a message to help improve the conversion)

@@ -6,7 +6,7 @@
  */
 import type { ProjectSnapshot } from '../../deliverables/collect';
 import { alarmRows, programInfo, type ProgramInfo } from '../../deliverables/docs/program';
-import { rungWrites, type LadderElement, type LadderOutput, type Rung } from '../core/ladder';
+import { rungWrites, TODO_VENDOR, type LadderElement, type LadderOutput, type Rung } from '../core/ladder';
 import { COMMENTS_SCHEMA, outputText } from './comments';
 import { callClaude } from '../../lib/ai/anthropic';
 import { callOpenAI } from '../../lib/ai/openai';
@@ -37,6 +37,8 @@ export interface BlockExplanation {
   alarms: string[];
   /** Rungs kept as instructions of the original PLC (not explained). */
   notRead: string[];
+  /** The app's own notes to complete by hand (a servo axis to set up on the new PLC …). */
+  toComplete: string[];
   /** The AI's summary paragraph, when asked for (Explain with AI). */
   aiSummary?: string;
 }
@@ -56,7 +58,8 @@ const range = (nums: number[]) => {
   }
   return `rung${nums.length > 1 ? 's' : ''} ${runs.join(', ')}`;
 };
-const hasRaw = (r: Rung) => r.outputs.some((o) => o.type === 'RAW') || r.branches.some((b) => b.some((e) => e.type === 'RAW'));
+const isTodo = (x: { type: string; vendor?: string }) => x.type === 'RAW' && x.vendor === TODO_VENDOR;
+const hasRaw = (r: Rung) => r.outputs.some((o) => o.type === 'RAW' && !isTodo(o)) || r.branches.some((b) => b.some((e) => e.type === 'RAW' && !isTodo(e)));
 /** The first kept instruction of a rung, its first line. */
 function rawText(r: Rung): string {
   for (const o of r.outputs) if (o.type === 'RAW') return o.text.split('\n')[0];
@@ -179,6 +182,7 @@ export function explainProgram(p: ProjectSnapshot, ai: AiSummaries = {}): Progra
       sequence: reg ? { register: info.ref(reg), steps: stepsOf(rungs, reg, info) } : null,
       alarms: alarms.filter((a) => writes.includes(a.address)).map((a) => `${a.message} (${info.shown(a.address)}): ${a.cause.split('\n')[0]}`),
       notRead: rungs.filter(hasRaw).map((r) => `rung ${info.rungNo(r)}: ${rawText(r)}${r.comment.trim() ? ` (${r.comment.trim()})` : ''}`),
+      toComplete: rungs.flatMap((r) => r.outputs.flatMap((o) => (o.type === 'RAW' && isTodo(o) ? [o.text.split('\n')[0]] : []))),
     };
   });
   const io = p.io.length;
@@ -186,6 +190,7 @@ export function explainProgram(p: ProjectSnapshot, ai: AiSummaries = {}): Progra
     `${p.projectName || 'The machine'}: ${l.rungs.length} rungs in ${blocks.length} block${blocks.length === 1 ? '' : 's'} on ${p.profile.vendor} ${p.profile.name}${io ? `, ${p.io.filter((x) => x.type === 'input').length} inputs and ${p.io.filter((x) => x.type === 'output').length} outputs` : ''}.`,
     `Blocks: ${blocks.map((b) => `${b.name} (${b.rungs})`).join('; ')}.`,
     ...(blocks.some((b) => b.notRead.length) ? [(() => { const n = blocks.reduce((k, b) => k + b.notRead.length, 0); return `${n} ${n === 1 ? 'rung uses' : 'rungs use'} instructions of the old PLC that the app cannot read; ${n === 1 ? 'it is' : 'they are'} listed in ${n === 1 ? 'its block' : 'their blocks'} and explained only by ${n === 1 ? 'its comment' : 'their comments'}.`; })()] : []),
+    ...(blocks.some((b) => b.toComplete.length) ? [`To complete by hand: ${blocks.flatMap((b) => (b.toComplete.length ? [b.name] : [])).join('; ')}.`] : []),
   ];
   return { title: `How the program works: ${p.projectName || 'machine'}`, overview, blocks };
 }
@@ -205,6 +210,7 @@ export function explanationText(x: ProgramExplanation): string {
     if (b.sequence) sec(`Steps (${b.sequence.register})`, b.sequence.steps.map((s) => `step ${s.step}: ${s.does.join('; ') || 'waits'}${s.next.length ? `; ${s.next.join('; or ')}` : ''}`));
     sec('Alarms', b.alarms);
     sec('Instructions the app cannot read (kept as they were)', b.notRead);
+    sec('To complete by hand', b.toComplete);
     out.push('');
   }
   return out.filter((l, i, a) => l !== '' || a[i - 1] !== '').join('\n');

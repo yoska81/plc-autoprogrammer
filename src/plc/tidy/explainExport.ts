@@ -18,6 +18,7 @@ export function blockSections(b: BlockExplanation): [string, string[]][] {
     [b.sequence ? `Steps (${b.sequence.register})` : '', b.sequence ? b.sequence.steps.map((s) => `Step ${s.step}: ${s.does.join('; ') || 'waits'}${s.next.length ? `; then ${s.next.join('; or ')}` : ''}`) : []],
     ['Alarms', b.alarms],
     ['Instructions the app cannot read (kept as they were)', b.notRead],
+    ['To complete by hand', b.toComplete],
   ] as [string, string[]][]).filter(([t, xs]) => t && xs.length);
 }
 

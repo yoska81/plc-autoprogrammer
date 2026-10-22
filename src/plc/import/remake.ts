@@ -11,8 +11,9 @@ import type { HmiDesign } from '../../hmi/types';
 import type { IOPoint } from '../../types/io';
 import { ptoPointsFor } from '../../electrical/highSpeedIo';
 import { needFromIo } from '../../spec/equipmentRules';
-import { rungAddresses, type LadderProgram, type Rung } from '../core/ladder';
-import { servoRegister, type ServoRegister } from './mpServo';
+import { rungAddresses, TODO_VENDOR, type LadderProgram, type Rung } from '../core/ladder';
+import { logixName } from '../core/profiles/logixExport';
+import { servoComment, servoRegister, type ServoRegister } from './mpServo';
 import { modulesToFit } from '../core/fit';
 import { ioAddresses } from '../core/ioChange';
 import { ioRemap } from '../core/ioRemap';
@@ -65,7 +66,10 @@ export function remakeCoverage(p: Project, plcId: string): RemakeCoverage {
   // itself, so their rungs wait for the axis to be set up there (mpServo.ts).
   const servo = new Map(program.tags.flatMap((t) => { const x = servoRegister(t.native ?? t.nickname ?? ''); return x ? [[t.address.toUpperCase(), x] as const] : []; }));
   const axes = new Map<string, { circuit: number; axis: number; rungs: number }>();
+  // The app's own notes to complete (servo placeholders) are no rungs of the original: not counted.
+  const own = (r: Rung) => r.outputs.length > 0 && r.outputs.every((o) => o.type === 'RAW' && o.vendor === TODO_VENDOR) && !r.branches.length;
   for (const r of program.rungs) {
+    if (own(r)) continue;
     const raw = rawTexts(r);
     const moving = [...new Set(rungAddresses(r).map((a) => servo.get(a.trim().toUpperCase())).filter((x): x is ServoRegister => Boolean(x)).map((x) => `${x.circuit}.${x.axis}`))];
     if (moving.length) {
@@ -84,7 +88,7 @@ export function remakeCoverage(p: Project, plcId: string): RemakeCoverage {
     if (err) errors.push({ rungId: r.id, message: err.message });
     else converted++;
   }
-  const rungs = program.rungs.length;
+  const rungs = program.rungs.filter((r) => !own(r)).length;
   return {
     plcId, label: `${profile.vendor} ${profile.name}`, cpuId, rungs, converted,
     percent: rungs ? Math.floor((100 * converted) / rungs) : 100,
@@ -121,4 +125,50 @@ export function remakeCoverageText(p: Project, coverage: RemakeCoverage[] = rema
     lines.push(`${c.label}: ${c.converted} of ${c.rungs} rungs convert (${c.percent}%)${keptText ? `; kept: ${keptText}` : ''}${c.errors.length ? `; rejected by its checker: ${c.errors.length} rung${c.errors.length === 1 ? '' : 's'}` : ''}${c.motion.length ? `; servo axes to set up: ${c.motion.map((m) => `circuit ${m.circuit} axis ${m.axis} (${m.rungs} rung${m.rungs === 1 ? '' : 's'})`).join(', ')}` : ''}.`);
   }
   return lines.join('\n');
+}
+
+/** Where the target PLC sets a servo axis up (documented names only; the rest said in general words). */
+function axisSetup(plcId: string, label: string): string {
+  if (plcId === 'siemens-s7') return 'in TIA Portal add a technology object TO_PositioningAxis for its drive, then enable it with MC_Power and move it with MC_MoveAbsolute / MC_MoveVelocity';
+  if (plcId === 'logix') return 'in Studio 5000 add the drive with an AXIS_CIP_DRIVE axis in a motion group, then enable it with MSO and move it with MAM / MAJ';
+  return `set the drive and its axis up on the ${label} as its manual says, then move it from this block`;
+}
+
+/**
+ * The remade program with one placeholder block per servo axis its rungs use ("SERVO AXIS 1 — to set up on …"):
+ * no logic, only notes to complete by hand (TODO_VENDOR, a comment on every PLC) naming the axis's registers by
+ * their new tag names (Axis1_motion_command, was OW8008), so nothing of the original's motion is silently lost.
+ * Idempotent: an axis that already has its block gets no second one.
+ */
+export function withServoPlaceholders(program: LadderProgram, plcId: string, axisName: (circuit: number, axis: number) => string | undefined = () => undefined): LadderProgram {
+  const profile = getProfile(plcId);
+  const label = `${profile.vendor} ${profile.name}`;
+  const used = new Set(program.tags.map((t) => t.nickname.toLowerCase()).filter(Boolean));
+  const byAxis = new Map<string, { circuit: number; axis: number; tags: { name: string; reg: ServoRegister }[] }>();
+  const tags = program.tags.map((t) => {
+    const reg = servoRegister(t.native ?? t.nickname ?? '');
+    if (!reg) return t;
+    const k = `${reg.circuit}.${reg.axis}`;
+    const e = byAxis.get(k) ?? { circuit: reg.circuit, axis: reg.axis, tags: [] };
+    byAxis.set(k, e);
+    // A register name (OW8008) means nothing on the new PLC: the axis and what it is, as the tag name.
+    const name = /^[IO][BWLF][89A-F]/i.test(t.nickname) || !t.nickname
+      ? (used.delete(t.nickname.toLowerCase()), logixName(`${reg.circuit > 1 ? `C${reg.circuit}_` : ''}Axis${reg.axis}_${reg.what.replace(/\(.*?\)/g, '')}`, used, `Axis${reg.axis}_${reg.offset}`))
+      : t.nickname;
+    e.tags.push({ name, reg });
+    return { ...t, nickname: name, native: t.native ?? reg.register, comment: t.comment || servoComment(reg) };
+  });
+  const blocks = [...(program.blocks ?? [])];
+  const rungs = [...program.rungs];
+  for (const e of [...byAxis.values()].sort((a, b) => a.circuit - b.circuit || a.axis - b.axis)) {
+    const id = `b_servo_c${e.circuit}_a${e.axis}`;
+    if (blocks.some((b) => b.id === id)) continue;
+    const named = axisName(e.circuit, e.axis);
+    const title = `SERVO AXIS ${e.axis}${e.circuit > 1 ? ` (circuit ${e.circuit})` : ''}${named ? ` ${named}` : ''}`;
+    blocks.push({ id, name: `${title} — to set up on ${label}`, description: `Placeholder, no logic: the original drove this axis through its MECHATROLINK registers. Set the axis up on the ${label} and complete this block.` });
+    const list = e.tags.map((x) => `${x.name} (was ${x.reg.register}, ${x.reg.what})`).join('; ');
+    rungs.push({ id: `r_servo_c${e.circuit}_a${e.axis}`, block: id, comment: `${title}: to set up on the ${label}.`, branches: [],
+      outputs: [{ type: 'RAW', vendor: TODO_VENDOR, text: `${title} — to set up on ${label}: ${axisSetup(plcId, label)}. The program's tags of this axis: ${list}.` }] });
+  }
+  return { ...program, tags, blocks, rungs };
 }

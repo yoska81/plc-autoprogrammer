@@ -1,4 +1,4 @@
-import { elementAddresses, motionWrites, rungAddresses, rungWrites, type LadderProgram, type RawInstruction, type Rung } from './ladder';
+import { elementAddresses, motionWrites, rungAddresses, rungWrites, TODO_VENDOR, type LadderProgram, type RawInstruction, type Rung } from './ladder';
 import type { PlcProfile } from './profile';
 import { deletedAddress, isDeletedOperand } from './remapProgram';
 import { YASKAWA_PROFILE_ID, layoutFor, memoryOverlaps, type MemoryLayout } from './profiles/yaskawa';
@@ -229,6 +229,8 @@ export const rawFamily = (vendor: string) => RAW_FAMILY[vendor] ?? vendor;
  */
 function rawIssues(rungId: string, r: RawInstruction, profile: PlcProfile): ValidationIssue[] {
   const short = r.text.length > 80 ? `${r.text.slice(0, 77).replace(/\s+/g, ' ')}…` : r.text;
+  // A note the app added to complete by hand: does nothing on any PLC, said as such (not "cannot run").
+  if (r.vendor === TODO_VENDOR) return [{ rungId, severity: 'warning', message: `To complete by hand: ${short}` }];
   if (rawFamily(r.vendor) !== profile.id) {
     const what = /^\s*(?:FUNCTION_BLOCK|FUNCTION)\s+"?(\w+)/i.exec(r.text)?.[1] ?? /^(\w+)\(/.exec(r.text)?.[1] ?? short;
     return [{ rungId, severity: 'error', message: `${what} from ${VENDOR_NAME[rawFamily(r.vendor)] ?? r.vendor} cannot run on ${profile.name}: this rung will not work (${short}).` }];

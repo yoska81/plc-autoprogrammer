@@ -18,7 +18,7 @@
  */
 import type { ExportContext } from '../profile';
 import type { LadderElement, LadderOutput, LadderProgram, Rung } from '../ladder';
-import { rungAddresses } from '../ladder';
+import { rungAddresses, TODO_VENDOR } from '../ladder';
 import { buildScl, unusedIoTags } from './siemens';
 import type { StVariable } from './iecSt';
 
@@ -114,7 +114,7 @@ function notLad(r: Rung, n: Names): string | null {
     else if (!/^SC[17]$/i.test(e.address) && !n.of(e.address)) return `operand ${e.address}`;
   }
   for (const o of r.outputs) {
-    if (o.type === 'RAW') return 'an instruction kept from the original program';
+    if (o.type === 'RAW') return o.vendor === TODO_VENDOR ? 'a note to complete by hand (no logic)' : 'an instruction kept from the original program';
     if (o.type === 'MATH') return `math (${o.dest} = ${o.expression})`;
     if (o.type === 'COPY' && (!n.of(o.source) || !n.of(o.dest))) return `copy ${o.source} → ${o.dest}`;
     if ((o.type === 'OUT' || o.type === 'SET' || o.type === 'RST') && !n.of(o.address)) return `coil ${o.address}`;

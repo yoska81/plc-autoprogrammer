@@ -206,7 +206,10 @@ export function rawTextNames(text: string): { name: string; index: number }[] {
 export const isBlockRaw = (r: RawInstruction): boolean => /^\s*(FUNCTION_BLOCK|FUNCTION|ORGANIZATION_BLOCK|DATA_BLOCK|TYPE)\b/i.test(r.text);
 
 /** What an exporter writes for a RAW instruction of another PLC (never dropped silently). */
-export const rawTodo = (r: RawInstruction): string => `TODO (from ${r.vendor}): ${r.text}`;
+/** The vendor of a note the app itself adds to complete by hand (a servo axis to set up …): a comment on every PLC, no logic. */
+export const TODO_VENDOR = 'todo';
+
+export const rawTodo = (r: RawInstruction): string => (r.vendor === TODO_VENDOR ? `TODO: ${r.text}` : `TODO (from ${r.vendor}): ${r.text}`);
 
 export function newRungId(): string {
   return `r_${Math.random().toString(36).slice(2, 10)}`;
