@@ -2,7 +2,8 @@
 // Names as in the Openness API: TiaPortal.GetProcesses / TiaPortalProcess.Attach, new TiaPortal(TiaPortalMode),
 // Projects.Create / Open, HardwareCatalog.Find, Devices.CreateWithItem, DeviceItem.PlugNew,
 // GetService<SoftwareContainer>().Software (PlcSoftware), TagTableGroup.TagTables, PlcTagTable.Tags,
-// CPU.GetService<DownloadProvider>(): Configuration.Modes.Find("PN/IE").PcInterfaces / TargetInterfaces, Download.
+// CPU.GetService<DownloadProvider>(): Configuration.Modes.Find("PN/IE").PcInterfaces / TargetInterfaces, Download;
+// PlcBlock.Export (SimaticML, ExportOptions.WithDefaults) through BlockGroup.Blocks / Groups for the read back.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -304,6 +305,57 @@ namespace TiaBridge
                 _refuse(a.Why);
                 throw new BridgeError(a.Why);
             }
+        }
+
+        public IList<KeyValuePair<string, string>> ExportBlocks(Action<string> progress, Action<string, string> failed)
+        {
+            var sw = PlcSoftware();
+            var outList = new List<KeyValuePair<string, string>>();
+            string dir = Path.Combine(Path.GetTempPath(), "isa-tia-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                void Group(object g)
+                {
+                    foreach (var b in R.Items(R.Get(g, "Blocks")))
+                    {
+                        string name = R.Get(b, "Name") as string;
+                        progress($"Reading {name}…");
+                        try
+                        {
+                            if (Try(() => R.Get(b, "IsKnowHowProtected")) is bool kh && kh) { failed(name, "know-how protected: TIA Portal does not give its content to other programs"); continue; }
+                            var file = new FileInfo(Path.Combine(dir, $"{outList.Count:D4}.xml"));
+                            R.Call(b, "Export", file, R.Enum("Siemens.Engineering.ExportOptions", "WithDefaults"));
+                            outList.Add(new KeyValuePair<string, string>(name, File.ReadAllText(file.FullName)));
+                        }
+                        catch (Exception e) { failed(name, $"{R.Inner(e).Message} (compile the PLC in TIA Portal, then read again)"); }
+                    }
+                    foreach (var sub in R.Items(R.Get(g, "Groups"))) Group(sub);
+                }
+                Group(R.Get(sw, "BlockGroup"));
+            }
+            finally { try { Directory.Delete(dir, true); } catch (Exception) { /* a temp folder */ } }
+            return outList;
+        }
+
+        public IList<TagRow> ReadTags()
+        {
+            var rows = new List<TagRow>();
+            void Group(object g)
+            {
+                foreach (var t in R.Items(R.Get(g, "TagTables")))
+                    foreach (var tag in R.Items(R.Get(t, "Tags")))
+                        rows.Add(new TagRow
+                        {
+                            Name = R.Get(tag, "Name") as string,
+                            DataType = R.Get(tag, "DataTypeName") as string,
+                            Address = R.Get(tag, "LogicalAddress") as string,
+                            Comment = Try(() => R.Get(R.Items(R.Get(R.Get(tag, "Comment"), "Items")).FirstOrDefault() ?? new object(), "Text")) as string ?? "",
+                        });
+                foreach (var sub in R.Items(R.Get(g, "Groups"))) Group(sub);
+            }
+            Group(R.Get(PlcSoftware(), "TagTableGroup"));
+            return rows;
         }
 
         public void Save() => R.Call(Project, "Save");

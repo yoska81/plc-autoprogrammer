@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The CODESYS bridge the installer ships: .NET Framework 4.8. It runs the user's CODESYS headless with the job
+       script (scripts/isa_job.py, shipped next to the exe). Shares the protocol, JSON and log with the TIA bridge.
+       Its tests (tests/) run the same code on .NET 8 with a fake CODESYS. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>CodesysBridge</AssemblyName>
+    <RootNamespace>CodesysBridge</RootNamespace>
+    <Version>0.1.0</Version>
+    <Product>ISA Auto Programmer CODESYS bridge</Product>
+    <Company>ISA</Company>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="src/**/*.cs" />
+    <Compile Include="../tia-bridge/src/Json.cs;../tia-bridge/src/Protocol.cs;../tia-bridge/src/Log.cs" />
+    <None Include="scripts/isa_job.py" CopyToOutputDirectory="PreserveNewest" Link="isa_job.py" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

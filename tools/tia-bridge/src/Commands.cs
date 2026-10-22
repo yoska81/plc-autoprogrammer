@@ -2,7 +2,8 @@
 //   ping · detect · portals · open (attach to a running TIA Portal or start one, open or create the project)
 //   · firmware (of an order number, newest first) · plc (add the CPU and its local modules) · tags (PLC tag table)
 //   · blocks (import the program's files in order: SimaticML blocks, SCL sources) · compile (with the messages)
-//   · downloadTargets (this PC's interfaces that reach the PLC) · download (only with the app's confirm: confirmed).
+//   · downloadTargets (this PC's interfaces that reach the PLC) · download (only with the app's confirm: confirmed)
+//   · readBack (the project's blocks as SimaticML and its PLC tags, for the Upgrade page; read only).
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -171,6 +172,21 @@ namespace TiaBridge
                 var r = Tia().Download(pc, Num(args, "number") ?? 1, Str(args, "target"), choices, progress);
                 Log.Write($"download {r.State}: {r.Errors} errors, {r.Warnings} warnings; {string.Join(" | ", r.Answers)}");
                 return new Dictionary<string, object> { ["state"] = r.State, ["errors"] = r.Errors, ["warnings"] = r.Warnings, ["messages"] = r.Messages.Cast<object>().ToList(), ["answers"] = r.Answers.Cast<object>().ToList() };
+            });
+            p.On("readBack", (args, progress) =>
+            {
+                var e = Tia();
+                var failed = new List<object>();
+                var blocks = e.ExportBlocks(progress, (name, why) => failed.Add(new Dictionary<string, object> { ["name"] = name, ["error"] = why }));
+                progress("Reading the PLC tags…");
+                var tags = e.ReadTags();
+                return new Dictionary<string, object>
+                {
+                    ["plc"] = Plc(e.FindPlc()),
+                    ["blocks"] = blocks.Select(b => (object)new Dictionary<string, object> { ["name"] = b.Key, ["xml"] = b.Value }).ToList(),
+                    ["failed"] = failed,
+                    ["tags"] = tags.Select(t => (object)new Dictionary<string, object> { ["name"] = t.Name, ["dataType"] = t.DataType, ["address"] = t.Address, ["comment"] = t.Comment }).ToList(),
+                };
             });
             return p;
         }
