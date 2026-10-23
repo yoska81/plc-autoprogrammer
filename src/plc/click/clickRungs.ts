@@ -66,24 +66,26 @@ export const DEFAULT_KEYMAP: ClickKeymap = {
   newRow: [
     { do: 'keys', keys: '{INSERT}' },
     { do: 'window', title: '^Insert$', timeoutMs: 5000 },
-    { do: 'click', find: { type: 'RadioButton', name: '^Row$' } },
-    { do: 'click', find: { type: 'RadioButton', name: '^After Cursor$' } },
-    { do: 'click', find: { type: 'Button', name: '^OK$' } },
+    // (with the mouse: picked through UI Automation the dialog kept "Rung" and inserted a rung)
+    { do: 'click', find: { type: 'RadioButton', name: '^Row$' }, mouse: true },
+    { do: 'click', find: { type: 'RadioButton', name: '^After Cursor$' }, mouse: true },
+    { do: 'click', find: { type: 'Button', name: '^OK$' }, mouse: true },
     { do: 'window', title: CLICK_MAIN },
   ],
   // Ctrl+K: "Edit Rung Comment", its text box (a rich edit without a name) has the cursor: the comment is typed
   comment: { keys: '^k', dialog: '^Edit Rung Comment$', field: 'typed' },
   ok: { type: 'Button', name: '^OK$' },
   instructions: [
+    // (each entry's name exactly: "Timer" also begins its heading "Timer/Counter", "Copy" its "Copy/Search")
     // the Instruction List's entries as CLICK 4 names them ("Contact (NO)", "Out" …), CLICK 3's names as well; the
     // dialogs' boxes by their control ids, as the real CLICK 4.00 shows them (recorded on the build server)
     { match: /^NO contact/, how: { list: '^(Contact \\(NO\\)|NO Contact)', dialog: 'Contact', fields: { Address: box('5001') } } },
     { match: /^NC contact/, how: { list: '^(Contact \\(NC\\)|NC Contact)', dialog: 'Contact', fields: { Address: box('5001') } } },
-    { match: /^Edge contact/, how: { list: '^Edge Contact', dialog: 'Edge', fields: { Address: box('1003') } } },
+    { match: /^Edge contact/, how: { list: '^Edge Contact$', dialog: 'Edge', fields: { Address: box('1003') } } },
     {
       match: /^Compare contact/,
       how: {
-        list: '^Compare', dialog: 'Compare',
+        list: '^Compare$', dialog: 'Compare',
         fields: {
           'Value A': box('5002'),
           // the symbol buttons: = > >= on top, <> < <= below
@@ -92,13 +94,13 @@ export const DEFAULT_KEYMAP: ClickKeymap = {
         },
       },
     },
-    { match: /^Out coil/, how: { list: '^Out\\b', dialog: '^Out', fields: { Address: box('5002') } } },
-    { match: /^Set coil/, how: { list: '^Set\\b', dialog: '^Set', fields: { Address: box('5002') } } },
-    { match: /^Reset coil/, how: { list: '^Reset\\b', dialog: '^Reset', fields: { Address: box('5002') } } },
-    { match: /^Timer/, how: { list: '^Timer\\b', dialog: 'Timer', fields: { 'Timer number': box('5001'), Setpoint: box('5004'), Unit: { ...box('5006', 'ComboBox'), select: true } } } },
-    { match: /^Counter/, how: { list: '^Counter\\b', dialog: 'Counter', fields: { 'Counter number': box('5001'), Setpoint: box('5004') } } },
+    { match: /^Out coil/, how: { list: '^Out$', dialog: '^Out', fields: { Address: box('5002') } } },
+    { match: /^Set coil/, how: { list: '^Set$', dialog: '^Set', fields: { Address: box('5002') } } },
+    { match: /^Reset coil/, how: { list: '^Reset$', dialog: '^Reset', fields: { Address: box('5002') } } },
+    { match: /^Timer/, how: { list: '^Timer$', dialog: 'Timer', fields: { 'Timer number': box('5001'), Setpoint: box('5004'), Unit: { ...box('5006', 'ComboBox'), select: true } } } },
+    { match: /^Counter/, how: { list: '^Counter$', dialog: 'Counter', fields: { 'Counter number': box('5001'), Setpoint: box('5004') } } },
     { match: /^Copy/, how: { list: '^Copy$', dialog: 'Copy', fields: { Source: box('5006'), Destination: box('5014') } } },
-    { match: /^Math/, how: { list: '^Math\\b', dialog: 'Math', fields: { Result: box('2001'), Formula: box('2006', 'Document') } } },
+    { match: /^Math/, how: { list: '^Math$', dialog: 'Math', fields: { Result: box('2001'), Formula: box('2006', 'Document') } } },
   ],
 };
 
