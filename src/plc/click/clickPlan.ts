@@ -155,16 +155,20 @@ export function addressPickerPlan(): ClickStep[] {
   }];
 }
 
-/** The nickname CSV into the Address Picker. `csvPath`: the file the bridge wrote. */
+/**
+ * The nickname CSV into the Address Picker. `csvPath`: the file the bridge wrote. CLICK 4: File › Import › Nickname
+ * ("Import to Address Picker") in the ribbon's File menu, by its key tips Alt+F, I, N (seen in the real CLICK 4.00 on
+ * the build server; its Address Picker has no Import button); CLICK 3: the Address Picker's own Import or File menu.
+ */
 export function nicknamePlan(csvPath: string): ClickStep[] {
   const picker: ClickStep = { do: 'window', title: '^Address Picker' };
   const openCame: ClickStep = { do: 'window', title: '^(Open|Import)', timeoutMs: 8000 };
   return [
-    ...addressPickerPlan(),
     {
       do: 'oneOf', what: 'the nickname import', say: 'Importing the nicknames', options: [
-        { label: 'its Import button', steps: [picker, { do: 'click', find: { type: 'Button', name: '^Import' }, timeoutMs: 3000 }, { do: 'click', find: { type: 'MenuItem', name: 'Nick ?Name' }, timeoutMs: 2000, optional: true }, openCame] },
-        { label: 'its File menu', steps: [picker, { do: 'menu', path: ['File', 'Import', 'Nick ?Names?'] }, openCame] },
+        { label: 'File › Import › Nickname (key tips Alt+F, I, N)', steps: [main, { do: 'keys', keys: '%f' }, { do: 'wait', ms: 800 }, { do: 'keys', keys: 'i' }, { do: 'wait', ms: 800 }, { do: 'keys', keys: 'n' }, openCame] },
+        { label: 'the Address Picker\'s Import button', steps: [...addressPickerPlan(), picker, { do: 'click', find: { type: 'Button', name: '^Import' }, timeoutMs: 3000 }, { do: 'click', find: { type: 'MenuItem', name: 'Nick ?Name' }, timeoutMs: 2000, optional: true }, openCame] },
+        { label: 'the Address Picker\'s File menu', steps: [...addressPickerPlan(), picker, { do: 'menu', path: ['File', 'Import', 'Nick ?Names?'] }, openCame] },
       ],
     },
     { do: 'setText', find: { type: 'Edit', name: '^File name' }, text: csvPath },
