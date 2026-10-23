@@ -129,7 +129,8 @@ const FAKE = () => {
   check(/save the project there \(Ctrl\+S\)/.test(done), 'done: the user saves in CLICK');
 
   // A failure: one plain sentence, the log for support with Open log folder.
-  await page.evaluate(() => { window.__click.failAt = 2; window.__click.calls = []; });
+  // the New project step: step 4, after the What's New guide's two optional steps
+  await page.evaluate(() => { window.__click.failAt = 4; window.__click.calls = []; });
   await dialog.getByTestId('click-send-all').click();
   await dialog.getByTestId('click-failed').waitFor({ timeout: 10000 });
   const failed = await dialog.getByTestId('click-failed').innerText();

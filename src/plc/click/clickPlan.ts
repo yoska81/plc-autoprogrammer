@@ -48,6 +48,8 @@ const CPU_DIALOG = '^(Select a CPU|CPU Module|New Project|Select CPU)';
  * leftmost. Seen in a user's CLICK 4.00 log: main window → Startup (TfrmStartup) → Select a CPU Module (TfrmCPU).
  */
 const STARTUP = '^Startup$';
+/** CLICK 4's "What's New Feature Guide", shown when CLICK starts (a user's CLICK 4.00): nothing to do there but close it. */
+const WHATS_NEW = "^What.s New";
 
 /** A text as a pattern matching it exactly. */
 export const literal = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -77,12 +79,15 @@ export function newProjectPlan(cpuId: string): ClickStep[] {
   const cpuCame: ClickStep = { do: 'window', title: CPU_DIALOG, timeoutMs: 8000 };
   return [
     // CLICK 4 just started may show its Startup window (over the main one, or alone)
-    { do: 'window', title: `${CLICK_MAIN}|${STARTUP}`, timeoutMs: 60000 },
+    { do: 'window', title: `${CLICK_MAIN}|${STARTUP}|${WHATS_NEW}`, timeoutMs: 60000 },
+    // and, first, its "What's New Feature Guide" (seen with CLICK 4.00): closed, it only tells news
+    { do: 'window', title: WHATS_NEW, timeoutMs: 3000, optional: true },
+    { do: 'click', find: { type: 'Button', name: '^Close$' }, timeoutMs: 2000, optional: true },
     {
       do: 'oneOf', what: 'New project', say: 'New project', options: [
         {
           label: 'the Startup window CLICK shows when it starts', steps: [
-            { do: 'window', title: STARTUP, timeoutMs: 1500 },
+            { do: 'window', title: STARTUP, timeoutMs: 4000 },
             { do: 'click', find: { type: 'Button', name: '^(Start a new project)?$', order: 'left' }, timeoutMs: 2000 },
             cpuCame,
           ],

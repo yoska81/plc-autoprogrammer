@@ -21,6 +21,12 @@ assert.ok(np!.options![1].steps.some((s) => s.do === 'keys' && s.keys === '^n'))
 assert.deepEqual(np!.options![2].steps.find((s) => s.do === 'menu')!.path, ['File', 'New Project']);
 // CLICK 4.00 (a user's log): Ctrl+N opens "Startup" first, the CPU dialog inside it; Start a new project is its
 // leftmost, unnamed button; a CLICK whose Ctrl+N opens the CPU dialog straight away skips that press
+// CLICK 4.00 shows its "What's New Feature Guide" when it starts: closed before anything else, when it comes
+const news = p.findIndex((s) => s.do === 'window' && s.optional && new RegExp(s.title!).test("What's New Feature Guide"));
+assert.ok(news > 0 && news < p.indexOf(np!), 'the guide is looked for before the new project');
+assert.equal(p[news + 1].do, 'click');
+assert.ok(p[news + 1].optional && new RegExp(p[news + 1].find!.name!).test('Close') && !new RegExp(p[news + 1].find!.name!).test('Next'), 'closed (its Close), not paged through');
+assert.ok(new RegExp(p[0].title!).test("What's New Feature Guide"), 'the run can start while the guide is in front');
 const ctrlN = np!.options![1].steps;
 const came = ctrlN.find((s) => s.do === 'window' && s.title !== CLICK_MAIN)!;
 assert.ok(new RegExp(came.title!, 'i').test('Startup') && new RegExp(came.title!, 'i').test('Select a CPU Module'), 'Startup or the CPU dialog');

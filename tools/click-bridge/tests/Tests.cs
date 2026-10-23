@@ -62,7 +62,9 @@ static class Tests
         public int? WindowsIn;
         public int Start(string exe) { Did.Add($"start {exe}"); return StartPid; }
         public IList<string> Windows(int pid) => WindowsIn != null && pid != WindowsIn ? new List<string>() : Controls.Keys.ToList();
-        public string Window(int pid, string title, int timeoutMs) => WindowsIn != null && pid != WindowsIn ? null : Controls.Keys.FirstOrDefault(w => System.Text.RegularExpressions.Regex.IsMatch(w, title, System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+        /// <summary>Times Window throws as UI Automation does when a window closes while it is read (CLICK starting).</summary>
+        public int WindowGoneTimes;
+        public string Window(int pid, string title, int timeoutMs) => WindowGoneTimes-- > 0 ? throw new InvalidOperationException("The target element corresponds to UI that is no longer available") : WindowsIn != null && pid != WindowsIn ? null : Controls.Keys.FirstOrDefault(w => System.Text.RegularExpressions.Regex.IsMatch(w, title, System.Text.RegularExpressions.RegexOptions.IgnoreCase));
         /// <summary>Where a control is on the screen, left to right (by id): for order "left".</summary>
         public Dictionary<string, int> Left = new Dictionary<string, int>();
         public string Find(string window, Selector sel, int timeoutMs)
@@ -457,6 +459,15 @@ static class Tests
                 True(output.ToString().Contains("\"processId\":42") && ui.Did.Contains("start C:\\AD\\Click4\\CLICK.exe"), output + " | " + string.Join(" | ", ui.Did));
             }
             finally { Commands.AttachWaitSeconds = was; }
+        });
+
+        Test("commands: a window closing while start reads CLICK's windows (CLICK still opening) is looked at again", () =>
+        {
+            var pc = new FakePc().With(false, "{B}", "CLICK Programming Software Ver. 4.00", "4.00", @"C:\AD\Click4", @"C:\AD\Click4\CLICK.exe");
+            var ui = Click(); ui.WindowGoneTimes = 2; ui.FrontAt = _ => 42;
+            var output = new StringWriter();
+            Commands.Register(new Protocol(output), pc, ui).Run(new StringReader("{\"id\":1,\"cmd\":\"start\"}\n{\"id\":2,\"cmd\":\"quit\"}\n"), "test");
+            True(output.ToString().Contains("\"processId\":42"), output.ToString());
         });
 
         Test("commands: no CLICK installed says how to get it; run before start says to open CLICK", () =>

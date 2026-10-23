@@ -68,7 +68,9 @@ namespace ClickBridge
                 {
                     foreach (int cand in new[] { pid }.Concat(pc.Running(inst.Exe).Select(r => r.Key)).Distinct())
                     {
-                        var w = ui.Window(cand, StartTitles, 0);
+                        string w;
+                        try { w = ui.Window(cand, StartTitles, 0); }
+                        catch (Exception e) { Log.Write($"click: process {cand}: {e.Message}; looking again"); w = null; } // CLICK still opening
                         if (w != null) { if (cand != pid) Log.Write($"click: the window is in process {cand} (started {pid})"); pid = cand; main = w; break; }
                     }
                     if (main != null) break;

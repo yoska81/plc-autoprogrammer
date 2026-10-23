@@ -39,7 +39,15 @@ namespace ClickBridge
         static IEnumerable<AutomationElement> AllWindows(int pid) =>
             TopWindows(pid).SelectMany(w => new[] { w }.Concat(w.FindAll(TreeScope.Descendants, IsWindow).Cast<AutomationElement>()));
 
-        public IList<string> Windows(int pid) => AllWindows(pid).Select(w => w.Current.Name).ToList();
+        public IList<string> Windows(int pid)
+        {
+            // a window may close while it is read (CLICK starting: its splash, its guide): read again
+            for (int i = 0; ; i++)
+            {
+                try { return AllWindows(pid).Select(w => w.Current.Name).ToList(); }
+                catch (ElementNotAvailableException) when (i < 5) { Thread.Sleep(200); }
+            }
+        }
 
         public void Show(string window)
         {
@@ -81,8 +89,13 @@ namespace ClickBridge
             do
             {
                 // a dialog may be inside the main window rather than top-level, even inside another dialog
-                var w = AllWindows(pid).FirstOrDefault(x => rx.IsMatch(x.Current.Name));
-                if (w != null) return Keep(w);
+                // a window may close while it is read (CLICK starting: its splash, its guide): look again
+                try
+                {
+                    var w = AllWindows(pid).FirstOrDefault(x => rx.IsMatch(x.Current.Name));
+                    if (w != null) return Keep(w);
+                }
+                catch (ElementNotAvailableException) { Log.Write("ui: a window closed while it was read; looking again"); }
                 Thread.Sleep(250);
             } while (DateTime.UtcNow < until);
             return null;
@@ -94,9 +107,14 @@ namespace ClickBridge
             var until = DateTime.UtcNow.AddMilliseconds(timeoutMs);
             do
             {
-                var all = root.FindAll(TreeScope.Descendants, Condition.TrueCondition).Cast<AutomationElement>()
-                    .Where(e => sel.Matches(e.Current.AutomationId, e.Current.Name, e.Current.ControlType.ProgrammaticName.Replace("ControlType.", "")))
-                    .ToList();
+                List<AutomationElement> all;
+                try
+                {
+                    all = root.FindAll(TreeScope.Descendants, Condition.TrueCondition).Cast<AutomationElement>()
+                        .Where(e => sel.Matches(e.Current.AutomationId, e.Current.Name, e.Current.ControlType.ProgrammaticName.Replace("ControlType.", "")))
+                        .ToList();
+                }
+                catch (ElementNotAvailableException) { all = new List<AutomationElement>(); } // a control went while read: look again
                 if (sel.Order == "left") all = all.OrderBy(e => e.Current.BoundingRectangle.X).ThenBy(e => e.Current.BoundingRectangle.Y).ToList();
                 if (all.Count > sel.Index) return Keep(all[sel.Index]);
                 Thread.Sleep(250);
