@@ -27,6 +27,12 @@ assert.ok(news > 0 && news < p.indexOf(np!), 'the guide is looked for before the
 assert.equal(p[news + 1].do, 'click');
 assert.ok(p[news + 1].optional && new RegExp(p[news + 1].find!.name!).test('Close') && !new RegExp(p[news + 1].find!.name!).test('Next'), 'closed (its Close), not paged through');
 assert.ok(new RegExp(p[0].title!).test("What's New Feature Guide"), 'the run can start while the guide is in front');
+// CLICK 4.00 asks for the new project's user accounts after the CPU: no password, then OK; skipped when it does not ask
+const ua = p.findIndex((s) => s.do === 'window' && new RegExp(s.title!).test('User Account Setup'));
+assert.ok(ua > p.findIndex((s) => s.do === 'click' && s.find?.name === '^OK$'), 'after the CPU dialog\'s OK');
+assert.ok(p[ua].optional && p[ua + 1].do === 'check' && p[ua + 1].on === true && /Disable Password Requirement/.test(p[ua + 1].find!.name!) && p[ua + 1].optional);
+assert.ok(p[ua + 2].find?.name === '^OK$' && p[ua + 2].optional);
+assert.ok(!p[ua + 3].optional, 'a step that ends the skipping, so the Startup check after it still runs');
 const ctrlN = np!.options![1].steps;
 const came = ctrlN.find((s) => s.do === 'window' && s.title !== CLICK_MAIN)!;
 assert.ok(new RegExp(came.title!, 'i').test('Startup') && new RegExp(came.title!, 'i').test('Select a CPU Module'), 'Startup or the CPU dialog');

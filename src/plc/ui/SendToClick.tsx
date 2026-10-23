@@ -6,7 +6,7 @@ import { type ClickDetect } from '../../desktop/bridge';
 import { collectProject } from '../../deliverables/collect';
 import { hmiExtraTags } from '../../deliverables/exportContext';
 import { clickNicknameCsv } from '../core/clickExport';
-import { modulesLine, newProjectPlan, setupPlan } from '../click/clickPlan';
+import { clickPasswordNote, modulesLine, newProjectPlan, setupPlan } from '../click/clickPlan';
 import { CALIBRATION_PDF, CALIBRATION_REPORT, calibrationPlan, calibrationReport, calibrationResult, type Calibration } from '../click/clickCalibrate';
 import { rungsPlan } from '../click/clickRungs';
 import { compareNicknames, compareRungs, exportNicknamesPlan, printLadderPlan, type NicknameCheck, type RungCheck } from '../click/clickVerify';
@@ -101,6 +101,7 @@ export default function SendToClick({ profileId }: { profileId: string }) {
       if (plan.steps.length) await click.call('run', { steps: plan.steps });
       const toDo = [
         ...(modulesLine(p.modules) ? [modulesLine(p.modules)!] : []),
+        ...(/^4/.test(s.version) ? [clickPasswordNote] : []),
         ...plan.leftForYou.map((x) => `Type rung ${x.number} from the entry sheet (Load into PLC) ${x.after ? `after rung ${x.after}` : 'before the first rung'}: the app cannot enter ${x.why}.`),
       ];
       return { version: s.version, cpu: p.cpu.id, nicknames: true, entered: plan.entered, rungs: plan.entered + plan.leftForYou.length, toDo } satisfies Sent;

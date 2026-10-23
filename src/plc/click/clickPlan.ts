@@ -48,6 +48,10 @@ const CPU_DIALOG = '^(Select a CPU|CPU Module|New Project|Select CPU)';
  * leftmost. Seen in a user's CLICK 4.00 log: main window → Startup (TfrmStartup) → Select a CPU Module (TfrmCPU).
  */
 const STARTUP = '^Startup$';
+/** CLICK 4's new-project password question (TfrmUserAccountsSetupDlg). */
+const USER_ACCOUNTS = '^User Account Setup$';
+/** For the result, on CLICK 4: the app answered the password question with none. */
+export const clickPasswordNote = 'The new project has no password (CLICK 4 asked; the app chose none, like CLICK 3 projects): to protect it, set one in CLICK under Setup › User Account Setup.';
 /** CLICK 4's "What's New Feature Guide", shown when CLICK starts (a user's CLICK 4.00): nothing to do there but close it. */
 const WHATS_NEW = "^What.s New";
 
@@ -104,6 +108,12 @@ export function newProjectPlan(cpuId: string): ClickStep[] {
       ],
     },
     { do: 'click', find: { name: '^OK$', type: 'Button' } },
+    // CLICK 4.00 then asks for the new project's user accounts ("User Account Setup", seen in a user's log): no password,
+    // as CLICK 3 projects; the result says how to set one (clickPasswordNote)
+    { do: 'window', title: USER_ACCOUNTS, timeoutMs: 5000, optional: true },
+    { do: 'check', find: { type: 'CheckBox', name: '^Disable Password Requirement$' }, on: true, optional: true },
+    { do: 'click', find: { type: 'Button', name: '^OK$' }, optional: true },
+    { do: 'wait', ms: 300 },
     // CLICK 4: should its Startup window stay open behind the new project, close it (Close only chooses nothing)
     { do: 'window', title: STARTUP, timeoutMs: 1500, optional: true },
     { do: 'click', find: { type: 'Button', name: '^Close$' }, timeoutMs: 1000, optional: true },
