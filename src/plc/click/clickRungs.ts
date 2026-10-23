@@ -154,7 +154,11 @@ export function rungSteps(km: ClickKeymap, r: EntryRung): { number: number; step
   const at = { row: 1, column: 1 };
   let rows = 1; // the rung's rows in CLICK so far (a new rung has one)
   const move = (row: number, column: number) => {
-    const keys = km.move(row - at.row, column - at.column);
+    // the output column by End ("go to right column"): counting Right keys to it put outputs rungs lower in the
+    // real CLICK 4.00
+    const keys = column === km.outputColumn && at.column !== km.outputColumn
+      ? `${km.move(row - at.row, 0)}{END}`
+      : km.move(row - at.row, column - at.column);
     if (keys) steps.push({ do: 'keys', keys });
     at.row = row; at.column = column;
   };
@@ -168,7 +172,7 @@ export function rungSteps(km: ClickKeymap, r: EntryRung): { number: number; step
     }
     move(row, column);
   };
-  const entered = () => { at.row += km.afterEntry.rows; at.column += km.afterEntry.columns; };
+  const entered = () => { at.row += km.afterEntry.rows; at.column = Math.min(at.column + km.afterEntry.columns, km.outputColumn); };
   const yours = (why: string) => ({
     number: r.number,
     leftForYou: why,
@@ -183,7 +187,9 @@ export function rungSteps(km: ClickKeymap, r: EntryRung): { number: number; step
       entered();
     }
     if (ri > 0 && row.length) {
-      goTo(ri + 1, row[row.length - 1].column);
+      // the wire up is drawn on the cursor cell's left edge: from the cell after the row's last instruction, so the
+      // row joins the one above after its own instructions (seen in the real CLICK 4.00)
+      goTo(ri + 1, row[row.length - 1].column + 1);
       steps.push({ do: 'keys', keys: km.joinUp });
     }
   }

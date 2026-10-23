@@ -34,7 +34,9 @@ assert.equal(s.filter((x) => x.do === 'keys').at(-1)!.keys, 'Motor run', 'the co
 const keys = s.filter((x) => x.do === 'keys').map((x) => x.keys);
 // (row 2 is added to the rung first: CLICK's Insert dialog, a row after the cursor's)
 // (the Insert dialog leaves the cursor on the new row, same column: only the column moves after it)
-assert.deepEqual(keys, [km.newRung, '{INSERT}', km.move(0, -2), km.move(0, -1), km.joinUp, km.move(-1, 31), km.comment!.keys, 'Motor run'], keys.join(' | '));
+// the join from the cell after the row's last instruction (the wire is drawn on the cursor cell's left edge); the
+// output column by End
+assert.deepEqual(keys, [km.newRung, '{INSERT}', km.move(0, -2), km.joinUp, `${km.move(-1, 0)}{END}`, km.comment!.keys, 'Motor run'], keys.join(' | '));
 assert.ok(s.some((x) => x.do === 'click' && x.find?.name === '^Row$') && s.some((x) => x.do === 'click' && x.find?.name === '^After Cursor$'), 'a row, after the cursor');
 assert.equal(km.move(1, -2), '{DOWN 1}{LEFT 2}');
 assert.equal(km.move(0, 0), '');
