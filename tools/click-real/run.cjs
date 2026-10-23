@@ -81,6 +81,10 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
     await step(`print the ladder to a PDF (${print.length} steps)`, () => b.call('run', { steps: print }));
     presser.kill();
     shot('printed');
+    // and CLICK's own judgement of the wiring: its Syntax Check (F8), its result window recorded and shot
+    await step('Syntax Check (F8)', () => b.call('run', { steps: [{ do: 'window', title: '^CLICK Programming Software' }, { do: 'keys', keys: '{F8}' }, { do: 'wait', ms: 4000 }] }));
+    await b.call('dump', { show: false }).catch(() => undefined);
+    shot('syntax-check');
     console.log(`${at()} ALL DONE: the example project is in CLICK`);
   } catch {
     failed = true;
