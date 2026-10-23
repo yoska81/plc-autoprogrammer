@@ -8,13 +8,14 @@
 import assert from 'node:assert/strict';
 import { saveSteps } from './clickPlan';
 import { rungAddressesInOrder } from './clickVerify';
+import { DEFAULT_KEYMAP } from './clickRungs';
 import { CALIBRATION_PDF, CALIBRATION_PROGRAM, calibrationPlan, calibrationReport, calibrationResult } from './clickCalibrate';
 
 const plan = calibrationPlan('C:\\Users\\tech\\AppData\\Roaming\\ISA Auto Programmer\\click');
 assert.equal(plan.entered, 3, 'the app enters all three');
 assert.deepEqual(saveSteps([...plan.rungs, ...plan.print]), [], 'nothing saved');
 assert.ok(!plan.rungs.some((s) => s.do === 'waitUser'), 'no rung left to the user');
-assert.ok(plan.rungs.some((s) => s.do === 'keys' && s.keys === '+{UP}'), 'the seal-in joins its parallel row');
+assert.ok(plan.rungs.some((s) => s.do === 'keys' && s.keys === DEFAULT_KEYMAP.joinUp), 'the seal-in joins its parallel row');
 assert.ok(plan.rungs.some((s) => s.do === 'setText' && s.text === 'T50'), 'the timer');
 assert.ok(plan.print.some((s) => s.do === 'setText' && s.text?.endsWith(`\\${CALIBRATION_PDF}`)));
 assert.ok(plan.print.some((s) => s.do === 'waitGone' && /press Save/.test(s.say ?? '')), 'the user presses Save');

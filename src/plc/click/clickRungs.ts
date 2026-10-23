@@ -58,8 +58,10 @@ export const DEFAULT_KEYMAP: ClickKeymap = {
   move: (rows, columns) => `${rows > 0 ? `{DOWN ${rows}}` : rows < 0 ? `{UP ${-rows}}` : ''}${columns > 0 ? `{RIGHT ${columns}}` : columns < 0 ? `{LEFT ${-columns}}` : ''}`,
   afterEntry: { rows: 0, columns: 1 },
   outputColumn: 32,
-  joinUp: '+{UP}',
-  comment: { keys: '^m', dialog: '^(Rung )?Comment', field: edit('', 0) },
+  // CLICK's keyboard shortcuts (its help, "Keyboard Shortcuts (Hot Keys)"): Ctrl+Up draws a wire up, Ctrl+K edits the
+  // rung comments
+  joinUp: '^{UP}',
+  comment: { keys: '^k', dialog: 'Comment', field: edit('', 0) },
   ok: { type: 'Button', name: '^OK$' },
   instructions: [
     // the Instruction List's entries as CLICK 4 names them ("Contact (NO)", "Out" …), CLICK 3's names as well; the
@@ -84,7 +86,7 @@ export const DEFAULT_KEYMAP: ClickKeymap = {
     { match: /^Reset coil/, how: { list: '^Reset\\b', dialog: '^Reset', fields: { Address: box('5002') } } },
     { match: /^Timer/, how: { list: '^Timer\\b', dialog: 'Timer', fields: { 'Timer number': box('5001'), Setpoint: box('5004'), Unit: { ...box('5006', 'ComboBox'), select: true } } } },
     { match: /^Counter/, how: { list: '^Counter\\b', dialog: 'Counter', fields: { 'Counter number': box('5001'), Setpoint: box('5004') } } },
-    { match: /^Copy/, how: { list: '^Copy\\b', dialog: 'Copy', fields: { Source: box('5006'), Destination: box('5014') } } },
+    { match: /^Copy/, how: { list: '^Copy$', dialog: 'Copy', fields: { Source: box('5006'), Destination: box('5014') } } },
     { match: /^Math/, how: { list: '^Math\\b', dialog: 'Math', fields: { Result: box('2001'), Formula: box('2006', 'Document') } } },
   ],
 };
