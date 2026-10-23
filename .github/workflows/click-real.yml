@@ -75,6 +75,26 @@ jobs:
         shell: bash
         run: npx tsx tools/click-real/plans.ts > plans.json
 
+      # A user's PC has a printer; the build server may have none (CLICK closes at Print without one): the
+      # print service started and Microsoft Print to PDF made the default printer, as on a normal Windows PC
+      - name: A PDF printer, as on a user's PC
+        shell: pwsh
+        run: |
+          Set-Service Spooler -StartupType Automatic -ErrorAction SilentlyContinue
+          Start-Service Spooler -ErrorAction SilentlyContinue
+          Get-Service Spooler | Format-List Name, Status, StartType
+          if (-not (Get-Printer -Name 'Microsoft Print to PDF' -ErrorAction SilentlyContinue)) {
+            foreach ($f in 'Printing-PrintToPDFServices-Features', 'Printing-Foundation-Features') {
+              try { Enable-WindowsOptionalFeature -Online -FeatureName $f -All -NoRestart -ErrorAction Stop | Out-Null; Write-Host "enabled $f" } catch { Write-Host "feature ${f}: $($_.Exception.Message)" }
+            }
+            try { Add-Printer -Name 'Microsoft Print to PDF' -DriverName 'Microsoft Print To PDF' -PortName 'PORTPROMPT:' -ErrorAction Stop } catch { Write-Host "add printer: $($_.Exception.Message)" }
+          }
+          Get-PrinterDriver -ErrorAction SilentlyContinue | Format-Table Name
+          $pdf = Get-CimInstance Win32_Printer -Filter "Name='Microsoft Print to PDF'"
+          if ($pdf) { Invoke-CimMethod -InputObject $pdf -MethodName SetDefaultPrinter | Out-Null }
+          Get-CimInstance Win32_Printer | Format-Table Name, Default, PortName
+          if (-not $pdf) { Write-Host "::warning::no Microsoft Print to PDF printer on this server" }
+
       # A screenshot every 0.5 s while the run goes (what CLICK showed), then the run
       - name: Send the example project to the real CLICK
         shell: pwsh
@@ -104,6 +124,13 @@ jobs:
       - name: Check what CLICK has (its printout against the project)
         shell: bash
         run: npx tsx tools/click-real/verify.ts "$OUT/click_ladder.pdf" plans.json
+
+      - name: Why CLICK closed, if it did (Windows' application log)
+        if: always()
+        shell: pwsh
+        run: |
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 1, 2; StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -match 'CLICK' } | Select-Object -First 10 | Format-List TimeCreated, ProviderName, Id, Message
 
       - name: The bridge's log
         if: always()

@@ -72,7 +72,12 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
       shot(`rung-${String(i + 1).padStart(2, "0")}`);
     }
     shot('all-rungs');
-    // the proof: CLICK prints its ladder to a PDF (the app's own print plan; this script stands in for the user
+    // first CLICK's own judgement of the wiring: its Syntax Check (F8), its result window recorded and shot
+    await step('Syntax Check (F8)', () => b.call('run', { steps: [{ do: 'window', title: '^CLICK Programming Software' }, { do: 'keys', keys: '{F8}' }, { do: 'wait', ms: 4000 }] }));
+    await b.call('dump', { show: false }).catch(() => undefined);
+    shot('syntax-check');
+    await b.call('run', { steps: [{ do: 'window', title: '^CLICK Programming Software' }, { do: 'keys', keys: '{ESC}' }, { do: 'wait', ms: 500 }] }).catch(() => undefined);
+    // then the proof: CLICK prints its ladder to a PDF (the app's own print plan; this script stands in for the user
     // pressing Save in Windows' dialog), checked against the project by tools/click-real/verify.ts
     const folder = path.dirname(file.path).replace(/\\/g, '\\\\');
     const print = JSON.parse(JSON.stringify(plans.print).split(plans.folderPlaceholder).join(folder));
@@ -81,10 +86,6 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
     await step(`print the ladder to a PDF (${print.length} steps)`, () => b.call('run', { steps: print }));
     presser.kill();
     shot('printed');
-    // and CLICK's own judgement of the wiring: its Syntax Check (F8), its result window recorded and shot
-    await step('Syntax Check (F8)', () => b.call('run', { steps: [{ do: 'window', title: '^CLICK Programming Software' }, { do: 'keys', keys: '{F8}' }, { do: 'wait', ms: 4000 }] }));
-    await b.call('dump', { show: false }).catch(() => undefined);
-    shot('syntax-check');
     console.log(`${at()} ALL DONE: the example project is in CLICK`);
   } catch {
     failed = true;
