@@ -10,31 +10,34 @@ $A = [System.Windows.Automation.AutomationElement]
 $title = 'Save Print Output As'
 $all = [System.Windows.Automation.Condition]::TrueCondition
 $until = (Get-Date).AddMinutes(5)
+$seen = $null
 while ((Get-Date) -lt $until) {
   $h = [W.U]::FindWindow('#32770', $title)
   if ($h -ne [IntPtr]::Zero) {
+    if (-not $seen) { $seen = Get-Date; Write-Host "the $title dialog came" }
     try {
       $dlg = $A::FromHandle($h)
       $els = $dlg.FindAll([System.Windows.Automation.TreeScope]::Descendants, $all)
       $name = ''; $save = $null
       foreach ($e in $els) {
         $c = $e.Current
-        if ($c.AutomationId -eq '1001' -and $c.ControlType -eq [System.Windows.Automation.ControlType]::Edit) {
-          $name = $e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+        if ($c.AutomationId -eq '1001') {
+          try { $name = $e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value } catch { }
         }
         if ($c.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $c.Name -match '^&?Save$') { $save = $e }
       }
-      if ($name -match '\.pdf$' -and $save) {
-        Start-Sleep -Milliseconds 700
+      Write-Host "file name: '$name'; Save button: $([bool]$save)"
+      # the app fills the name in within a second or two: the name, or 5 s since the dialog came
+      if ($save -and ($name -match '\.pdf$' -or ((Get-Date) - $seen).TotalSeconds -gt 5)) {
         $save.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-        Write-Host "pressed Save in $title ($name)"
+        Write-Host "pressed Save in $title"
         Start-Sleep -Seconds 3
         if ([W.U]::FindWindow('#32770', $title) -eq [IntPtr]::Zero) { exit 0 }
         Write-Host "the dialog is still open: pressing again"
       }
     } catch { Write-Host "reading the dialog: $($_.Exception.Message)" }
   }
-  Start-Sleep -Milliseconds 500
+  Start-Sleep -Milliseconds 1000
 }
-Write-Host "no $title dialog came, or its file name was not filled in"
+Write-Host "no $title dialog came, or Save did not close it"
 exit 1
