@@ -28,6 +28,7 @@ namespace ClickBridge
         int Start(string exe);
         /// <summary>The window of the process whose title matches, top-level or a dialog at any depth inside one (CLICK 4's CPU
         /// dialog opens inside its Startup window); waits up to timeoutMs (0 = only now); null when none comes.</summary>
+        /// <summary>The first window whose title (or "title [class]") matches.</summary>
         string Window(int pid, string titlePattern, int timeoutMs);
         /// <summary>The control in the window (waits up to timeoutMs); null when none comes.</summary>
         string Find(string window, Selector sel, int timeoutMs);

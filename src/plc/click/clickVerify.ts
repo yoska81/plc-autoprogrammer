@@ -51,7 +51,11 @@ export function printLadderPlan(folder: string, name: string): ClickStep[] {
     { do: 'select', find: { type: 'ComboBox', order: 'left' }, item: '^Microsoft Print to PDF$', optional: true },
     { do: 'check', find: { type: 'CheckBox', name: '^$', order: 'left' }, optional: true },
     { do: 'check', find: { name: '^Improved Image Quality$' }, on: false, optional: true },
-    { do: 'click', find: { type: 'Button', name: '^(OK|Print)$' } },
+    { do: 'click', find: { type: 'Button', name: '^(OK|Print)$' }, mouse: true },
+    // then Windows' own Print dialog (also "Print", class #32770): its OK, with the mouse (pressed through UI
+    // Automation it waits for the Save dialog that follows)
+    { do: 'window', title: '^Print \\[#32770\\]$', timeoutMs: 10000, optional: true },
+    { do: 'click', find: { type: 'Button', name: '^OK$' }, mouse: true, optional: true },
     { do: 'window', title: 'Save Print Output As', timeoutMs: 30000 },
     { do: 'setText', find: { type: 'Edit', name: '^File name' }, text: inFolder(folder, name) },
     { do: 'waitGone', title: 'Save Print Output As', say: 'Your turn: press Save in the dialog (the file name is filled in)' },

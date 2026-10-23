@@ -115,6 +115,7 @@ jobs:
           }
           $env:CLICK_BRIDGE_EXE = "$PWD\resources\click-bridge\ClickBridge.exe"
           $env:STEP_SHOTS = "0"  # n: the first n rungs step by step (while the editor keys are fitted)
+          $env:ONLY_RUNGS = "37,40,42"  # a probe: only these rungs, every step shot (empty: the whole project, the proof)
           node tools/click-real/run.cjs plans.json $env:OUT
           $code = $LASTEXITCODE
           Stop-Job $cam; Remove-Job $cam -Force

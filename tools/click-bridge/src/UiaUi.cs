@@ -82,6 +82,10 @@ namespace ClickBridge
             finally { if (joined) AttachThreadInput(me, front, false); }
         }
 
+        /// <summary>A window's title, or its title and class as "Title [class]": two windows called "Print" (CLICK's
+        /// and Windows' printer dialog, class #32770) told apart.</summary>
+        static bool Titled(Regex rx, AutomationElement w) => rx.IsMatch(w.Current.Name) || rx.IsMatch($"{w.Current.Name} [{w.Current.ClassName}]");
+
         public string Window(int pid, string titlePattern, int timeoutMs)
         {
             var rx = new Regex(titlePattern ?? "", RegexOptions.IgnoreCase);
@@ -92,7 +96,7 @@ namespace ClickBridge
                 // a window may close while it is read (CLICK starting: its splash, its guide): look again
                 try
                 {
-                    var w = AllWindows(pid).FirstOrDefault(x => rx.IsMatch(x.Current.Name));
+                    var w = AllWindows(pid).FirstOrDefault(x => Titled(rx, x));
                     if (w != null) return Keep(w);
                 }
                 catch (ElementNotAvailableException) { Log.Write("ui: a window closed while it was read; looking again"); }
@@ -138,7 +142,7 @@ namespace ClickBridge
         /// it through UI Automation alone does not tell a Delphi list box's OnClick); checked selected after.</summary>
         static void PickItem(AutomationElement e)
         {
-            if (e.TryGetCurrentPattern(ScrollItemPattern.Pattern, out object sc)) { try { ((ScrollItemPattern)sc).ScrollIntoView(); Thread.Sleep(100); } catch (InvalidOperationException) { /* already shown */ } }
+            Shown(e);
             e.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object si);
             if (e.TryGetClickablePoint(out System.Windows.Point _)) Click(e);
             else if (si != null) ((SelectionItemPattern)si).Select();
@@ -186,6 +190,7 @@ namespace ClickBridge
         {
             var e = El(element);
             Log.Write($"ui double-click {Describe(e)}");
+            Shown(e);
             Click(e);
             Thread.Sleep(60);
             mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
@@ -277,10 +282,30 @@ namespace ClickBridge
         }
 
         /// <summary>The coordinate fallback: a mouse click on the control's clickable point.</summary>
+        /// <summary>A list entry scrolled into its list's view, if the list scrolls.</summary>
+        static void Shown(AutomationElement e)
+        {
+            if (e.TryGetCurrentPattern(ScrollItemPattern.Pattern, out object sc)) { try { ((ScrollItemPattern)sc).ScrollIntoView(); Thread.Sleep(100); } catch (InvalidOperationException) { /* already shown */ } }
+        }
+
         static void Click(AutomationElement e)
         {
             Log.Write($"ui click at the point of {Describe(e)}");
-            var pt = e.TryGetClickablePoint(out System.Windows.Point p) ? p : new System.Windows.Point(e.Current.BoundingRectangle.X + e.Current.BoundingRectangle.Width / 2, e.Current.BoundingRectangle.Y + e.Current.BoundingRectangle.Height / 2);
+            var r = e.Current.BoundingRectangle;
+            var pt = e.TryGetClickablePoint(out System.Windows.Point p) ? p : new System.Windows.Point(r.X + r.Width / 2, r.Y + r.Height / 2);
+            // an entry half under its list's edge (CLICK's Instruction List, "End" at the bottom): its shown part, never
+            // the edge (a double-click there undocked the list)
+            try
+            {
+                var parent = TreeWalker.ControlViewWalker.GetParent(e);
+                var box = parent == null ? System.Windows.Rect.Empty : parent.Current.BoundingRectangle;
+                if (!box.IsEmpty && box.Width > 0 && !box.Contains(pt))
+                {
+                    var shown = System.Windows.Rect.Intersect(r, box);
+                    if (!shown.IsEmpty && shown.Height >= 2) pt = new System.Windows.Point(shown.X + shown.Width / 2, shown.Y + shown.Height / 2);
+                }
+            }
+            catch (ElementNotAvailableException) { /* clicked where it was */ }
             SetCursorPos((int)pt.X, (int)pt.Y);
             mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
             mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);

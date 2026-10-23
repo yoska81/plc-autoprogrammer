@@ -62,9 +62,17 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
     }
     console.log(`${at()} rungs: ${plans.rungs.length} steps in ${rungs.length} rungs (${plans.entered} entered by the app; ${plans.leftForYou} left for the user)`);
     // STEP_SHOTS=n: in the first n rungs a screenshot (the bridge's shot step, in the same run) after each step
-    const stepShots = Number(process.env.STEP_SHOTS || 0);
+    // ONLY_RUNGS=37,40: a probe, only those rungs (and the END rung), each step shot (CLICK's status bar: the cursor)
+    const only = (process.env.ONLY_RUNGS || '').split(',').filter(Boolean).map(Number);
+    if (only.length) {
+      const keep = rungs.filter((r) => { const m = /^Rung (\d+)/.exec(r.find((x) => x.say)?.say ?? ''); return m && only.includes(Number(m[1])); });
+      rungs.splice(0, rungs.length, ...keep);
+      console.log(`${at()} PROBE: only rungs ${only.join(', ')} (not the proof)`);
+    }
+    const stepShots = only.length ? rungs.length : Number(process.env.STEP_SHOTS || 0);
+    const shotName = (i, k, x) => `r${i}-s${String(k + 1).padStart(3, '0')}-${x.do}-${x.keys ?? x.find?.name ?? x.find?.id ?? ''}`.replace(/[^\w.-]+/g, '_').slice(0, 60);
     for (const [i, r] of rungs.slice(0, stepShots).entries()) {
-      rungs[i] = r.flatMap((x, k) => (x.do === 'window' ? [x] : [x, { do: 'shot', text: `r${i}-s${String(k + 1).padStart(2, '0')}-${x.do}-${x.keys ?? x.find?.name ?? x.find?.id ?? ''}`.slice(0, 60) }]));
+      rungs[i] = r.flatMap((x, k) => (x.do === 'window' ? [x] : [x, { do: 'shot', text: shotName(i, k, x) }]));
     }
 
     for (const [i, r] of rungs.entries()) {
