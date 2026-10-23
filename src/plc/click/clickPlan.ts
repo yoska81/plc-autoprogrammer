@@ -116,10 +116,9 @@ export function newProjectPlan(cpuId: string): ClickStep[] {
     { do: 'window', title: USER_ACCOUNTS, timeoutMs: 5000, optional: true },
     { do: 'check', find: { type: 'CheckBox', name: '^Disable Password Requirement$' }, on: true, optional: true },
     { do: 'click', find: { type: 'Button', name: '^OK$' }, optional: true },
-    { do: 'wait', ms: 300 },
-    // CLICK 4: should its Startup window stay open behind the new project, close it (Close only chooses nothing)
-    { do: 'window', title: STARTUP, timeoutMs: 1500, optional: true },
-    { do: 'click', find: { type: 'Button', name: '^Close$' }, timeoutMs: 1000, optional: true },
+    { do: 'wait', ms: 1500 },
+    // (CLICK 4 closes its Startup window by itself once the project is made: pressing a Close there, as an earlier
+    // plan did, closed CLICK on the build server's real CLICK)
     { do: 'window', title: CLICK_MAIN, timeoutMs: 30000 },
   ];
 }
