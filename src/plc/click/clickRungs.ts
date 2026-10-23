@@ -36,15 +36,16 @@ export interface ClickKeymap {
   outputColumn: number;
   /** Keys that draw the line joining a parallel row back to the row above, the cursor on the row's last cell. */
   joinUp: string;
+  /** Steps that add a row to the rung under the cursor's row (a parallel branch or a second output goes there). */
+  newRow: ClickStep[];
   /** How the rung comment is written, the cursor anywhere in the rung (null: not entered by the app). */
-  comment: { keys: string; dialog: string; field: ClickSelector } | null;
+  comment: { keys: string; dialog: string; field: ClickSelector | 'typed' } | null;
   /** The dialogs' OK button. */
   ok: ClickSelector;
   /** Entry sheet instruction name (a pattern) → how it is entered. */
   instructions: { match: RegExp; how: ClickInstruction }[];
 }
 
-const edit = (name: string, index = 0): ClickSelector => ({ type: 'Edit', name, index });
 /** A dialog's box by its control id (CLICK 4.00's instruction dialogs: their boxes have no names). */
 const box = (id: string, type = 'Edit'): ClickSelector => ({ type, id });
 
@@ -61,7 +62,17 @@ export const DEFAULT_KEYMAP: ClickKeymap = {
   // CLICK's keyboard shortcuts (its help, "Keyboard Shortcuts (Hot Keys)"): Ctrl+Up draws a wire up, Ctrl+K edits the
   // rung comments
   joinUp: '^{UP}',
-  comment: { keys: '^k', dialog: 'Comment', field: edit('', 0) },
+  // the Insert key opens CLICK's Insert dialog (What? Rung / Row / Column, Where? Before / After Cursor): a row after
+  newRow: [
+    { do: 'keys', keys: '{INSERT}' },
+    { do: 'window', title: '^Insert$', timeoutMs: 5000 },
+    { do: 'click', find: { type: 'RadioButton', name: '^Row$' } },
+    { do: 'click', find: { type: 'RadioButton', name: '^After Cursor$' } },
+    { do: 'click', find: { type: 'Button', name: '^OK$' } },
+    { do: 'window', title: CLICK_MAIN },
+  ],
+  // Ctrl+K: "Edit Rung Comment", its text box (a rich edit without a name) has the cursor: the comment is typed
+  comment: { keys: '^k', dialog: '^Edit Rung Comment$', field: 'typed' },
   ok: { type: 'Button', name: '^OK$' },
   instructions: [
     // the Instruction List's entries as CLICK 4 names them ("Contact (NO)", "Out" …), CLICK 3's names as well; the
@@ -90,6 +101,9 @@ export const DEFAULT_KEYMAP: ClickKeymap = {
     { match: /^Math/, how: { list: '^Math\\b', dialog: 'Math', fields: { Result: box('2001'), Formula: box('2006', 'Document') } } },
   ],
 };
+
+/** Text typed as it is (the keys syntax reads + ^ % ~ ( ) { } [ ] as keys; the bridge's SendKeys). */
+export const typed = (text: string) => text.replace(/[+^%~(){}[\]]/g, (c) => `{${c}}`);
 
 /** The address part of a sheet field ("X001 (Start button)" → "X001"); other values as they are. */
 export const value = (v: string) => v.replace(/\s+\(.*\)$/, '').trim();
@@ -136,10 +150,20 @@ export function rungSteps(km: ClickKeymap, r: EntryRung): { number: number; step
   const head: ClickStep[] = [{ do: 'window', title: CLICK_MAIN }, { do: 'keys', keys: km.newRung, say: `Rung ${r.number}${r.comment ? `: ${r.comment}` : ''}` }];
   const steps = [...head];
   const at = { row: 1, column: 1 };
-  const goTo = (row: number, column: number) => {
+  let rows = 1; // the rung's rows in CLICK so far (a new rung has one)
+  const move = (row: number, column: number) => {
     const keys = km.move(row - at.row, column - at.column);
     if (keys) steps.push({ do: 'keys', keys });
     at.row = row; at.column = column;
+  };
+  // to a cell; a row the rung does not have yet is added first, under its last row (the cursor's column kept)
+  const goTo = (row: number, column: number) => {
+    while (rows < row) {
+      move(rows, at.column);
+      steps.push(...km.newRow);
+      rows++;
+    }
+    move(row, column);
   };
   const entered = () => { at.row += km.afterEntry.rows; at.column += km.afterEntry.columns; };
   const yours = (why: string) => ({
@@ -172,8 +196,10 @@ export function rungSteps(km: ClickKeymap, r: EntryRung): { number: number; step
     steps.push(
       { do: 'keys', keys: km.comment.keys },
       { do: 'window', title: km.comment.dialog, timeoutMs: 3000, optional: true },
-      { do: 'setText', find: km.comment.field, text: r.comment, optional: true },
-      { do: 'click', find: km.ok, optional: true },
+      km.comment.field === 'typed'
+        ? { do: 'keys', keys: typed(r.comment), optional: true }
+        : { do: 'setText', find: km.comment.field, text: r.comment, optional: true },
+      { do: 'click', find: km.ok, mouse: true, optional: true },
     );
   }
   return { number: r.number, steps };

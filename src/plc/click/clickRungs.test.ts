@@ -27,11 +27,14 @@ assert.match(s[1].say!, /^Rung 1: Motor run$/);
 const opened = s.filter((x) => x.do === 'doubleClick').map((x) => x.find!.name!);
 assert.deepEqual(opened.map((x) => ['Contact (NO)', 'Contact (NC)', 'Out', 'NO Contact', 'NC Contact'].filter((n) => new RegExp(x).test(n)).join('|')), ['Contact (NO)|NO Contact', 'Contact (NC)|NC Contact', 'Contact (NO)|NO Contact', 'Out'], 'the instructions in order: row 1, row 2, the output (CLICK 4 and CLICK 3 names)');
 const texts = s.filter((x) => x.do === 'setText').map((x) => x.text);
-assert.deepEqual(texts, ['X001', 'X002', 'Y001', 'Y001', 'Motor run'], 'addresses without their nickname; the comment last');
+assert.deepEqual(texts, ['X001', 'X002', 'Y001', 'Y001'], 'addresses without their nickname');
+assert.equal(s.filter((x) => x.do === 'keys').at(-1)!.keys, 'Motor run', 'the comment typed last (Edit Rung Comment has the cursor in its text)');
 // cursor: row 1 col 1 → (a dialog leaves it one to the right) col 2, already there; row 2 col 1; back on that row's
 // last cell to join it up; the output at the rail (column 32) of row 1; the comment
 const keys = s.filter((x) => x.do === 'keys').map((x) => x.keys);
-assert.deepEqual(keys, [km.newRung, km.move(1, -2), km.move(0, -1), km.joinUp, km.move(-1, 31), km.comment!.keys], keys.join(' | '));
+// (row 2 is added to the rung first: CLICK's Insert dialog, a row after the cursor's)
+assert.deepEqual(keys, [km.newRung, '{INSERT}', km.move(1, -2), km.move(0, -1), km.joinUp, km.move(-1, 31), km.comment!.keys, 'Motor run'], keys.join(' | '));
+assert.ok(s.some((x) => x.do === 'click' && x.find?.name === '^Row$') && s.some((x) => x.do === 'click' && x.find?.name === '^After Cursor$'), 'a row, after the cursor');
 assert.equal(km.move(1, -2), '{DOWN 1}{LEFT 2}');
 assert.equal(km.move(0, 0), '');
 assert.ok(s.filter((x) => x.optional).length === 3, 'the comment dialog is optional');
