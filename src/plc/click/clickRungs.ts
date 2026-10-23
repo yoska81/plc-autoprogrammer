@@ -18,8 +18,9 @@ export interface ClickInstruction {
   list: string;
   /** The instruction dialog that opens (a pattern of its title). */
   dialog: string;
-  /** Entry sheet field name → the control that takes it (setText; `select` for a pick list). */
-  fields: Record<string, ClickSelector & { select?: boolean }>;
+  /** Entry sheet field name → the control that takes it (setText; `select` for a pick list; `choose`: one button per
+   * value, e.g. the Compare dialog's symbol buttons). */
+  fields: Record<string, ClickSelector & { select?: boolean; choose?: Record<string, ClickSelector> }>;
 }
 
 export interface ClickKeymap {
@@ -44,6 +45,8 @@ export interface ClickKeymap {
 }
 
 const edit = (name: string, index = 0): ClickSelector => ({ type: 'Edit', name, index });
+/** A dialog's box by its control id (CLICK 4.00's instruction dialogs: their boxes have no names). */
+const box = (id: string, type = 'Edit'): ClickSelector => ({ type, id });
 
 /**
  * The first version, from the CLICK help (Instruction List entries and instruction dialogs by their names);
@@ -59,18 +62,30 @@ export const DEFAULT_KEYMAP: ClickKeymap = {
   comment: { keys: '^m', dialog: '^(Rung )?Comment', field: edit('', 0) },
   ok: { type: 'Button', name: '^OK$' },
   instructions: [
-    // the Instruction List's entries as CLICK 4 names them ("Contact (NO)", "Out" …), CLICK 3's names as well
-    { match: /^NO contact/, how: { list: '^(Contact \\(NO\\)|NO Contact)', dialog: 'Contact', fields: { Address: edit('Address|Bit') } } },
-    { match: /^NC contact/, how: { list: '^(Contact \\(NC\\)|NC Contact)', dialog: 'Contact', fields: { Address: edit('Address|Bit') } } },
-    { match: /^Edge contact/, how: { list: '^Edge Contact', dialog: 'Edge', fields: { Address: edit('Address|Bit') } } },
-    { match: /^Compare contact/, how: { list: '^Compare', dialog: 'Compare', fields: { 'Value A': edit('Value A|A'), Operator: { type: 'ComboBox', select: true }, 'Value B': edit('Value B|B') } } },
-    { match: /^Out coil/, how: { list: '^Out\\b', dialog: '^Out', fields: { Address: edit('Address|Bit') } } },
-    { match: /^Set coil/, how: { list: '^Set\\b', dialog: '^Set', fields: { Address: edit('Address|Bit') } } },
-    { match: /^Reset coil/, how: { list: '^Reset\\b', dialog: '^Reset', fields: { Address: edit('Address|Bit') } } },
-    { match: /^Timer/, how: { list: '^Timer\\b', dialog: 'Timer', fields: { 'Timer number': edit('Timer|T'), Setpoint: edit('Set ?Point'), Unit: { type: 'ComboBox', name: 'Unit', select: true } } } },
-    { match: /^Counter/, how: { list: '^Counter\\b', dialog: 'Counter', fields: { 'Counter number': edit('Counter|CT'), Setpoint: edit('Set ?Point') } } },
-    { match: /^Copy/, how: { list: '^Copy\\b', dialog: 'Copy', fields: { Source: edit('Source'), Destination: edit('Destination') } } },
-    { match: /^Math/, how: { list: '^Math\\b', dialog: 'Math', fields: { Result: edit('Result'), Formula: edit('Formula') } } },
+    // the Instruction List's entries as CLICK 4 names them ("Contact (NO)", "Out" …), CLICK 3's names as well; the
+    // dialogs' boxes by their control ids, as the real CLICK 4.00 shows them (recorded on the build server)
+    { match: /^NO contact/, how: { list: '^(Contact \\(NO\\)|NO Contact)', dialog: 'Contact', fields: { Address: box('5001') } } },
+    { match: /^NC contact/, how: { list: '^(Contact \\(NC\\)|NC Contact)', dialog: 'Contact', fields: { Address: box('5001') } } },
+    { match: /^Edge contact/, how: { list: '^Edge Contact', dialog: 'Edge', fields: { Address: box('1003') } } },
+    {
+      match: /^Compare contact/,
+      how: {
+        list: '^Compare', dialog: 'Compare',
+        fields: {
+          'Value A': box('5002'),
+          // the symbol buttons: = > >= on top, <> < <= below
+          Operator: { choose: { '=': box('5006', 'Button'), '>': box('5008', 'Button'), '>=': box('5010', 'Button'), '<>': box('5007', 'Button'), '!=': box('5007', 'Button'), '<': box('5009', 'Button'), '<=': box('5011', 'Button') } },
+          'Value B': box('5003'),
+        },
+      },
+    },
+    { match: /^Out coil/, how: { list: '^Out\\b', dialog: '^Out', fields: { Address: box('5002') } } },
+    { match: /^Set coil/, how: { list: '^Set\\b', dialog: '^Set', fields: { Address: box('5002') } } },
+    { match: /^Reset coil/, how: { list: '^Reset\\b', dialog: '^Reset', fields: { Address: box('5002') } } },
+    { match: /^Timer/, how: { list: '^Timer\\b', dialog: 'Timer', fields: { 'Timer number': box('5001'), Setpoint: box('5004'), Unit: { ...box('5006', 'ComboBox'), select: true } } } },
+    { match: /^Counter/, how: { list: '^Counter\\b', dialog: 'Counter', fields: { 'Counter number': box('5001'), Setpoint: box('5004') } } },
+    { match: /^Copy/, how: { list: '^Copy\\b', dialog: 'Copy', fields: { Source: box('5006'), Destination: box('5014') } } },
+    { match: /^Math/, how: { list: '^Math\\b', dialog: 'Math', fields: { Result: box('2001'), Formula: box('2006', 'Document') } } },
   ],
 };
 
@@ -91,8 +106,12 @@ function instructionSteps(km: ClickKeymap, what: EntryCell | EntryOutput, where:
   for (const [name, val] of what.fields) {
     const sel = how.fields[name];
     if (!sel) continue; // shown in the dialog with its default (e.g. the timer's mode)
-    const { select, ...find } = sel;
-    steps.push(select ? { do: 'select', find, item: `^${pick(val)}` } : { do: 'setText', find, text: value(val) });
+    const { select, choose, ...find } = sel;
+    if (choose) {
+      const button = choose[value(val).replace(/\s+/g, '')];
+      if (!button) return null; // a value the dialog has no button for: the user's
+      steps.push({ do: 'click', find: button, mouse: true });
+    } else steps.push(select ? { do: 'select', find, item: `^${pick(val)}` } : { do: 'setText', find, text: value(val) });
   }
   steps.push({ do: 'click', find: km.ok });
   return steps;

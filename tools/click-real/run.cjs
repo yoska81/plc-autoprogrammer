@@ -54,7 +54,18 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
       throw new Error('probe done (remove tools/click-real/probe.json for the full run)');
     }
     await step(`set-up (${setup.length} steps: new project ${plans.cpu}, nicknames)`, () => b.call('run', { steps: setup }));
-    await step(`rungs (${plans.rungs.length} steps, ${plans.entered} rungs; ${plans.leftForYou} left for the user)`, () => b.call('run', { steps: plans.rungs }));
+    // the rungs one by one (as one run in the app), a screenshot after each of the first ones (their cells)
+    const rungs = [];
+    for (const x of plans.rungs) {
+      if (/^Rung \d+/.test(x.say ?? '') || !rungs.length) rungs.push([{ do: 'window', title: '^CLICK Programming Software' }]);
+      rungs[rungs.length - 1].push(x);
+    }
+    console.log(`${at()} rungs: ${plans.rungs.length} steps in ${rungs.length} rungs (${plans.entered} entered by the app; ${plans.leftForYou} left for the user)`);
+    for (const [i, r] of rungs.entries()) {
+      await step(`rung ${i + 1}/${rungs.length} (${r.length} steps)`, () => b.call('run', { steps: r }));
+      if (i < 6) shot(`rung-${i + 1}`);
+    }
+    shot('all-rungs');
     console.log(`${at()} ALL DONE: the example project is in CLICK`);
   } catch {
     failed = true;

@@ -40,7 +40,7 @@ assert.deepEqual(saveSteps(s), []);
 // Timer (on-delay, constant preset, unit picked), compare contact (operator picked).
 const timer: Rung = { id: 'r2', comment: '', branches: [[{ type: 'CMP', left: 'DS1', op: '>=', right: '10' }]], outputs: [{ type: 'TMR', address: 'T1', mode: 'ON_DELAY', preset: '500', unit: 'ms', accumulate: false, resetAddress: null }] };
 const p2 = rungsPlan(prog([timer]), labels, km).steps;
-assert.ok(p2.some((x) => x.do === 'select' && x.item === '^>='), 'compare operator picked');
+assert.ok(p2.some((x) => x.do === 'click' && x.mouse && x.find?.id === '5010'), 'compare operator: its >= button (CLICK 4.00\'s symbol buttons)');
 assert.ok(p2.some((x) => x.do === 'setText' && x.text === '500') && p2.some((x) => x.do === 'select' && x.item === '^msec'), 'timer setpoint and unit');
 assert.ok(!p2.some((x) => x.do === 'keys' && x.keys === km.comment!.keys), 'no comment, no comment step');
 
