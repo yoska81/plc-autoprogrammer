@@ -63,7 +63,7 @@ assert.deepEqual(k5, [km.newRung, '{END}', '{INSERT}', km.joinUp, '{DOWN}'], k5.
 // Three Copy boxes (two rows each): the new row under a box is reached with Down; the join goes up past the box's rows
 const copies: Rung = { id: 'r6', comment: '', branches: [[{ type: 'NO', address: 'X001' }]], outputs: [1, 2, 3].map((i) => ({ type: 'COPY', source: `DS${i}`, dest: `DS${i + 1}` }) as Rung['outputs'][number]) };
 const k6 = rungsOnly(rungsPlan(prog([copies]), labels, km).steps).filter((x) => x.do === 'keys').map((x) => x.keys);
-assert.deepEqual(k6, [km.newRung, '{END}', '{INSERT}', '{DOWN}', km.joinUp, km.joinUp, '{DOWN}', '{INSERT}', '{DOWN}', km.joinUp, km.joinUp, '{DOWN}'], k6.join(' | '));
+assert.deepEqual(k6, [km.newRung, '{END}', '{INSERT}', '{DOWN}', km.joinUp, '^{DOWN}', '{INSERT}', '{DOWN}', km.joinUp, '^{DOWN}'], k6.join(' | '));
 
 // What the app cannot enter: the user's turn, in its place (the next rung is entered after it).
 const retentive: Rung = { id: 'r3', comment: 'Run hours', branches: [[{ type: 'NO', address: 'Y001' }]], outputs: [{ type: 'TMR', address: 'T2', mode: 'ON_DELAY', preset: '3600', unit: 'sec', accumulate: true, resetAddress: 'C5' }] };

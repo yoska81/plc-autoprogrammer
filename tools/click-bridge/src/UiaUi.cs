@@ -121,6 +121,10 @@ namespace ClickBridge
                 catch (ElementNotAvailableException) { all = new List<AutomationElement>(); } // a control went while read: look again
                 if (sel.Order == "left") all = all.OrderBy(e => e.Current.BoundingRectangle.X).ThenBy(e => e.Current.BoundingRectangle.Y).ToList();
                 if (all.Count > sel.Index) return Keep(all[sel.Index]);
+                // not in UI Automation's tree (CLICK 4's Print dialog: a tab page's controls): the window's child
+                // windows by their text
+                var hw = sel.Name != null && sel.Id == null && sel.Index == 0 ? ChildByText(root, sel.Name) : null;
+                if (hw != null) return Keep(hw);
                 Thread.Sleep(250);
             } while (DateTime.UtcNow < until);
             return null;
@@ -160,7 +164,20 @@ namespace ClickBridge
         public void Check(string element, bool on)
         {
             var e = El(element);
-            if (!e.TryGetCurrentPattern(TogglePattern.Pattern, out object p)) throw new BridgeError($"\"{e.Current.Name}\" is not a check box.");
+            if (!e.TryGetCurrentPattern(TogglePattern.Pattern, out object p))
+            {
+                // a check box UI Automation does not know as one (a Delphi TCheckBox found by its window): Windows'
+                // button messages, read and clicked as the box's own click
+                var h = new IntPtr(e.Current.NativeWindowHandle);
+                if (h == IntPtr.Zero) throw new BridgeError($"\"{e.Current.Name}\" is not a check box.");
+                for (int i = 0; i < 2 && (SendMessage(h, 0x00F0 /* BM_GETCHECK */, IntPtr.Zero, IntPtr.Zero) == new IntPtr(1)) != on; i++)
+                {
+                    SendMessage(h, 0x00F5 /* BM_CLICK */, IntPtr.Zero, IntPtr.Zero);
+                    Thread.Sleep(150);
+                }
+                Log.Write($"ui check (window) {Describe(e)} = {(SendMessage(h, 0x00F0, IntPtr.Zero, IntPtr.Zero) == new IntPtr(1) ? "on" : "off")}");
+                return;
+            }
             var t = (TogglePattern)p;
             for (int i = 0; i < 3 && (t.Current.ToggleState == ToggleState.On) != on; i++) t.Toggle();
             Log.Write($"ui check {Describe(e)} = {(on ? "on" : "off")}");
@@ -314,6 +331,29 @@ namespace ClickBridge
         /// <summary>Text typed as it is (SendKeys treats + ^ % ~ ( ) { } [ ] as keys).</summary>
         public static string Escape(string text) => Regex.Replace(text, @"[+^%~(){}\[\]]", m => "{" + m.Value + "}");
 
+        /// <summary>A child window (any depth) of the element's window whose text matches, as an element.</summary>
+        static AutomationElement ChildByText(AutomationElement root, string pattern)
+        {
+            var top = new IntPtr(root.Current.NativeWindowHandle);
+            if (top == IntPtr.Zero) return null;
+            var rx = new Regex(pattern, RegexOptions.IgnoreCase);
+            IntPtr found = IntPtr.Zero;
+            EnumChildWindows(top, (h, _) =>
+            {
+                var sb = new StringBuilder(256);
+                GetWindowText(h, sb, sb.Capacity);
+                if (IsWindowVisible(h) && sb.Length > 0 && rx.IsMatch(sb.ToString())) { found = h; return false; }
+                return true;
+            }, IntPtr.Zero);
+            if (found == IntPtr.Zero) return null;
+            try { return AutomationElement.FromHandle(found); } catch (ElementNotAvailableException) { return null; }
+        }
+
+        delegate bool EnumProc(IntPtr h, IntPtr l);
+        [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc f, IntPtr l);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder sb, int max);
+        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+        [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
         [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);

@@ -216,11 +216,13 @@ export function rungSteps(km: ClickKeymap, r: EntryRung): { number: number; step
     steps.push(...s);
     entered();
     if (oi > 0) {
-      // the output joins the one above on the output column's left edge, up past all of its rows (without it the
-      // real CLICK 4.00's Syntax Check: "Row 2, Column AF: Missing line connection"); then Down, past the box
-      // above, back on this output
-      for (let k = 0; k < above; k++) steps.push({ do: 'keys', keys: km.joinUp });
-      steps.push({ do: 'keys', keys: '{DOWN}' });
+      // the output joins the one above on the output column's left edge (without it the real CLICK 4.00's Syntax
+      // Check: "Row 2, Column AF: Missing line connection"): Ctrl+Up draws the piece under the box above and takes
+      // the cursor to that box's top row (a box is one stop for the cursor); Ctrl+Down from there draws the pieces
+      // beside the box's other rows (seen in the real CLICK 4.00's printout: Ctrl+Up alone left them out)
+      steps.push({ do: 'keys', keys: km.joinUp });
+      for (let k = 1; k < above; k++) steps.push({ do: 'keys', keys: '^{DOWN}' });
+      if (above <= 1) steps.push({ do: 'keys', keys: '{DOWN}' });
     }
   }
   if (r.comment && km.comment) {
