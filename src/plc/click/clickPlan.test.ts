@@ -62,7 +62,7 @@ const picker = allSteps(n).find((s) => s.what === 'the Address Picker');
 assert.deepEqual(ways(picker), ['the Navigation tree', 'the View menu']);
 assert.ok(picker!.options![0].steps.some((s) => s.do === 'doubleClick' && s.find?.type === 'TreeItem' && new RegExp(s.find.name!).test('Address Picker')));
 const imp = n.find((s) => s.what === 'the nickname import');
-assert.deepEqual(ways(imp), ['File › Import › Nickname (key tips Alt+F, I, N)', 'the Address Picker\'s Import button', 'the Address Picker\'s File menu'], 'CLICK 4\'s ribbon File menu first (its Address Picker has no Import)');
+assert.deepEqual(ways(imp), ['File › Import › Nickname (key tips Alt+F, I, N)', 'File › Import › Nickname, slower', 'the Address Picker\'s Import button', 'the Address Picker\'s File menu'], 'CLICK 4\'s ribbon File menu first (its Address Picker has no Import)');
 assert.deepEqual(imp!.options![0].steps.filter((s) => s.do === 'keys').map((s) => s.keys), ['%f', 'i', 'n']);
 const menuName = allSteps(n).find((s) => s.do === 'menu' && s.path?.[1] === 'Import')!.path![2];
 assert.ok(new RegExp(`^(?:${menuName})$`, 'i').test('Nick Names') && new RegExp(`^(?:${menuName})$`, 'i').test('Nickname'));

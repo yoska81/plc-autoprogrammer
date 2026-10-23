@@ -168,6 +168,8 @@ export function nicknamePlan(csvPath: string): ClickStep[] {
     {
       do: 'oneOf', what: 'the nickname import', say: 'Importing the nicknames', options: [
         { label: 'File › Import › Nickname (key tips Alt+F, I, N)', steps: [main, { do: 'keys', keys: '%f' }, { do: 'wait', ms: 800 }, { do: 'keys', keys: 'i' }, { do: 'wait', ms: 800 }, { do: 'keys', keys: 'n' }, openCame] },
+        // once more, slower (on the build server CLICK's File menu once came too late for the keys)
+        { label: 'File › Import › Nickname, slower', steps: [main, { do: 'keys', keys: '{ESC}{ESC}' }, { do: 'wait', ms: 1000 }, { do: 'keys', keys: '%f' }, { do: 'wait', ms: 2500 }, { do: 'keys', keys: 'i' }, { do: 'wait', ms: 2000 }, { do: 'keys', keys: 'n' }, openCame] },
         { label: 'the Address Picker\'s Import button', steps: [...addressPickerPlan(), picker, { do: 'click', find: { type: 'Button', name: '^Import' }, timeoutMs: 3000 }, { do: 'click', find: { type: 'MenuItem', name: 'Nick ?Name' }, timeoutMs: 2000, optional: true }, openCame] },
         { label: 'the Address Picker\'s File menu', steps: [...addressPickerPlan(), picker, { do: 'menu', path: ['File', 'Import', 'Nick ?Names?'] }, openCame] },
       ],
