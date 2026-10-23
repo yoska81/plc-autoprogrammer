@@ -87,6 +87,7 @@ static class Tests
         }
         public void SetText(string el, string text) => Did.Add($"text {el}={text}");
         public void DoubleClick(string el) => Did.Add($"double {el}");
+        public void MouseClick(string el) { Did.Add($"mouse {el}"); if (PressOpens.TryGetValue(el, out string opens)) Open(opens); }
         public void Check(string el, bool on) => Did.Add($"check {el}={on}");
         public void Select(string el, string item) => Did.Add($"select {el}={item}");
         /// <summary>CLICK 4: a ribbon, no menu UI Automation can see.</summary>
@@ -468,6 +469,13 @@ static class Tests
             var output = new StringWriter();
             Commands.Register(new Protocol(output), pc, ui).Run(new StringReader("{\"id\":1,\"cmd\":\"start\"}\n{\"id\":2,\"cmd\":\"quit\"}\n"), "test");
             True(output.ToString().Contains("\"processId\":42"), output.ToString());
+        });
+
+        Test("runner: a click step with mouse: a real mouse click, not UI Automation's press", () =>
+        {
+            var ui = Click();
+            new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"window\",\"title\":\"^Select a CPU\"},{\"do\":\"click\",\"find\":{\"type\":\"Button\",\"name\":\"^OK$\"},\"mouse\":true}]"));
+            Eq("mouse Select a CPU Module/OK", ui.Did.Single());
         });
 
         Test("commands: no CLICK installed says how to get it; run before start says to open CLICK", () =>

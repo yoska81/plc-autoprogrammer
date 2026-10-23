@@ -162,6 +162,14 @@ namespace ClickBridge
             Log.Write($"ui check {Describe(e)} = {(on ? "on" : "off")}");
         }
 
+        public void MouseClick(string element)
+        {
+            var e = El(element);
+            Log.Write($"ui mouse-click {Describe(e)}");
+            Click(e);
+            Thread.Sleep(150);
+        }
+
         public void DoubleClick(string element)
         {
             var e = El(element);

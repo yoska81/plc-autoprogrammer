@@ -29,6 +29,8 @@ export interface ClickStep {
   timeoutMs?: number;
   /** Shown to the user while the step runs. */
   say?: string;
+  /** click: a real mouse click (CLICK's own dialogs' OK), not UI Automation's press. */
+  mouse?: boolean;
   /** check: the box on (default) or off. */
   on?: boolean;
   /** May not happen (a confirmation that does not come): skipped, with the optional steps after it. */
@@ -112,7 +114,7 @@ export function newProjectPlan(cpuId: string): ClickStep[] {
         { label: 'the CPU pick list', steps: [{ do: 'select', find: { type: 'ComboBox' }, item: `^${literal(cpuId)}\\b`, timeoutMs: 3000 }] },
       ],
     },
-    { do: 'click', find: { name: '^OK$', type: 'Button' } },
+    { do: 'click', find: { name: '^OK$', type: 'Button' }, mouse: true },
     // CLICK 4.00 then asks for the new project's user accounts ("User Account Setup", seen in a user's log): no password,
     // as CLICK 3 projects; the result says how to set one (clickPasswordNote)
     { do: 'window', title: USER_ACCOUNTS, timeoutMs: 5000, optional: true },
@@ -123,7 +125,7 @@ export function newProjectPlan(cpuId: string): ClickStep[] {
     { do: 'click', find: { type: 'Button', name: '^(Yes|OK)$' }, optional: true },
     { do: 'wait', ms: 300 }, // (ends the skipping: User Account Setup's OK is looked for whether or not a box came)
     { do: 'window', title: USER_ACCOUNTS, timeoutMs: 1500, optional: true },
-    { do: 'click', find: { type: 'Button', name: '^OK$' }, optional: true },
+    { do: 'click', find: { type: 'Button', name: '^OK$' }, mouse: true, optional: true },
     { do: 'wait', ms: 800 },
     { do: 'window', title: MESSAGE_BOX, timeoutMs: 1500, optional: true },
     { do: 'click', find: { type: 'Button', name: '^(Yes|OK)$' }, optional: true },

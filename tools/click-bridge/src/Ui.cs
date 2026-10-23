@@ -36,6 +36,9 @@ namespace ClickBridge
         void SetText(string element, string text);
         /// <summary>Sets a check box on or off (nothing when it already is).</summary>
         void Check(string element, bool on);
+        /// <summary>A real mouse click on the control, as a user's (CLICK's own dialogs: a press through UI Automation's pattern
+        /// did not take their OK as the user's).</summary>
+        void MouseClick(string element);
         /// <summary>Double-clicks the control (an Instruction List entry opens its dialog that way).</summary>
         void DoubleClick(string element);
         /// <summary>Opens a combo box / list and picks the item whose name matches.</summary>

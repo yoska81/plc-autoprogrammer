@@ -39,6 +39,8 @@ namespace ClickBridge
         public List<KeyValuePair<string, List<Step>>> Options;
         public int Ms;
         public int TimeoutMs = 15000;
+        /// <summary>click: a real mouse click on it (CLICK's own dialogs' OK), not UI Automation's press.</summary>
+        public bool Mouse;
 
         public static Step From(Dictionary<string, object> d)
         {
@@ -46,6 +48,7 @@ namespace ClickBridge
             int N(string k, int def) => d.TryGetValue(k, out object v) && v is double x ? (int)x : def;
             var s = new Step { Do = S("do"), Title = S("title"), Text = S("text"), Item = S("item"), Keys = S("keys"), Say = S("say"), Ms = N("ms", 0), TimeoutMs = N("timeoutMs", 15000), Optional = d.TryGetValue("optional", out object o) && o is bool b && b };
             if (d.TryGetValue("on", out object on) && on is bool bo) s.On = bo;
+            s.Mouse = d.TryGetValue("mouse", out object mo) && mo is bool mb && mb;
             if (d.TryGetValue("path", out object p) && p is List<object> l) s.Path = l.OfType<string>().ToList();
             s.What = S("what");
             if (d.TryGetValue("options", out object opts) && opts is List<object> ol)
@@ -256,7 +259,10 @@ namespace ClickBridge
             {
                 case "menu": _ui.Menu(_window, s.Path ?? new List<string>()); break;
                 case "keys": _ui.Keys(_window, s.Keys ?? ""); break;
-                case "click": _ui.Invoke(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s)); break;
+                case "click":
+                    var el = Need(_ui.Find(_window, s.Find, s.TimeoutMs), s);
+                    if (s.Mouse) _ui.MouseClick(el); else _ui.Invoke(el);
+                    break;
                 case "doubleClick": _ui.DoubleClick(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s)); break;
                 case "setText": _ui.SetText(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s), s.Text ?? ""); break;
                 case "select": _ui.Select(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s), s.Item ?? ""); break;
