@@ -80,10 +80,17 @@ namespace ClickBridge
             return null;
         }
 
+        /// <summary>A list entry out of sight is scrolled to first (a click lands on it, not beside it).</summary>
+        static void IntoView(AutomationElement e)
+        {
+            if (e.TryGetCurrentPattern(ScrollItemPattern.Pattern, out object si)) { try { ((ScrollItemPattern)si).ScrollIntoView(); Thread.Sleep(100); } catch (InvalidOperationException) { /* cannot scroll */ } }
+        }
+
         public void Invoke(string element)
         {
             var e = El(element);
             Log.Write($"ui press {Describe(e)}");
+            IntoView(e);
             if (e.TryGetCurrentPattern(InvokePattern.Pattern, out object p)) { ((InvokePattern)p).Invoke(); return; }
             if (e.TryGetCurrentPattern(SelectionItemPattern.Pattern, out p)) { ((SelectionItemPattern)p).Select(); return; }
             if (e.TryGetCurrentPattern(TogglePattern.Pattern, out p)) { ((TogglePattern)p).Toggle(); return; }
@@ -125,10 +132,46 @@ namespace ClickBridge
             Log.Write($"ui select {Describe(e)} → {itemPattern}");
             if (e.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object ec)) { ((ExpandCollapsePattern)ec).Expand(); Thread.Sleep(200); }
             var rx = new Regex(itemPattern, RegexOptions.IgnoreCase);
-            var item = e.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem)).Cast<AutomationElement>().FirstOrDefault(x => rx.IsMatch(x.Current.Name))
+            // a list's entries, a table's rows (DataItem), a tree's items
+            var entries = new OrCondition(new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem), new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.DataItem), new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TreeItem));
+            var item = e.FindAll(TreeScope.Descendants, entries).Cast<AutomationElement>().FirstOrDefault(x => rx.IsMatch(x.Current.Name))
                 ?? throw new BridgeError($"\"{e.Current.Name}\" has no item like \"{itemPattern}\".");
+            IntoView(item);
             if (item.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object si)) ((SelectionItemPattern)si).Select(); else Click(item);
             if (e.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out ec)) { try { ((ExpandCollapsePattern)ec).Collapse(); } catch (InvalidOperationException) { /* closed by the pick */ } }
+        }
+
+        public void Close(string window)
+        {
+            var w = El(window);
+            Log.Write($"ui close {Describe(w)}");
+            if (w.TryGetCurrentPattern(WindowPattern.Pattern, out object wp)) { try { ((WindowPattern)wp).Close(); return; } catch (InvalidOperationException) { /* no close box: Escape below */ } catch (ElementNotAvailableException) { return; } }
+            var h = new IntPtr(w.Current.NativeWindowHandle);
+            if (h != IntPtr.Zero) SetForegroundWindow(h);
+            Thread.Sleep(100);
+            System.Windows.Forms.SendKeys.SendWait("{ESC}");
+        }
+
+        public void Focus(string element)
+        {
+            var e = El(element);
+            Log.Write($"ui focus {Describe(e)}");
+            e.SetFocus();
+            Thread.Sleep(100);
+        }
+
+        public IList<string> Selected(string element)
+        {
+            var e = El(element);
+            var names = new List<string>();
+            if (e.TryGetCurrentPattern(SelectionPattern.Pattern, out object sp)) names.AddRange(((SelectionPattern)sp).Current.GetSelection().Select(x => x.Current.Name));
+            if (e.TryGetCurrentPattern(ValuePattern.Pattern, out object vp)) names.Add(((ValuePattern)vp).Current.Value);
+            if (names.Count == 0)
+                // entries that say themselves whether they are selected
+                names.AddRange(e.FindAll(TreeScope.Descendants, Condition.TrueCondition).Cast<AutomationElement>()
+                    .Where(x => x.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object si) && ((SelectionItemPattern)si).Current.IsSelected).Select(x => x.Current.Name));
+            Log.Write($"ui selected in {Describe(e)}: {string.Join(" | ", names)}");
+            return names;
         }
 
         public void Menu(string window, IList<string> path)

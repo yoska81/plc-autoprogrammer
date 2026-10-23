@@ -13,7 +13,11 @@
 export interface ClickSelector { id?: string; name?: string; type?: string; index?: number }
 
 export interface ClickStep {
-  do: 'window' | 'menu' | 'click' | 'doubleClick' | 'setText' | 'select' | 'check' | 'keys' | 'wait' | 'note' | 'waitGone' | 'waitUser' | 'oneOf';
+  do: 'window' | 'menu' | 'click' | 'doubleClick' | 'setText' | 'select' | 'check' | 'keys' | 'wait' | 'note' | 'waitGone' | 'waitUser' | 'oneOf'
+    /** close: the windows like `title`, when open (as their close box: Cancel). focus: the control gets the keyboard.
+     * expect: a control like `find` shows `item` as chosen, else the step fails. refuse: a window like `title` ends the
+     * run with `text`. */
+    | 'close' | 'focus' | 'expect' | 'refuse';
   title?: string;
   find?: ClickSelector;
   text?: string;
@@ -36,8 +40,15 @@ export interface ClickStep {
 
 /** CLICK's main window. */
 export const CLICK_MAIN = '^CLICK Programming Software';
-/** The dialog where a new project's CPU is chosen (CLICK 3: "Select a CPU Module"). */
+/** The dialog where a new project's CPU is chosen ("Select a CPU Module": CPU Category, the list of CPUs, OK). */
 const CPU_DIALOG = '(Select a CPU|CPU Module|New Project|Select CPU)';
+/** CLICK 4's startup chooser: Start a new project, Open an existing project, Connect to PLC (and Close, Help). */
+export const CHOOSER = '^Select an Operation';
+/** CLICK asking whether to save the project open in it: the run never answers it (the user's project). */
+const SAVE_QUESTION = '(Save|save changes|Do you want to save)';
+const SAVE_REFUSED = 'CLICK asks whether to save the project that is open in it. Save or close that project in CLICK yourself, then press Put the project into CLICK again.';
+/** The CPU list: a list or a table of the CPUs (not the CPU Category box). */
+const CPU_LIST = 'List|DataGrid|Table|Tree';
 
 /** A text as a pattern matching it exactly. */
 export const literal = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -52,28 +63,53 @@ const treeItem = (name: string): ClickStep[] => [
   { do: 'doubleClick', find: { type: 'TreeItem', name } },
 ];
 
-/** A new project with the CPU: File › New Project (CLICK 3), Ctrl+N or the ribbon's key tips (CLICK 4). */
+/**
+ * A new project with the CPU, hands off. New project: Ctrl+N or the ribbon's key tips (CLICK 4), File › New Project
+ * (CLICK 3); CLICK 4 may answer with its startup chooser ("Select an Operation") instead of the CPU dialog, or with
+ * both: then Start a new project in it, or close it when the CPU dialog is already there. The CPU: its entry in the
+ * list (scrolled to), picked in the list, or typed into the list; OK only once the list shows exactly that CPU as
+ * chosen (else the run ends, and closes the dialogs it opened). CLICK asking to save the open project ends the run:
+ * the user's project, never answered by the app.
+ */
 export function newProjectPlan(cpuId: string): ClickStep[] {
-  const cpuCame: ClickStep = { do: 'window', title: CPU_DIALOG, timeoutMs: 8000 };
+  const opened: ClickStep = { do: 'window', title: `(${CPU_DIALOG}|${CHOOSER.slice(1)})`, timeoutMs: 8000 };
+  const cpu = `^${literal(cpuId)}\\b`;
+  const cpuDialog: ClickStep = { do: 'window', title: CPU_DIALOG, timeoutMs: 8000 };
+  const chosen: ClickStep = { do: 'expect', find: { type: CPU_LIST }, item: `^${literal(cpuId)}(\\s|$)`, timeoutMs: 2000 };
+  const refuseSave: ClickStep = { do: 'refuse', title: SAVE_QUESTION, text: SAVE_REFUSED, timeoutMs: 1000 };
   return [
     { do: 'window', title: CLICK_MAIN, timeoutMs: 60000 },
     {
       do: 'oneOf', what: 'New project', say: 'New project', options: [
-        { label: 'Ctrl+N', steps: [main, { do: 'keys', keys: '^n' }, cpuCame] },
-        { label: 'the File menu', steps: [main, { do: 'menu', path: ['File', 'New Project'] }, cpuCame] },
-        { label: 'the ribbon key tips (Alt, F, N)', steps: [main, { do: 'keys', keys: '%f' }, { do: 'wait', ms: 500 }, { do: 'keys', keys: 'n' }, cpuCame] },
+        { label: 'Ctrl+N', steps: [main, { do: 'keys', keys: '^n' }, opened] },
+        { label: 'the File menu', steps: [main, { do: 'menu', path: ['File', 'New Project'] }, opened] },
+        { label: 'the ribbon key tips (Alt, F, N)', steps: [main, { do: 'keys', keys: '%f' }, { do: 'wait', ms: 500 }, { do: 'keys', keys: 'n' }, opened] },
       ],
     },
+    refuseSave,
+    {
+      do: 'oneOf', what: 'the CPU window', say: 'New project', options: [
+        // the CPU dialog came (perhaps with the chooser beside it: closed)
+        { label: 'the CPU dialog', steps: [{ ...cpuDialog, timeoutMs: 1500 }, { do: 'close', title: CHOOSER }] },
+        { label: 'Start a new project in "Select an Operation"', steps: [{ do: 'window', title: CHOOSER, timeoutMs: 1500 }, { do: 'click', find: { name: '^Start a new project' } }, refuseSave, cpuDialog, { do: 'close', title: CHOOSER }] },
+      ],
+    },
+    cpuDialog,
     {
       do: 'oneOf', what: `the CPU ${cpuId}`, say: `Choosing the CPU ${cpuId}`, options: [
-        { label: 'its entry in the list', steps: [{ do: 'click', find: { name: `^${literal(cpuId)}\\b` }, timeoutMs: 5000 }] },
-        { label: 'the CPU pick list', steps: [{ do: 'select', find: { type: 'ComboBox' }, item: `^${literal(cpuId)}\\b`, timeoutMs: 3000 }] },
+        { label: 'its entry in the list', steps: [{ do: 'click', find: { name: cpu, type: 'ListItem|DataItem|TreeItem|Text' }, timeoutMs: 3000 }, chosen] },
+        { label: 'picked in the list', steps: [{ do: 'select', find: { type: CPU_LIST }, item: cpu, timeoutMs: 2000 }, chosen] },
+        { label: 'typed into the list', steps: [{ do: 'focus', find: { type: CPU_LIST }, timeoutMs: 2000 }, { do: 'keys', keys: `{HOME}${sendKeysText(cpuId)}` }, chosen] },
       ],
     },
     { do: 'click', find: { name: '^OK$', type: 'Button' } },
+    refuseSave,
     { do: 'window', title: CLICK_MAIN, timeoutMs: 30000 },
   ];
 }
+
+/** Text typed as it is (SendKeys reads + ^ % ~ ( ) { } [ ] as keys). */
+export const sendKeysText = (s: string) => s.replace(/[+^%~(){}[\]]/g, (c) => `{${c}}`);
 
 /**
  * The expansion modules, slot by slot, for the user to add in System Configuration after the run (its slot

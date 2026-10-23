@@ -54,11 +54,40 @@ static class Tests
             var hits = Controls[window].Where(c => sel.Matches(c.id, c.name, c.type)).ToList();
             return hits.Count > sel.Index ? $"{window}/{hits[sel.Index].name}" : null;
         }
-        public void Invoke(string el) => Did.Add($"press {el}");
+        /// <summary>What each list shows as chosen ("window/list" → entry); what a press or keys open.</summary>
+        public Dictionary<string, string> Chosen = new Dictionary<string, string>();
+        public Dictionary<string, Action> OnPress = new Dictionary<string, Action>(), OnKeys = new Dictionary<string, Action>();
+        /// <summary>A list that does not take the pick (the user's CLICK: it stayed on the first CPU).</summary>
+        public bool PickIgnored;
+        string _focused;
+        (string w, string n) Split(string el) { int k = el.IndexOf('/'); return (el.Substring(0, k), el.Substring(k + 1)); }
+        /// <summary>A list entry pressed is the list's chosen one.</summary>
+        void Pick(string window, string entry)
+        {
+            if (PickIgnored || !Controls.ContainsKey(window)) return;
+            var list = Controls[window].FirstOrDefault(c => c.type == "List");
+            if (list.name != null) Chosen[$"{window}/{list.name}"] = entry;
+        }
+        public void Invoke(string el)
+        {
+            Did.Add($"press {el}");
+            var (w, n) = Split(el);
+            if (Controls.ContainsKey(w) && Controls[w].Any(c => c.name == n && (c.type == "ListItem" || c.type == "DataItem"))) Pick(w, n);
+            if (OnPress.TryGetValue(el, out var a)) a();
+        }
+        public void Close(string window) { Did.Add($"close {window}"); Controls.Remove(window); }
+        public void Focus(string el) { Did.Add($"focus {el}"); _focused = el; }
+        public IList<string> Selected(string el) => Chosen.TryGetValue(el, out var c) ? new List<string> { c } : new List<string>();
         public void SetText(string el, string text) => Did.Add($"text {el}={text}");
         public void DoubleClick(string el) => Did.Add($"double {el}");
         public void Check(string el, bool on) => Did.Add($"check {el}={on}");
-        public void Select(string el, string item) => Did.Add($"select {el}={item}");
+        public void Select(string el, string item)
+        {
+            Did.Add($"select {el}={item}");
+            var (w, _) = Split(el);
+            var hit = Controls.ContainsKey(w) ? Controls[w].FirstOrDefault(c => (c.type == "ListItem" || c.type == "DataItem") && System.Text.RegularExpressions.Regex.IsMatch(c.name, item, System.Text.RegularExpressions.RegexOptions.IgnoreCase)) : default;
+            if (hit.name != null && !PickIgnored) Chosen[el] = hit.name;
+        }
         /// <summary>CLICK 4: a ribbon, no menu UI Automation can see.</summary>
         public bool NoMenus;
         public void Menu(string window, IList<string> path) { if (NoMenus) throw new BridgeError($"CLICK has no menu \"{path[0]}\"."); Did.Add($"menu {string.Join(">", path)}"); }
@@ -69,6 +98,9 @@ static class Tests
         {
             Did.Add($"keys {keys}");
             if (KeysOpen.TryGetValue(keys, out string opens)) Controls[opens] = new List<(string, string, string)> { ("", "OK", "Button") };
+            if (OnKeys.TryGetValue(keys, out var a)) a();
+            // typed into a focused list: it goes to the entry (Windows lists do, entries named or not)
+            if (_focused != null && keys.StartsWith("{HOME}") && !PickIgnored) Chosen[_focused] = keys.Substring(6);
         }
         public int ForegroundProcess() => FrontAt != null ? FrontAt(++_calls) : Front;
         public string Dump(string window) => string.Join("\n", Controls[window].Select(c => $"{c.type} \"{c.name}\" id={c.id}"));
@@ -81,6 +113,30 @@ static class Tests
         ui.Controls["Select a CPU Module"] = new List<(string, string, string)> { ("cboCpu", "CPU", "ComboBox"), ("", "OK", "Button"), ("", "Cancel", "Button") };
         return ui;
     }
+
+    const string Main4 = "CLICK Programming Software - NewProject1.ckp";
+    const string Cpu = "Select a CPU Module", Chooser = "Select an Operation";
+
+    /// <summary>The user's CLICK 4.00: an empty NewProject1 open; the CPU dialog lists the CPUs, the first one chosen.</summary>
+    static FakeUi Click4()
+    {
+        var ui = new FakeUi { NoMenus = true };
+        ui.Controls[Main4] = new List<(string, string, string)> { ("", "Window", "TabItem") };
+        return ui;
+    }
+    static void OpenCpu(FakeUi ui, bool named = true)
+    {
+        var c = new List<(string, string, string)> { ("cboCat", "CPU Category", "ComboBox"), ("lstCpu", "CPU list", "List") };
+        if (named) c.AddRange(new[] { ("", "C0-00DD1-D", "ListItem"), ("", "C0-10DD1E-D", "ListItem"), ("", "C0-12DD1E-D", "ListItem") });
+        c.AddRange(new[] { ("", "Current CPU Type", "Text"), ("", "OK", "Button"), ("", "Cancel", "Button") });
+        ui.Controls[Cpu] = c;
+        ui.Chosen[$"{Cpu}/CPU list"] = "C0-00DD1-D";
+        ui.OnPress[$"{Cpu}/OK"] = () => ui.Controls.Remove(Cpu);
+    }
+    static void OpenChooser(FakeUi ui) =>
+        ui.Controls[Chooser] = new List<(string, string, string)> { ("", "Start a new project", "Button"), ("", "Open an existing project", "Button"), ("", "Connect to PLC", "Button"), ("", "Close", "Button"), ("", "Help", "Button") };
+    static List<Step> NewProjectPlan() => Plan(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "new-project-plan.json")));
+    static Runner Run4(FakeUi ui) => new Runner(ui, 42, CancellationToken.None, _ => { }) { Version = "4.00", PollMs = 5 };
 
     static List<Step> Plan(string json) => ((List<object>)Json.Parse(json)).Cast<Dictionary<string, object>>().Select(Step.From).ToList();
 
@@ -158,7 +214,9 @@ static class Tests
         {
             var ui = Click();
             var e = Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"window\",\"title\":\"^Select a CPU\"},{\"do\":\"click\",\"find\":{\"name\":\"^Apply$\",\"type\":\"Button\"},\"say\":\"Apply the CPU\"}]")));
-            Eq("CLICK: could not do \"Apply the CPU\" (no control Button \"^Apply$\" in the window). Nothing was saved.", e.Message);
+            Eq("CLICK: could not do \"Apply the CPU\" (no control Button \"^Apply$\" in the window). Nothing was saved, and the CLICK dialogs it left open were closed.", e.Message);
+            True(!ui.Controls.ContainsKey("Select a CPU Module") && ui.Controls.ContainsKey("CLICK Programming Software - [Untitled]"), "the dialog closed, CLICK kept");
+            ui = Click();
             e = Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"keys\",\"keys\":\"x\"}]")));
             True(e.Message.Contains("names no window first"), e.Message);
         });
@@ -315,6 +373,68 @@ static class Tests
             try { new Runner(ui, 42, CancellationToken.None, _ => { }).Run(steps); throw new Exception("should refuse"); }
             catch (BridgeError e) { True(e.Message.Contains("never saves"), e.Message); }
             True(!ui.Did.Any(d => d.StartsWith("keys")), "nothing typed");
+        });
+
+        Test("new project (the user's run): Ctrl+N brings Select an Operation and the CPU dialog together: the chooser is closed, C0-10DD1E-D chosen and checked, then OK", () =>
+        {
+            var ui = Click4();
+            ui.OnKeys["^n"] = () => { OpenChooser(ui); OpenCpu(ui); };
+            Run4(ui).Run(NewProjectPlan());
+            string did = string.Join(" | ", ui.Did);
+            True(ui.Did.Contains($"close {Chooser}") && !ui.Did.Any(d => d.Contains("Start a new project")), "the chooser closed, not used: " + did);
+            int pick = ui.Did.IndexOf($"press {Cpu}/C0-10DD1E-D"), ok = ui.Did.IndexOf($"press {Cpu}/OK");
+            True(pick >= 0 && ok > pick, "the CPU, then OK: " + did);
+            Eq(1, ui.Controls.Count, "only CLICK's main window left: " + string.Join(", ", ui.Controls.Keys));
+        });
+
+        Test("new project: the chooser alone: Start a new project, then the CPU dialog; the CPU typed into a list whose entries have no names", () =>
+        {
+            var ui = Click4();
+            ui.OnKeys["^n"] = () => OpenChooser(ui);
+            ui.OnPress[$"{Chooser}/Start a new project"] = () => { ui.Controls.Remove(Chooser); OpenCpu(ui, named: false); };
+            Run4(ui).Run(NewProjectPlan());
+            string did = string.Join(" | ", ui.Did);
+            True(ui.Did.Contains($"press {Chooser}/Start a new project"), did);
+            True(ui.Did.Contains($"focus {Cpu}/CPU list") && ui.Did.Contains("keys {HOME}C0-10DD1E-D"), "typed: " + did);
+            True(ui.Did.IndexOf($"press {Cpu}/OK") > ui.Did.IndexOf("keys {HOME}C0-10DD1E-D"), "OK after the CPU shows chosen: " + did);
+        });
+
+        Test("new project: the list stays on another CPU: OK is never pressed; one sentence; every dialog it left open closed, CLICK's window kept", () =>
+        {
+            var ui = Click4();
+            ui.PickIgnored = true;
+            ui.OnKeys["^n"] = () => { OpenChooser(ui); OpenCpu(ui); };
+            ui.OnPress[$"{Cpu}/OK"] = () => throw new Exception("OK pressed on the wrong CPU");
+            var e = Throws<BridgeError>(() => Run4(ui).Run(NewProjectPlan()));
+            Eq("CLICK 4.00: could not find the CPU C0-10DD1E-D (tried: its entry in the list, picked in the list, typed into the list). Nothing was saved, and the CLICK dialogs it left open were closed.", e.Message);
+            True(!ui.Did.Any(d => d.EndsWith("/OK")), "never OK: " + string.Join(" | ", ui.Did));
+            Eq(Main4, ui.Controls.Keys.Single(), "only CLICK's main window left");
+        });
+
+        Test("new project: CLICK asks to save the open project: never answered, the run ends with what to do, the question closed (Cancel)", () =>
+        {
+            var ui = Click4();
+            ui.OnKeys["^n"] = () => OpenChooser(ui);
+            ui.OnPress[$"{Chooser}/Start a new project"] = () => ui.Controls["Save Changes"] = new List<(string, string, string)> { ("", "Yes", "Button"), ("", "No", "Button"), ("", "Cancel", "Button") };
+            var e = Throws<BridgeError>(() => Run4(ui).Run(NewProjectPlan()));
+            Eq("CLICK 4.00: CLICK asks whether to save the project that is open in it. Save or close that project in CLICK yourself, then press Put the project into CLICK again. Nothing was saved, and the CLICK dialogs it left open were closed.", e.Message);
+            True(!ui.Did.Any(d => d.Contains("Save Changes/")), "no button of the question pressed: " + string.Join(" | ", ui.Did));
+            True(ui.Did.Contains("close Save Changes") && ui.Did.Contains($"close {Chooser}"), string.Join(" | ", ui.Did));
+            Eq(Main4, ui.Controls.Keys.Single());
+        });
+
+        Test("runner: a stop is not a failure: the dialogs are left as they are (the user asked); close never touches CLICK's main window", () =>
+        {
+            var ui = Click4();
+            OpenChooser(ui);
+            using (var cts = new CancellationTokenSource())
+            {
+                cts.Cancel();
+                Throws<BridgeError>(() => new Runner(ui, 42, cts.Token, _ => { }).Run(Plan("[{\"do\":\"window\",\"title\":\"^CLICK\"}]")));
+            }
+            True(ui.Controls.ContainsKey(Chooser), "left open on Stop");
+            Throws<BridgeError>(() => Run4(ui).Run(Plan("[{\"do\":\"window\",\"title\":\"^CLICK\"},{\"do\":\"click\",\"find\":{\"name\":\"^Nothing$\"},\"timeoutMs\":0}]")));
+            Eq(Main4, ui.Controls.Keys.Single(), "a failure closes the chooser, keeps the main window");
         });
 
         Test("commands: no CLICK installed says how to get it; run before start says to open CLICK", () =>

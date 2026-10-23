@@ -1,0 +1,233 @@
+[
+ {
+  "do": "window",
+  "title": "^CLICK Programming Software",
+  "timeoutMs": 60000
+ },
+ {
+  "do": "oneOf",
+  "what": "New project",
+  "say": "New project",
+  "options": [
+   {
+    "label": "Ctrl+N",
+    "steps": [
+     {
+      "do": "window",
+      "title": "^CLICK Programming Software"
+     },
+     {
+      "do": "keys",
+      "keys": "^n"
+     },
+     {
+      "do": "window",
+      "title": "((Select a CPU|CPU Module|New Project|Select CPU)|Select an Operation)",
+      "timeoutMs": 8000
+     }
+    ]
+   },
+   {
+    "label": "the File menu",
+    "steps": [
+     {
+      "do": "window",
+      "title": "^CLICK Programming Software"
+     },
+     {
+      "do": "menu",
+      "path": [
+       "File",
+       "New Project"
+      ]
+     },
+     {
+      "do": "window",
+      "title": "((Select a CPU|CPU Module|New Project|Select CPU)|Select an Operation)",
+      "timeoutMs": 8000
+     }
+    ]
+   },
+   {
+    "label": "the ribbon key tips (Alt, F, N)",
+    "steps": [
+     {
+      "do": "window",
+      "title": "^CLICK Programming Software"
+     },
+     {
+      "do": "keys",
+      "keys": "%f"
+     },
+     {
+      "do": "wait",
+      "ms": 500
+     },
+     {
+      "do": "keys",
+      "keys": "n"
+     },
+     {
+      "do": "window",
+      "title": "((Select a CPU|CPU Module|New Project|Select CPU)|Select an Operation)",
+      "timeoutMs": 8000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "do": "refuse",
+  "title": "(Save|save changes|Do you want to save)",
+  "text": "CLICK asks whether to save the project that is open in it. Save or close that project in CLICK yourself, then press Put the project into CLICK again.",
+  "timeoutMs": 1000
+ },
+ {
+  "do": "oneOf",
+  "what": "the CPU window",
+  "say": "New project",
+  "options": [
+   {
+    "label": "the CPU dialog",
+    "steps": [
+     {
+      "do": "window",
+      "title": "(Select a CPU|CPU Module|New Project|Select CPU)",
+      "timeoutMs": 1500
+     },
+     {
+      "do": "close",
+      "title": "^Select an Operation"
+     }
+    ]
+   },
+   {
+    "label": "Start a new project in \"Select an Operation\"",
+    "steps": [
+     {
+      "do": "window",
+      "title": "^Select an Operation",
+      "timeoutMs": 1500
+     },
+     {
+      "do": "click",
+      "find": {
+       "name": "^Start a new project"
+      }
+     },
+     {
+      "do": "refuse",
+      "title": "(Save|save changes|Do you want to save)",
+      "text": "CLICK asks whether to save the project that is open in it. Save or close that project in CLICK yourself, then press Put the project into CLICK again.",
+      "timeoutMs": 1000
+     },
+     {
+      "do": "window",
+      "title": "(Select a CPU|CPU Module|New Project|Select CPU)",
+      "timeoutMs": 8000
+     },
+     {
+      "do": "close",
+      "title": "^Select an Operation"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "do": "window",
+  "title": "(Select a CPU|CPU Module|New Project|Select CPU)",
+  "timeoutMs": 8000
+ },
+ {
+  "do": "oneOf",
+  "what": "the CPU C0-10DD1E-D",
+  "say": "Choosing the CPU C0-10DD1E-D",
+  "options": [
+   {
+    "label": "its entry in the list",
+    "steps": [
+     {
+      "do": "click",
+      "find": {
+       "name": "^C0-10DD1E-D\\b",
+       "type": "ListItem|DataItem|TreeItem|Text"
+      },
+      "timeoutMs": 3000
+     },
+     {
+      "do": "expect",
+      "find": {
+       "type": "List|DataGrid|Table|Tree"
+      },
+      "item": "^C0-10DD1E-D(\\s|$)",
+      "timeoutMs": 2000
+     }
+    ]
+   },
+   {
+    "label": "picked in the list",
+    "steps": [
+     {
+      "do": "select",
+      "find": {
+       "type": "List|DataGrid|Table|Tree"
+      },
+      "item": "^C0-10DD1E-D\\b",
+      "timeoutMs": 2000
+     },
+     {
+      "do": "expect",
+      "find": {
+       "type": "List|DataGrid|Table|Tree"
+      },
+      "item": "^C0-10DD1E-D(\\s|$)",
+      "timeoutMs": 2000
+     }
+    ]
+   },
+   {
+    "label": "typed into the list",
+    "steps": [
+     {
+      "do": "focus",
+      "find": {
+       "type": "List|DataGrid|Table|Tree"
+      },
+      "timeoutMs": 2000
+     },
+     {
+      "do": "keys",
+      "keys": "{HOME}C0-10DD1E-D"
+     },
+     {
+      "do": "expect",
+      "find": {
+       "type": "List|DataGrid|Table|Tree"
+      },
+      "item": "^C0-10DD1E-D(\\s|$)",
+      "timeoutMs": 2000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "do": "click",
+  "find": {
+   "name": "^OK$",
+   "type": "Button"
+  }
+ },
+ {
+  "do": "refuse",
+  "title": "(Save|save changes|Do you want to save)",
+  "text": "CLICK asks whether to save the project that is open in it. Save or close that project in CLICK yourself, then press Put the project into CLICK again.",
+  "timeoutMs": 1000
+ },
+ {
+  "do": "window",
+  "title": "^CLICK Programming Software",
+  "timeoutMs": 30000
+ }
+]

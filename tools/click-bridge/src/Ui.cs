@@ -14,8 +14,9 @@ namespace ClickBridge
         public string Type;
         public int Index;
 
+        /// <summary>Type is a control type, or several as a pattern ("List|DataGrid|Table").</summary>
         public bool Matches(string id, string name, string type) =>
-            (Id == null || id == Id) && (Type == null || string.Equals(type, Type, System.StringComparison.OrdinalIgnoreCase)) && (Name == null || Regex.IsMatch(name ?? "", Name, RegexOptions.IgnoreCase));
+            (Id == null || id == Id) && (Type == null || Regex.IsMatch(type ?? "", "^(?:" + Type + ")$", RegexOptions.IgnoreCase)) && (Name == null || Regex.IsMatch(name ?? "", Name, RegexOptions.IgnoreCase));
 
         public override string ToString() => string.Join(" ", new[] { Type, Id == null ? null : $"id={Id}", Name == null ? null : $"\"{Name}\"", Index > 0 ? $"#{Index}" : null }).Trim().Replace("  ", " ");
     }
@@ -49,5 +50,11 @@ namespace ClickBridge
         IList<string> Windows(int pid);
         /// <summary>Restores the window (a minimized CLICK has no place on the screen to click), maximizes it, brings it to the front.</summary>
         void Show(string window);
+        /// <summary>Closes a window the way its close box does (a dialog: Cancel); never presses Save, Yes or OK.</summary>
+        void Close(string window);
+        /// <summary>Gives the control the keyboard (a list, to type its entry's name).</summary>
+        void Focus(string element);
+        /// <summary>What the control shows as chosen: its selected entries' names, or its value.</summary>
+        IList<string> Selected(string element);
     }
 }

@@ -11,5 +11,7 @@
     <Compile Include="../src/ClickDetect.cs;../src/Ui.cs;../src/Runner.cs;../src/Commands.cs" />
     <Compile Include="../../tia-bridge/src/Json.cs;../../tia-bridge/src/Protocol.cs;../../tia-bridge/src/Log.cs" />
     <Compile Include="*.cs" />
+    <!-- the app's new-project plan as it sends it (src/plc/click/clickPlan.test.ts keeps it current) -->
+    <None Include="new-project-plan.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -53,7 +53,7 @@ while a run goes.
 | `writeFile` `{name, text}` | Writes a file the plan imports (the nickname CSV) into the bridge's folder; `{path}`. |
 | `folder` | The bridge's folder (the files CLICK exports there); `{path}`. |
 | `readFile` `{name}` | A file in the bridge's folder (only there), for the check; `{base64}`. |
-| `run` `{steps}` | Restores and maximizes CLICK, then runs a plan: `window`, `menu`, `click`, `doubleClick`, `setText`, `select`, `check`, `keys`, `wait`, `note`, `waitGone` (the user's turn: until a window is closed), `waitUser` (the user's turn: until Continue), `oneOf` (`{what, options: [{label, steps}]}`: the ways tried in turn); `optional` steps are skipped when their window does not come. `{steps}`. |
+| `run` `{steps}` | Restores and maximizes CLICK, then runs a plan: `window`, `menu`, `click`, `doubleClick`, `setText`, `select`, `check`, `keys`, `wait`, `note`, `waitGone` (the user's turn: until a window is closed), `waitUser` (the user's turn: until Continue), `oneOf` (`{what, options: [{label, steps}]}`: the ways tried in turn), `close` (the windows like `title`, if open, as their close box), `focus`, `expect` (`{find, item}`: a control shows the item as chosen, else the step fails), `refuse` (`{title, text}`: a window like it ends the run with the text); `optional` steps are skipped when their window does not come. A run that fails closes the dialogs it left open in CLICK (never its main window); Stop leaves them. `{steps}`. |
 | `stop` | Ends the run before its next step. |
 | `resume` | The user's turn is done (Continue): the run goes on. Urgent, like `stop`. |
 | `dump` | Writes the controls of every window of CLICK, dialogs included, to a file (and the log); `{file, lines}`. Support only: the runs record by themselves. |
@@ -81,14 +81,20 @@ Before you start: CLICK Programming Software installed (open or not); no unsaved
 1. PLC program page › **Send to PLC software**. It says which CLICK it found (no CLICK: how to get it).
 2. **Put the project into CLICK**. Hands off the mouse and keyboard; watch CLICK:
    - CLICK comes to the front, maximized (also when it was minimized);
-   - a new project opens (CLICK 4: Ctrl+N) and the project's CPU is chosen;
+   - a new project opens (CLICK 4: Ctrl+N). If CLICK shows "Select an Operation", the app presses Start a new
+     project, or closes it when "Select a CPU Module" is already there;
+   - the project's CPU is chosen in the list (scrolled to it), and OK is pressed only when the list shows exactly
+     that CPU as chosen (not the first one in the list);
    - the Address Picker opens (CLICK 4: from the Navigation tree) and imports the nicknames;
    - the rungs go in one by one, in order: each instruction in its row and column with its address, parallel rows
      joined, outputs at the right rail.
 3. The dialog says "Done in CLICK x.xx: …, 39 of 42 rungs entered" and lists what is left: the modules to add in
    System Configuration, the rungs to type (each "after rung N"). Nothing was saved: save in CLICK (Ctrl+S).
-4. If it stops: one sentence says what it could not do. Press **Open log folder** and send us `click-bridge.log`: it has
-   every CLICK window the app opened, with its controls. Nothing else is needed from you.
+4. If it stops: one sentence says what it could not do, and the CLICK dialogs it left open are closed (as their close
+   box does: Cancel; never Save or Yes); you have nothing to close. Press **Open log folder** and send us
+   `click-bridge.log`: it has every CLICK window the app opened, with its controls. Nothing else is needed from you.
+   If CLICK asks whether to save the project open in it, the app does not answer: it says so; save or close that
+   project in CLICK, then press Put the project into CLICK again.
 5. **Pause**: run it again and click on another window: the dialog says "Paused"; click on CLICK: it goes on.
 6. **Stop**: run it again and press **Stop** (then once more with the **Pause** key): it stops at once and says
    nothing was saved.

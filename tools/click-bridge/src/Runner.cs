@@ -10,7 +10,10 @@
 //   - oneOf tries ways to do one thing in turn (CLICK 3 has a File menu, CLICK 4 a ribbon UI Automation cannot see:
 //     the menu, then Ctrl+N, then the key tips), and says which it tried when none works;
 //   - every window a step opens is recorded in the log the first time in a run (its controls), and every window on a failure,
-//     so the log always has what is needed to fit the steps to the user's CLICK.
+//     so the log always has what is needed to fit the steps to the user's CLICK;
+//   - expect checks what a control shows as chosen (the CPU in its list) before the plan presses OK on it;
+//   - a run that fails closes the dialogs it leaves open in CLICK (as their close box does: Cancel, never Save or Yes),
+//     so the user is never left to deal with them.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -22,7 +25,9 @@ namespace ClickBridge
 {
     public sealed class Step
     {
-        /// <summary>window · menu · click · doubleClick · setText · select · check · keys · wait · note · waitGone · waitUser</summary>
+        /// <summary>window · menu · click · doubleClick · setText · select · check · keys · wait · note · waitGone · waitUser ·
+        /// close (the windows like the title, when open) · focus · expect (a control shows the item as chosen) · refuse (a window
+        /// like the title ends the run with the text)</summary>
         public string Do;
         /// <summary>The step may not happen (its window or control does not come): then it, and the steps up to the next
         /// non-optional one, are skipped.</summary>
@@ -65,6 +70,9 @@ namespace ClickBridge
             "wait" => $"wait {Ms} ms",
             "note" => $"note {Text}",
             "oneOf" => $"{What} (one of: {string.Join(", ", (Options ?? new List<KeyValuePair<string, List<Step>>>()).Select(o => o.Key))})",
+            "close" => $"close the window \"{Title}\" if it is open",
+            "refuse" => $"stop if the window \"{Title}\" comes",
+            "expect" => $"expect {Find} to show {Item}",
             _ => $"{Do} {Find}" + (Text != null ? $" \"{Text}\"" : "") + (Item != null ? $" → {Item}" : ""),
         };
     }
@@ -81,7 +89,11 @@ namespace ClickBridge
         public int PollMs = 300;
         /// <summary>The CLICK version, for the messages ("CLICK 4.00: …").</summary>
         public string Version = "";
+        /// <summary>CLICK's main window (never closed); every other window of CLICK is a dialog.</summary>
+        public string MainTitle = "^CLICK Programming Software";
         string _window;
+        /// <summary>A step pressed, typed or picked something since the way of a oneOf began (it may have opened something).</summary>
+        bool _acted;
         /// <summary>The windows already recorded in the log in this run (each once per run).</summary>
         readonly HashSet<string> _recorded = new HashSet<string>();
 
@@ -102,8 +114,45 @@ namespace ClickBridge
         public int Run(IList<Step> steps)
         {
             foreach (var s in steps) Guard(s);
-            Exec(steps);
+            try { Exec(steps); }
+            catch (StoppedError) { throw; }
+            catch (BridgeError e)
+            {
+                // never leave the user to deal with CLICK's dialogs
+                if (CloseDialogs() == 0) throw;
+                throw new BridgeError(e.Message.EndsWith("Nothing was saved.") ? e.Message.Substring(0, e.Message.Length - 1) + ", and the CLICK dialogs it left open were closed." : e.Message + " The CLICK dialogs it left open were closed.");
+            }
             return steps.Count;
+        }
+
+        /// <summary>Closes every window of CLICK but the main one (a few rounds: one may open another); how many it closed.</summary>
+        int CloseDialogs()
+        {
+            var main = new Regex(MainTitle, RegexOptions.IgnoreCase);
+            List<string> Open() => _ui.Windows(_pid).Where(t => !string.IsNullOrWhiteSpace(t) && !main.IsMatch(t)).Distinct().ToList();
+            int closed = 0;
+            for (int round = 0; round < 3; round++)
+            {
+                var open = Open();
+                if (open.Count == 0) break;
+                // the one opened last first (a dialog over another)
+                for (int k = open.Count - 1; k >= 0; k--)
+                {
+                    try
+                    {
+                        var w = _ui.Window(_pid, "^" + Regex.Escape(open[k]) + "$", 0);
+                        if (w == null) continue;
+                        _ui.Close(w);
+                        closed++;
+                        Log.Write($"closed \"{open[k]}\" (left open by the run; as its close box: nothing saved)");
+                    }
+                    catch (Exception x) { Log.Write($"could not close \"{open[k]}\": {x.Message}"); }
+                }
+                Thread.Sleep(PollMs);
+            }
+            var left = Open();
+            if (left.Count > 0) Log.Write($"still open in CLICK: {string.Join(", ", left.Select(t => $"\"{t}\""))}");
+            return closed;
         }
 
         string Ver => string.IsNullOrEmpty(Version) ? "CLICK" : $"CLICK {Version}";
@@ -135,14 +184,19 @@ namespace ClickBridge
             {
                 Stopped(i);
                 tried.Add(o.Key);
+                string before = _window;
+                _acted = false;
                 try { Exec(o.Value); Log.Write($"{s.What}: done with {o.Key}"); return; }
                 catch (StoppedError) { throw; }
+                catch (RefusedError) { throw; }
                 catch (Exception e)
                 {
                     Log.Write($"{s.What}: {o.Key} did not work ({e.Message})");
                     RecordAll();
-                    // close what the way that did not work may have opened (a menu, a half-open dialog)
-                    if (_window != null) { try { _ui.Keys(_window, "{ESC}"); } catch (Exception) { /* nothing open */ } }
+                    // close what the way that did not work opened (a half-open menu or dialog); a way that only looked
+                    // for a window opened nothing: the window it found open stays (the next way needs it)
+                    if (_acted && _window != null) { try { _ui.Keys(_window, "{ESC}"); } catch (Exception) { /* nothing open */ } }
+                    _window = before;
                 }
             }
             throw new BridgeError($"{Ver}: could not find {s.What} (tried: {string.Join(", ", tried)}). Nothing was saved.");
@@ -192,6 +246,9 @@ namespace ClickBridge
         /// <summary>Stop (the app's button or the Pause key): ends the run, whatever way of a oneOf is being tried.</summary>
         sealed class StoppedError : BridgeError { public StoppedError(string m) : base(m) { } }
 
+        /// <summary>A refuse step: CLICK asks something only the user may answer (save their project); no other way is tried.</summary>
+        sealed class RefusedError : BridgeError { public RefusedError(string m) : base(m) { } }
+
         /// <summary>A window or control a step needs did not come.</summary>
         sealed class NotThere : Exception { public NotThere(string m) : base(m) { } }
 
@@ -208,11 +265,24 @@ namespace ClickBridge
                     Record(_window, s.Title);
                     return;
                 case "oneOf": OneOf(s, i); return;
+                case "close":
+                    for (string w; (w = _ui.Window(_pid, s.Title, 0)) != null;)
+                    {
+                        _ui.Close(w);
+                        Log.Write($"closed \"{s.Title}\"");
+                        Sleep(300, i);
+                        if (_ui.Window(_pid, s.Title, 0) != null) { Log.Write($"\"{s.Title}\" did not close"); break; }
+                    }
+                    return;
+                case "refuse":
+                    if (_ui.Window(_pid, s.Title, s.TimeoutMs) != null) throw new RefusedError($"{Ver}: {s.Text ?? $"the window \"{s.Title}\" came"} Nothing was saved.");
+                    return;
                 case "waitGone": WaitGone(s, i); return;
                 case "waitUser": WaitUser(s, i); return;
             }
             if (_window == null) throw new BridgeError($"Step {i + 1} ({s}): the plan names no window first.");
             Front(i);
+            if (s.Do != "expect") _acted = true;
             switch (s.Do)
             {
                 case "menu": _ui.Menu(_window, s.Path ?? new List<string>()); break;
@@ -222,8 +292,32 @@ namespace ClickBridge
                 case "setText": _ui.SetText(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s), s.Text ?? ""); break;
                 case "select": _ui.Select(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s), s.Item ?? ""); break;
                 case "check": _ui.Check(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s), s.On); break;
+                case "focus": _ui.Focus(Need(_ui.Find(_window, s.Find, s.TimeoutMs), s)); break;
+                case "expect": Expect(s); break;
                 default: throw new BridgeError($"Step {i + 1}: the bridge cannot do \"{s.Do}\" (update the app).");
             }
+        }
+
+        /// <summary>One of the controls like the selector shows the item as chosen; else the step fails, saying what they show.</summary>
+        void Expect(Step s)
+        {
+            var rx = new Regex(s.Item ?? "", RegexOptions.IgnoreCase);
+            var seen = new List<string>();
+            var until = DateTime.UtcNow.AddMilliseconds(s.TimeoutMs);
+            do
+            {
+                seen.Clear();
+                for (int k = 0; k < 10; k++)
+                {
+                    var el = _ui.Find(_window, new Selector { Id = s.Find?.Id, Name = s.Find?.Name, Type = s.Find?.Type, Index = k }, 0);
+                    if (el == null) break;
+                    var chosen = _ui.Selected(el);
+                    if (chosen.Any(c => rx.IsMatch(c ?? ""))) return;
+                    seen.AddRange(chosen.Where(c => !string.IsNullOrEmpty(c)));
+                }
+                Thread.Sleep(PollMs);
+            } while (DateTime.UtcNow < until);
+            throw new NotThere(seen.Count > 0 ? $"it shows {string.Join(", ", seen.Distinct().Select(x => $"\"{x}\""))} chosen, not {s.Item}" : $"nothing is shown chosen in {s.Find}");
         }
 
         /// <summary>The user's turn: waits (no time limit but the pause one) until no window like the title is open.</summary>
