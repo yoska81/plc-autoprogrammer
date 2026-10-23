@@ -84,7 +84,8 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
     await step('Syntax Check (F8)', () => b.call('run', { steps: [{ do: 'window', title: '^CLICK Programming Software' }, { do: 'keys', keys: '{F8}' }, { do: 'wait', ms: 4000 }] }));
     await b.call('dump', { show: false }).catch(() => undefined);
     shot('syntax-check');
-    await b.call('run', { steps: [{ do: 'window', title: '^CLICK Programming Software' }, { do: 'keys', keys: '{ESC}' }, { do: 'wait', ms: 500 }] }).catch(() => undefined);
+    // its message (a warning or an error, with OK) closed, as a user would
+    await b.call('run', { steps: [{ do: 'window', title: '^CLICK Programming Software \\[#32770\\]$', timeoutMs: 1000, optional: true }, { do: 'click', find: { type: 'Button', name: '^OK$' }, optional: true }, { do: 'window', title: '^CLICK Programming Software' }, { do: 'keys', keys: '{ESC}' }, { do: 'wait', ms: 500 }] }).catch(() => undefined);
     // then the proof: CLICK prints its ladder to a PDF (the app's own print plan; this script stands in for the user
     // pressing Save in Windows' dialog), checked against the project by tools/click-real/verify.ts
     const folder = path.dirname(file.path).replace(/\\/g, '\\\\');
