@@ -50,6 +50,8 @@ const CPU_DIALOG = '^(Select a CPU|CPU Module|New Project|Select CPU)';
 const STARTUP = '^Startup$';
 /** CLICK 4's new-project password question (TfrmUserAccountsSetupDlg). */
 const USER_ACCOUNTS = '^User Account Setup$';
+/** A message box of CLICK's: its title is a plain word or just the program's name (not the main window's long title). */
+const MESSAGE_BOX = '^(Confirm\\w*|Confirmation|Warning|Information|Error|CLICK|CLICK Programming Software)$';
 /** For the result, on CLICK 4: the app answered the password question with none. */
 export const clickPasswordNote = 'The new project has no password (CLICK 4 asked; the app chose none, like CLICK 3 projects): to protect it, set one in CLICK under Setup › User Account Setup.';
 /**
@@ -115,7 +117,15 @@ export function newProjectPlan(cpuId: string): ClickStep[] {
     // as CLICK 3 projects; the result says how to set one (clickPasswordNote)
     { do: 'window', title: USER_ACCOUNTS, timeoutMs: 5000, optional: true },
     { do: 'check', find: { type: 'CheckBox', name: '^Disable Password Requirement$' }, on: true, optional: true },
+    { do: 'wait', ms: 800 },
+    // a question it may ask about going without a password (a message box: a plain title, Yes / OK)
+    { do: 'window', title: MESSAGE_BOX, timeoutMs: 1500, optional: true },
+    { do: 'click', find: { type: 'Button', name: '^(Yes|OK)$' }, optional: true },
+    { do: 'window', title: USER_ACCOUNTS, timeoutMs: 1500, optional: true },
     { do: 'click', find: { type: 'Button', name: '^OK$' }, optional: true },
+    { do: 'wait', ms: 800 },
+    { do: 'window', title: MESSAGE_BOX, timeoutMs: 1500, optional: true },
+    { do: 'click', find: { type: 'Button', name: '^(Yes|OK)$' }, optional: true },
     { do: 'wait', ms: 1500 },
     // (CLICK 4 closes its Startup window by itself once the project is made: pressing a Close there, as an earlier
     // plan did, closed CLICK on the build server's real CLICK)

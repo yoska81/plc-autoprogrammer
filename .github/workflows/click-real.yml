@@ -1,7 +1,7 @@
 # Send to CLICK in the REAL CLICK Programming Software: AutomationDirect's free CLICK 4.00 installed silently on the
 # Windows build server, then the example project sent the way the app sends it (tools/click-real). The fixes to the
 # one-click run are proved here before an installer goes to a user. Its record: the job log (every step and the
-# bridge's log, with each CLICK window's controls) and an artifact with the log and a screenshot every 2 s.
+# bridge's log, with each CLICK window's controls) and an artifact with the log and a screenshot every 0.5 s.
 name: Real CLICK
 
 on:
@@ -75,7 +75,7 @@ jobs:
         shell: bash
         run: npx tsx tools/click-real/plans.ts > plans.json
 
-      # A screenshot every 2 s while the run goes (what CLICK showed), then the run
+      # A screenshot every 0.5 s while the run goes (what CLICK showed), then the run
       - name: Send the example project to the real CLICK
         shell: pwsh
         run: |
@@ -83,14 +83,14 @@ jobs:
           $cam = Start-Job -ArgumentList $shots -ScriptBlock {
             param($dir)
             Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-            for ($i = 0; $i -lt 900; $i++) {
+            for ($i = 0; $i -lt 3600; $i++) {
               try {
                 $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
                 $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
                 $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
                 $bmp.Save(("{0}\{1:D4}.png" -f $dir, $i), [System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()
               } catch { }
-              Start-Sleep -Seconds 2
+              Start-Sleep -Milliseconds 500
             }
           }
           $env:CLICK_BRIDGE_EXE = "$PWD\resources\click-bridge\ClickBridge.exe"
