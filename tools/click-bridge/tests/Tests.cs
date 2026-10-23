@@ -38,6 +38,17 @@ static class Tests
         }
     }
 
+    /// <summary>A PC whose running CLICK processes change between asks (a launcher, then CLICK).</summary>
+    sealed class LaterPc : IPc
+    {
+        readonly IPc _pc; readonly Func<IList<KeyValuePair<int, string>>> _running;
+        public LaterPc(IPc pc, Func<IList<KeyValuePair<int, string>>> running) { _pc = pc; _running = running; }
+        public string[] SubKeys(string path, bool wow) => _pc.SubKeys(path, wow);
+        public string Value(string path, string name, bool wow) => _pc.Value(path, name, wow);
+        public string[] Programs(string folder) => _pc.Programs(folder);
+        public IList<KeyValuePair<int, string>> Running(string exe) => _running();
+    }
+
     /// <summary>A CLICK in memory: its windows and controls, what was done to it, who is in front.</summary>
     sealed class FakeUi : IUi
     {
@@ -46,9 +57,12 @@ static class Tests
         public int Front = 42;
         public Func<int, int> FrontAt;
         int _calls;
-        public int Start(string exe) { Did.Add($"start {exe}"); return 42; }
-        public IList<string> Windows(int pid) => Controls.Keys.ToList();
-        public string Window(int pid, string title, int timeoutMs) => Controls.Keys.FirstOrDefault(w => System.Text.RegularExpressions.Regex.IsMatch(w, title, System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+        /// <summary>The process Start returns (a launcher's, when CLICK's windows are in another), and the one with the windows.</summary>
+        public int StartPid = 42;
+        public int? WindowsIn;
+        public int Start(string exe) { Did.Add($"start {exe}"); return StartPid; }
+        public IList<string> Windows(int pid) => WindowsIn != null && pid != WindowsIn ? new List<string>() : Controls.Keys.ToList();
+        public string Window(int pid, string title, int timeoutMs) => WindowsIn != null && pid != WindowsIn ? null : Controls.Keys.FirstOrDefault(w => System.Text.RegularExpressions.Regex.IsMatch(w, title, System.Text.RegularExpressions.RegexOptions.IgnoreCase));
         /// <summary>Where a control is on the screen, left to right (by id): for order "left".</summary>
         public Dictionary<string, int> Left = new Dictionary<string, int>();
         public string Find(string window, Selector sel, int timeoutMs)
@@ -402,6 +416,47 @@ static class Tests
             Eq(1, ui.Raised);
             True(!said.Any(x => x.StartsWith("Paused")), string.Join("|", said));
             Eq("keys {ENTER}", ui.Did.Single());
+        });
+
+        Test("commands: CLICK started through a launcher: its window is found in the CLICK process that has it; Startup alone counts", () =>
+        {
+            var pc = new FakePc().With(false, "{B}", "CLICK Programming Software Ver. 4.00", "4.00", @"C:\AD\Click4", @"C:\AD\Click4\CLICK.exe");
+            var ui = Click();
+            ui.StartPid = 41; ui.WindowsIn = 42;
+            int calls = 0;
+            ui.FrontAt = _ => 42;
+            var output = new StringWriter();
+            // CLICK is not running when start is asked; its process appears after the launcher
+            var p = Commands.Register(new Protocol(output), new LaterPc(pc, () => ++calls > 1 ? new List<KeyValuePair<int, string>> { new KeyValuePair<int, string>(42, "CLICK Programming Software") } : new List<KeyValuePair<int, string>>()), ui);
+            p.Run(new StringReader("{\"id\":1,\"cmd\":\"start\"}\n{\"id\":2,\"cmd\":\"quit\"}\n"), "test");
+            var m = output.ToString().Split('\n').Where(l => l.Trim().Length > 0).Select(l => (Dictionary<string, object>)Json.Parse(l)).ToList();
+            var st = (Dictionary<string, object>)m.Last(x => Equals(x.GetValueOrDefault("id"), 1.0) && x.ContainsKey("ok"))["result"];
+            Eq(42.0, st["processId"]);
+            True(ui.Did.Contains("show CLICK Programming Software - [Untitled]"), string.Join(" | ", ui.Did));
+
+            ui = Click(); ui.Controls.Remove("CLICK Programming Software - [Untitled]"); ui.Controls["Startup"] = new List<(string, string, string)> { ("b", "", "Button") };
+            output = new StringWriter();
+            p = Commands.Register(new Protocol(output), pc, ui);
+            p.Run(new StringReader("{\"id\":1,\"cmd\":\"start\"}\n{\"id\":2,\"cmd\":\"quit\"}\n"), "test");
+            True(output.ToString().Contains("\"processId\":42"), output.ToString());
+            True(ui.Raised == 1 && !ui.Did.Any(d => d.StartsWith("show")), "the Startup window alone is raised, not maximized");
+        });
+
+        Test("commands: a CLICK running without a window (closed, its process stayed): a new CLICK is started and used", () =>
+        {
+            var pc = new FakePc().With(false, "{B}", "CLICK Programming Software Ver. 4.00", "4.00", @"C:\AD\Click4", @"C:\AD\Click4\CLICK.exe");
+            pc.Procs.Add(new KeyValuePair<int, string>(7, ""));
+            var ui = Click();
+            ui.WindowsIn = 42; ui.FrontAt = _ => 42;
+            int was = Commands.AttachWaitSeconds; Commands.AttachWaitSeconds = 1;
+            try
+            {
+                var output = new StringWriter();
+                var p = Commands.Register(new Protocol(output), pc, ui);
+                p.Run(new StringReader("{\"id\":1,\"cmd\":\"start\"}\n{\"id\":2,\"cmd\":\"quit\"}\n"), "test");
+                True(output.ToString().Contains("\"processId\":42") && ui.Did.Contains("start C:\\AD\\Click4\\CLICK.exe"), output + " | " + string.Join(" | ", ui.Did));
+            }
+            finally { Commands.AttachWaitSeconds = was; }
         });
 
         Test("commands: no CLICK installed says how to get it; run before start says to open CLICK", () =>

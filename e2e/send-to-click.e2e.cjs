@@ -116,7 +116,7 @@ const FAKE = () => {
   check(/_nicknames\.csv$/.test(csv.args.name) && /X001/.test(csv.args.text), 'the nickname CSV written for the import');
   const flat = (steps) => steps.flatMap((x) => [x, ...flat((x.options ?? []).flatMap((o) => o.steps))]);
   const setup = flat(runs[0].args.steps);
-  check(runs[0].args.steps.some((x) => x.do === 'oneOf' && x.what === 'New project' && x.options[0].label === 'Ctrl+N') && setup.some((x) => x.do === 'menu' && x.path.join('>') === 'File>New Project'), 'new project: Ctrl+N first (CLICK 4), the File menu kept (CLICK 3)');
+  check(runs[0].args.steps.some((x) => x.do === 'oneOf' && x.what === 'New project' && x.options[0].label === 'the Startup window CLICK shows when it starts' && x.options[1].label === 'Ctrl+N') && setup.some((x) => x.do === 'menu' && x.path.join('>') === 'File>New Project'), 'new project: CLICK 4 (its Startup window, then Ctrl+N) first, the File menu kept (CLICK 3)');
   check(setup.some((x) => x.do === 'doubleClick' && x.find?.type === 'TreeItem' && /Address Picker/.test(x.find.name)) && setup.some((x) => x.do === 'setText' && x.text === `C:\\Users\\tech\\AppData\\Local\\Temp\\isa-click\\${csv.args.name}`), 'the Address Picker from the Navigation tree, the CSV imported from where it was written');
   check(setup.some((x) => x.do === 'click' && /C0-1/.test(x.find?.name ?? '')), 'the project\'s CPU chosen');
   check(!setup.some((x) => x.do === 'waitGone' || x.do === 'waitUser') && !flat(runs[1].args.steps).some((x) => x.do === 'waitUser'), 'nothing stops for the user in the middle');
@@ -134,7 +134,7 @@ const FAKE = () => {
   await dialog.getByTestId('click-failed').waitFor({ timeout: 10000 });
   const failed = await dialog.getByTestId('click-failed').innerText();
   log('failed:', failed.replace(/\s+/g, ' '));
-  check(/^CLICK 3\.71: could not find New project \(tried: Ctrl\+N, the File menu, the ribbon key tips \(Alt, F, N\)\)\. Nothing was saved\./.test(failed.trim()), 'failure: one plain sentence');
+  check(/^CLICK 3\.71: could not find New project \(tried: the Startup window CLICK shows when it starts, Ctrl\+N, the File menu, the ribbon key tips \(Alt, F, N\)\)\. Nothing was saved\./.test(failed.trim()), 'failure: one plain sentence');
   check(/Send this log to support: C:\\Users\\tech\\AppData\\Roaming\\ISA Auto Programmer\\logs\\click-bridge\.log/.test(failed), 'the log to send, by its path');
   check((await page.evaluate(() => window.__click.calls)).filter((c) => c.cmd === 'start').length === 1, 'CLICK asked for again on each run (it may have been closed since)');
   await dialog.getByTestId('click-open-log').click();

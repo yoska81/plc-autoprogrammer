@@ -15,6 +15,13 @@ namespace ClickBridge
 {
     public static class Commands
     {
+        /// <summary>How long start waits for CLICK's window (a first start of CLICK can be slow).</summary>
+        public static int StartWaitSeconds = 90;
+        /// <summary>How long start waits for the window of a CLICK that is already running, before starting one.</summary>
+        public static int AttachWaitSeconds = 10;
+        /// <summary>CLICK's main window, or CLICK 4's Startup window alone at its start.</summary>
+        const string StartTitles = "CLICK|^Startup$";
+
         public static Protocol Register(Protocol p, IPc pc, IUi ui, Func<Action, bool> watchStopKey = null, string folder = null)
         {
             int pid = 0;
@@ -52,9 +59,41 @@ namespace ClickBridge
                 var running = pc.Running(inst.Exe);
                 if (running.Count > 0) { pid = running[0].Key; pr("Using the CLICK Programming Software that is open."); }
                 else { pr($"Starting CLICK Programming Software {inst.Version}…"); pid = ui.Start(inst.Exe); }
-                var main = ui.Window(pid, "CLICK", 60000) ?? throw new BridgeError("CLICK Programming Software started but its window did not appear within a minute. Close it and try again.");
+                // The process started may hand over to another (a launcher), and CLICK 4 may first show only its Startup
+                // window: the window is looked for in every CLICK process, by either title.
+                string main = null;
+                var until = DateTime.UtcNow.AddSeconds(running.Count > 0 ? AttachWaitSeconds : StartWaitSeconds);
+                bool startedHere = running.Count == 0;
+                while (main == null)
+                {
+                    foreach (int cand in new[] { pid }.Concat(pc.Running(inst.Exe).Select(r => r.Key)).Distinct())
+                    {
+                        var w = ui.Window(cand, StartTitles, 0);
+                        if (w != null) { if (cand != pid) Log.Write($"click: the window is in process {cand} (started {pid})"); pid = cand; main = w; break; }
+                    }
+                    if (main != null) break;
+                    if (DateTime.UtcNow >= until)
+                    {
+                        string procs = string.Join(", ", pc.Running(inst.Exe).Select(r => $"{r.Key} \"{r.Value}\""));
+                        if (!startedHere)
+                        {
+                            // a CLICK left running without a window (closed, but its process stayed): start one that has
+                            Log.Write($"click: the running CLICK has no window ({procs}); starting CLICK");
+                            pr($"Starting CLICK Programming Software {inst.Version}…");
+                            pid = ui.Start(inst.Exe);
+                            startedHere = true;
+                            until = DateTime.UtcNow.AddSeconds(StartWaitSeconds);
+                            continue;
+                        }
+                        Log.Write($"click: no window within {StartWaitSeconds} s; processes: {procs}");
+                        throw new BridgeError($"CLICK Programming Software did not show its window within {StartWaitSeconds} seconds. Restart the PC (a CLICK that was closed may still be running without a window), then try again.");
+                    }
+                    Thread.Sleep(500);
+                }
                 version = inst.Version;
-                ui.Show(main);
+                // maximized only when it is the main window (not the Startup dialog)
+                var mainWindow = ui.Window(pid, "^CLICK", 0);
+                if (mainWindow != null) ui.Show(mainWindow); else ui.Raise(main);
                 Log.Write($"click pid {pid}, windows: {string.Join(" | ", ui.Windows(pid))}");
                 return new Dictionary<string, object> { ["version"] = inst.Version, ["processId"] = pid, ["windows"] = ui.Windows(pid).Cast<object>().ToList(), ["attached"] = running.Count > 0 };
             });

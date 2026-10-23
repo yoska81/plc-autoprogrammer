@@ -13,15 +13,15 @@ const ways = (s: ClickStep | undefined) => (s?.options ?? []).map((o) => o.label
 
 const p = newProjectPlan('C0-10DD1E-D');
 assert.equal(p[0].do, 'window');
-assert.equal(p[0].title, CLICK_MAIN);
+assert.ok(new RegExp(p[0].title!).test('CLICK Programming Software (Version4.00)') && new RegExp(p[0].title!).test('Startup'), 'CLICK, or CLICK 4 just started showing only its Startup window');
 const np = p.find((s) => s.what === 'New project');
-assert.deepEqual(ways(np), ['Ctrl+N', 'the File menu', 'the ribbon key tips (Alt, F, N)'], 'CLICK 4 first, CLICK 3\'s menu kept');
+assert.deepEqual(ways(np), ['the Startup window CLICK shows when it starts', 'Ctrl+N', 'the File menu', 'the ribbon key tips (Alt, F, N)'], 'CLICK 4 first, CLICK 3\'s menu kept');
 assert.ok(np!.options!.every((o) => o.steps.at(-1)!.do === 'window'), 'each way counts only when the CPU dialog comes');
-assert.ok(np!.options![0].steps.some((s) => s.do === 'keys' && s.keys === '^n'));
-assert.deepEqual(np!.options![1].steps.find((s) => s.do === 'menu')!.path, ['File', 'New Project']);
+assert.ok(np!.options![1].steps.some((s) => s.do === 'keys' && s.keys === '^n'));
+assert.deepEqual(np!.options![2].steps.find((s) => s.do === 'menu')!.path, ['File', 'New Project']);
 // CLICK 4.00 (a user's log): Ctrl+N opens "Startup" first, the CPU dialog inside it; Start a new project is its
 // leftmost, unnamed button; a CLICK whose Ctrl+N opens the CPU dialog straight away skips that press
-const ctrlN = np!.options![0].steps;
+const ctrlN = np!.options![1].steps;
 const came = ctrlN.find((s) => s.do === 'window' && s.title !== CLICK_MAIN)!;
 assert.ok(new RegExp(came.title!, 'i').test('Startup') && new RegExp(came.title!, 'i').test('Select a CPU Module'), 'Startup or the CPU dialog');
 assert.ok(!new RegExp(came.title!, 'i').test('CLICK Programming Software (Version4.00) - NewProject1.ckp - [Main Program]'), 'not the main window');

@@ -76,9 +76,17 @@ const startupThenCpu = (cpuCame: ClickStep): ClickStep[] => [
 export function newProjectPlan(cpuId: string): ClickStep[] {
   const cpuCame: ClickStep = { do: 'window', title: CPU_DIALOG, timeoutMs: 8000 };
   return [
-    { do: 'window', title: CLICK_MAIN, timeoutMs: 60000 },
+    // CLICK 4 just started may show its Startup window (over the main one, or alone)
+    { do: 'window', title: `${CLICK_MAIN}|${STARTUP}`, timeoutMs: 60000 },
     {
       do: 'oneOf', what: 'New project', say: 'New project', options: [
+        {
+          label: 'the Startup window CLICK shows when it starts', steps: [
+            { do: 'window', title: STARTUP, timeoutMs: 1500 },
+            { do: 'click', find: { type: 'Button', name: '^(Start a new project)?$', order: 'left' }, timeoutMs: 2000 },
+            cpuCame,
+          ],
+        },
         { label: 'Ctrl+N', steps: [main, { do: 'keys', keys: '^n' }, ...startupThenCpu(cpuCame)] },
         { label: 'the File menu', steps: [main, { do: 'menu', path: ['File', 'New Project'] }, cpuCame] },
         { label: 'the ribbon key tips (Alt, F, N)', steps: [main, { do: 'keys', keys: '%f' }, { do: 'wait', ms: 500 }, { do: 'keys', keys: 'n' }, ...startupThenCpu(cpuCame)] },
