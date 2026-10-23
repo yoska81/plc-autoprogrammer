@@ -10,6 +10,15 @@ const { createBridge } = require('../../electron/tiaBridge.cjs');
 const [plansFile, outDir] = process.argv.slice(2);
 const plans = JSON.parse(fs.readFileSync(plansFile, 'utf8'));
 fs.mkdirSync(outDir, { recursive: true });
+const { execFileSync } = require('node:child_process');
+/** A screenshot of the whole screen now, into out/moments (named), for the moments that matter. */
+const shot = (name) => {
+  const file = path.join(outDir, 'moments', `${String(++shots).padStart(2, '0')}-${name}.png`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const ps = `Add-Type -AssemblyName System.Windows.Forms, System.Drawing; $b = [System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height; $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size); $bmp.Save('${file}', [System.Drawing.Imaging.ImageFormat]::Png)`;
+  try { execFileSync('powershell', ['-NoProfile', '-Command', ps], { timeout: 30000 }); } catch (err) { console.log(`  (no screenshot: ${err.message.split('\n')[0]})`); }
+};
+let shots = 0;
 const t0 = Date.now();
 const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
 
@@ -39,6 +48,7 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
       await step(`new project only (${upTo} steps), for the probe`, () => b.call('run', { steps: setup.slice(0, upTo) }));
       for (const [i, round] of probe.rounds.entries()) {
         await step(`probe round ${i + 1}: ${probe.why}`, () => b.call('run', { steps: round })).catch(() => undefined);
+        shot(`probe-${i + 1}`);
         await b.call('dump', { show: false }).catch(() => undefined);
       }
       throw new Error('probe done (remove tools/click-real/probe.json for the full run)');
@@ -48,6 +58,7 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
     console.log(`${at()} ALL DONE: the example project is in CLICK`);
   } catch {
     failed = true;
+    shot('failed');
     try { await b.call('dump', { show: false }); } catch { /* the windows are in the log already */ }
   } finally {
     b.stop();
