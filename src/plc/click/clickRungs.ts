@@ -164,6 +164,7 @@ export function rungSteps(km: ClickKeymap, r: EntryRung): { number: number; step
       move(rows, at.column);
       steps.push(...km.newRow);
       rows++;
+      at.row = rows; // CLICK puts the cursor on the new row (same column): seen in the real CLICK 4.00
     }
     move(row, column);
   };
