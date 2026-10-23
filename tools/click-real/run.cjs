@@ -61,6 +61,17 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
       rungs[rungs.length - 1].push(x);
     }
     console.log(`${at()} rungs: ${plans.rungs.length} steps in ${rungs.length} rungs (${plans.entered} entered by the app; ${plans.leftForYou} left for the user)`);
+    // STEP_SHOTS=n: the first n rungs one step at a time, a screenshot after each step (to fit the editor's keys)
+    const stepShots = Number(process.env.STEP_SHOTS || 0);
+    for (const [i, r] of rungs.slice(0, stepShots).entries()) {
+      let win = r[0];
+      for (const [k, x] of r.entries()) {
+        if (x.do === 'window') { win = x; continue; }
+        await step(`rung ${i + 1} step ${k + 1}: ${x.do} ${x.keys ?? x.find?.name ?? x.find?.id ?? x.text ?? ''}`, () => b.call('run', { steps: [win, x] })).catch(() => undefined);
+        shot(`r${i + 1}-s${String(k + 1).padStart(2, '0')}-${x.do}`);
+      }
+    }
+    if (stepShots) throw new Error('step shots done');
     for (const [i, r] of rungs.entries()) {
       await step(`rung ${i + 1}/${rungs.length} (${r.length} steps)`, () => b.call('run', { steps: r }));
       if (i < 6) shot(`rung-${i + 1}`);
