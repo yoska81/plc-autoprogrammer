@@ -32,8 +32,14 @@ namespace ClickBridge
         static IEnumerable<AutomationElement> TopWindows(int pid) =>
             AutomationElement.RootElement.FindAll(TreeScope.Children, new PropertyCondition(AutomationElement.ProcessIdProperty, pid)).Cast<AutomationElement>();
 
-        public IList<string> Windows(int pid) =>
-            TopWindows(pid).SelectMany(w => new[] { w.Current.Name }.Concat(w.FindAll(TreeScope.Children, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window)).Cast<AutomationElement>().Select(c => c.Current.Name))).ToList();
+        static readonly Condition IsWindow = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window);
+
+        /// <summary>The process's windows: each top-level one, then the dialogs inside it at any depth (CLICK 4: main →
+        /// Startup → Select a CPU Module), outer first (the tree's order).</summary>
+        static IEnumerable<AutomationElement> AllWindows(int pid) =>
+            TopWindows(pid).SelectMany(w => new[] { w }.Concat(w.FindAll(TreeScope.Descendants, IsWindow).Cast<AutomationElement>()));
+
+        public IList<string> Windows(int pid) => AllWindows(pid).Select(w => w.Current.Name).ToList();
 
         public void Show(string window)
         {
@@ -43,8 +49,29 @@ namespace ClickBridge
             if (h == IntPtr.Zero) return;
             if (IsIconic(h)) ShowWindow(h, 9 /* SW_RESTORE */);
             ShowWindow(h, 3 /* SW_MAXIMIZE */);
-            SetForegroundWindow(h);
+            ToFront(h);
             Thread.Sleep(300);
+        }
+
+        public void Raise(string window)
+        {
+            var w = El(window);
+            var h = new IntPtr(w.Current.NativeWindowHandle);
+            Log.Write($"ui raise {Describe(w)}");
+            if (h == IntPtr.Zero) { w.SetFocus(); return; }
+            if (IsIconic(h)) ShowWindow(h, 9 /* SW_RESTORE */);
+            ToFront(h);
+        }
+
+        /// <summary>SetForegroundWindow, past Windows' rule that only the program in front may give the front away: the
+        /// bridge joins the input of the window in front (the app's, whose button was just pressed) for the call.</summary>
+        static void ToFront(IntPtr h)
+        {
+            uint front = GetWindowThreadProcessId(GetForegroundWindow(), out _);
+            uint me = GetCurrentThreadId();
+            bool joined = front != 0 && front != me && AttachThreadInput(me, front, true);
+            try { BringWindowToTop(h); SetForegroundWindow(h); }
+            finally { if (joined) AttachThreadInput(me, front, false); }
         }
 
         public string Window(int pid, string titlePattern, int timeoutMs)
@@ -53,13 +80,9 @@ namespace ClickBridge
             var until = DateTime.UtcNow.AddMilliseconds(timeoutMs);
             do
             {
-                // a dialog may be a child of the main window rather than a top-level window
-                foreach (var w in TopWindows(pid))
-                {
-                    if (rx.IsMatch(w.Current.Name)) return Keep(w);
-                    var child = w.FindAll(TreeScope.Children, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window)).Cast<AutomationElement>().FirstOrDefault(c => rx.IsMatch(c.Current.Name));
-                    if (child != null) return Keep(child);
-                }
+                // a dialog may be inside the main window rather than top-level, even inside another dialog
+                var w = AllWindows(pid).FirstOrDefault(x => rx.IsMatch(x.Current.Name));
+                if (w != null) return Keep(w);
                 Thread.Sleep(250);
             } while (DateTime.UtcNow < until);
             return null;
@@ -74,6 +97,7 @@ namespace ClickBridge
                 var all = root.FindAll(TreeScope.Descendants, Condition.TrueCondition).Cast<AutomationElement>()
                     .Where(e => sel.Matches(e.Current.AutomationId, e.Current.Name, e.Current.ControlType.ProgrammaticName.Replace("ControlType.", "")))
                     .ToList();
+                if (sel.Order == "left") all = all.OrderBy(e => e.Current.BoundingRectangle.X).ThenBy(e => e.Current.BoundingRectangle.Y).ToList();
                 if (all.Count > sel.Index) return Keep(all[sel.Index]);
                 Thread.Sleep(250);
             } while (DateTime.UtcNow < until);
@@ -84,11 +108,31 @@ namespace ClickBridge
         {
             var e = El(element);
             Log.Write($"ui press {Describe(e)}");
+            if (e.Current.ControlType == ControlType.ListItem) { PickItem(e); return; }
             if (e.TryGetCurrentPattern(InvokePattern.Pattern, out object p)) { ((InvokePattern)p).Invoke(); return; }
             if (e.TryGetCurrentPattern(SelectionItemPattern.Pattern, out p)) { ((SelectionItemPattern)p).Select(); return; }
             if (e.TryGetCurrentPattern(TogglePattern.Pattern, out p)) { ((TogglePattern)p).Toggle(); return; }
             if (e.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out p)) { ((ExpandCollapsePattern)p).Expand(); return; }
             Click(e);
+        }
+
+        /// <summary>A list entry (CLICK's CPU list): shown, then clicked like a user does, so the dialog sees the pick (selecting
+        /// it through UI Automation alone does not tell a Delphi list box's OnClick); checked selected after.</summary>
+        static void PickItem(AutomationElement e)
+        {
+            if (e.TryGetCurrentPattern(ScrollItemPattern.Pattern, out object sc)) { try { ((ScrollItemPattern)sc).ScrollIntoView(); Thread.Sleep(100); } catch (InvalidOperationException) { /* already shown */ } }
+            e.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object si);
+            if (e.TryGetClickablePoint(out System.Windows.Point _)) Click(e);
+            else if (si != null) ((SelectionItemPattern)si).Select();
+            else throw new BridgeError($"\"{e.Current.Name}\" cannot be picked.");
+            Thread.Sleep(200);
+            if (si != null && !((SelectionItemPattern)si).Current.IsSelected)
+            {
+                ((SelectionItemPattern)si).Select();
+                Thread.Sleep(100);
+                if (!((SelectionItemPattern)si).Current.IsSelected) throw new BridgeError($"\"{e.Current.Name}\" did not get picked in the list.");
+            }
+            Log.Write($"ui picked \"{e.Current.Name}\"");
         }
 
         public void Check(string element, bool on)
@@ -163,7 +207,7 @@ namespace ClickBridge
         {
             var w = El(window);
             Log.Write($"ui keys {keys}");
-            SetForegroundWindow(new IntPtr(w.Current.NativeWindowHandle));
+            ToFront(new IntPtr(w.Current.NativeWindowHandle));
             Thread.Sleep(100);
             System.Windows.Forms.SendKeys.SendWait(keys);
         }
@@ -210,6 +254,9 @@ namespace ClickBridge
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
         [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
+        [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr hWnd);
+        [DllImport("user32.dll")] static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
+        [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
         [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int cmd);
         [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
         [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);

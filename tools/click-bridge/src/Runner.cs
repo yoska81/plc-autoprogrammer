@@ -1,9 +1,11 @@
 // Runs a step plan (src/plc/click/clickPlan.ts) on CLICK Programming Software while the user watches:
-//   - before every step that touches the keyboard or a control, CLICK must be the window in front; when the user
-//     clicks elsewhere the run pauses (and says so) until CLICK is in front again;
+//   - before every step that touches the keyboard or a control, CLICK must be the window in front: the run brings it
+//     there itself (the user pressed the app's button, so the app is in front at the start); when that does not work
+//     (the user clicked elsewhere) the run pauses (and says so) until CLICK is in front again;
 //   - Stop (the app's button, or the Pause key anywhere) ends it before the next step;
 //   - it never saves: a step that would (Ctrl+S, a Save menu or button) is refused;
-//   - a step that fails names the step and writes the window's controls to the log (to correct the plan);
+//   - a step that fails names the step and writes the window's controls to the log (to correct the plan), and the
+//     dialogs the run opened are closed (Cancel / Close): the user is never left with them;
 //   - an optional step (a window that may not come, e.g. a confirmation) is skipped when it does not come;
 //   - waitGone hands over to the user (e.g. "add these modules, then close the window") until a window closes;
 //   - waitUser hands over until the user presses Continue in the app (a rung the app cannot enter: they type it);
@@ -51,7 +53,7 @@ namespace ClickBridge
                     o.TryGetValue("label", out object lb) ? lb as string ?? "" : "",
                     (o.TryGetValue("steps", out object st) && st is List<object> sl ? sl : new List<object>()).OfType<Dictionary<string, object>>().Select(From).ToList())).ToList();
             if (d.TryGetValue("find", out object f) && f is Dictionary<string, object> sel)
-                s.Find = new Selector { Id = sel.TryGetValue("id", out object i) ? i as string : null, Name = sel.TryGetValue("name", out object n) ? n as string : null, Type = sel.TryGetValue("type", out object t) ? t as string : null, Index = sel.TryGetValue("index", out object x) && x is double dx ? (int)dx : 0 };
+                s.Find = new Selector { Id = sel.TryGetValue("id", out object i) ? i as string : null, Name = sel.TryGetValue("name", out object n) ? n as string : null, Type = sel.TryGetValue("type", out object t) ? t as string : null, Index = sel.TryGetValue("index", out object x) && x is double dx ? (int)dx : 0, Order = sel.TryGetValue("order", out object ord) ? ord as string : null };
             return s;
         }
 
@@ -102,7 +104,10 @@ namespace ClickBridge
         public int Run(IList<Step> steps)
         {
             foreach (var s in steps) Guard(s);
-            Exec(steps);
+            try { _before = new HashSet<string>(_ui.Windows(_pid)); } catch (Exception) { _before = new HashSet<string>(); }
+            try { Exec(steps); }
+            // Stop keeps CLICK as it is (the user may keep what was entered); a failure closes what the run opened
+            catch (BridgeError e) when (!(e is StoppedError)) { CloseDialogs(); throw; }
             return steps.Count;
         }
 
@@ -141,11 +146,41 @@ namespace ClickBridge
                 {
                     Log.Write($"{s.What}: {o.Key} did not work ({e.Message})");
                     RecordAll();
-                    // close what the way that did not work may have opened (a menu, a half-open dialog)
-                    if (_window != null) { try { _ui.Keys(_window, "{ESC}"); } catch (Exception) { /* nothing open */ } }
+                    // close what the way that did not work may have opened (a dialog, a menu, the ribbon's key tips)
+                    CloseDialogs();
+                    var main = _ui.Window(_pid, MainTitle, 0);
+                    if (main != null) { try { _ui.Keys(main, "{ESC}"); } catch (Exception) { /* nothing open */ } }
                 }
             }
             throw new BridgeError($"{Ver}: could not find {s.What} (tried: {string.Join(", ", tried)}). Nothing was saved.");
+        }
+
+        /// <summary>CLICK's main window (the plans' CLICK_MAIN).</summary>
+        const string MainTitle = "^CLICK Programming Software";
+        static readonly Regex Main = new Regex(MainTitle, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>The windows of CLICK open before the run (its own panes; a dialog the user had open): never closed.</summary>
+        HashSet<string> _before = new HashSet<string>();
+
+        /// <summary>Every dialog of CLICK the run opened (not open before it), innermost first, closed with its Cancel or Close
+        /// button (never a save: a dialog that has neither stays). A run that fails leaves none for the user.</summary>
+        void CloseDialogs()
+        {
+            IList<string> open;
+            try { open = _ui.Windows(_pid); } catch (Exception) { return; }
+            foreach (var t in open.Reverse().Where(t => !Main.IsMatch(t) && !_before.Contains(t)))
+            {
+                try
+                {
+                    var w = _ui.Window(_pid, "^" + Regex.Escape(t) + "$", 0);
+                    var b = w == null ? null : _ui.Find(w, new Selector { Type = "Button", Name = "^Cancel$" }, 0) ?? _ui.Find(w, new Selector { Type = "Button", Name = "^Close$" }, 0);
+                    if (b == null) continue;
+                    Log.Write($"closing \"{t}\" (the run opened it)");
+                    _ui.Invoke(b);
+                    Thread.Sleep(PollMs);
+                }
+                catch (Exception e) { Log.Write($"could not close \"{t}\": {e.Message}"); }
+            }
         }
 
         /// <summary>A window's controls into the log, the first time a step uses it.</summary>
@@ -175,6 +210,10 @@ namespace ClickBridge
         void Front(int i)
         {
             if (_ui.ForegroundProcess() == _pid) return;
+            // the app's own window is in front when a run starts (its button was pressed): bring CLICK forward first
+            try { _ui.Raise(_window); } catch (Exception e) { Log.Write($"could not bring CLICK to the front: {e.Message}"); }
+            for (int t = 0; t < 1000 && _ui.ForegroundProcess() != _pid; t += 100) Thread.Sleep(Math.Min(100, PollMs));
+            if (_ui.ForegroundProcess() == _pid) { Log.Write("brought CLICK to the front"); return; }
             _progress($"Paused: click on the CLICK window to go on (step {i + 1}). Press Stop to end.");
             Log.Write($"paused at step {i + 1}: CLICK is not in front");
             int waited = 0;

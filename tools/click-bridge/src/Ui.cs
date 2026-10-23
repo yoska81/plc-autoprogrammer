@@ -13,18 +13,21 @@ namespace ClickBridge
         public string Name;
         public string Type;
         public int Index;
+        /// <summary>"left": the matches counted left to right on the screen (CLICK 4's Startup buttons have no names).</summary>
+        public string Order;
 
         public bool Matches(string id, string name, string type) =>
             (Id == null || id == Id) && (Type == null || string.Equals(type, Type, System.StringComparison.OrdinalIgnoreCase)) && (Name == null || Regex.IsMatch(name ?? "", Name, RegexOptions.IgnoreCase));
 
-        public override string ToString() => string.Join(" ", new[] { Type, Id == null ? null : $"id={Id}", Name == null ? null : $"\"{Name}\"", Index > 0 ? $"#{Index}" : null }).Trim().Replace("  ", " ");
+        public override string ToString() => string.Join(" ", new[] { Type, Id == null ? null : $"id={Id}", Name == null ? null : $"\"{Name}\"", Index > 0 ? $"#{Index}" : null, Order != null ? $"({Order}most)" : null }).Trim().Replace("  ", " ");
     }
 
     public interface IUi
     {
         /// <summary>Starts the program; returns its process id.</summary>
         int Start(string exe);
-        /// <summary>The window of the process whose title matches (waits up to timeoutMs; 0 = only now); null when none comes.</summary>
+        /// <summary>The window of the process whose title matches, top-level or a dialog at any depth inside one (CLICK 4's CPU
+        /// dialog opens inside its Startup window); waits up to timeoutMs (0 = only now); null when none comes.</summary>
         string Window(int pid, string titlePattern, int timeoutMs);
         /// <summary>The control in the window (waits up to timeoutMs); null when none comes.</summary>
         string Find(string window, Selector sel, int timeoutMs);
@@ -45,9 +48,12 @@ namespace ClickBridge
         int ForegroundProcess();
         /// <summary>The window's controls as text, one per line, indented (for the log: how to name them in a plan).</summary>
         string Dump(string window);
-        /// <summary>The titles of the process's windows: top-level ones and the dialogs inside them (to say what is open, to record them).</summary>
+        /// <summary>The titles of the process's windows: top-level ones and the dialogs inside them at any depth, outer first
+        /// (to say what is open, to record them, to close what a failed run opened).</summary>
         IList<string> Windows(int pid);
         /// <summary>Restores the window (a minimized CLICK has no place on the screen to click), maximizes it, brings it to the front.</summary>
         void Show(string window);
+        /// <summary>Brings the window to the front as it is (no maximize): a run started from the app finds the app in front.</summary>
+        void Raise(string window);
     }
 }

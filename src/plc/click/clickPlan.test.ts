@@ -19,6 +19,17 @@ assert.deepEqual(ways(np), ['Ctrl+N', 'the File menu', 'the ribbon key tips (Alt
 assert.ok(np!.options!.every((o) => o.steps.at(-1)!.do === 'window'), 'each way counts only when the CPU dialog comes');
 assert.ok(np!.options![0].steps.some((s) => s.do === 'keys' && s.keys === '^n'));
 assert.deepEqual(np!.options![1].steps.find((s) => s.do === 'menu')!.path, ['File', 'New Project']);
+// CLICK 4.00 (a user's log): Ctrl+N opens "Startup" first, the CPU dialog inside it; Start a new project is its
+// leftmost, unnamed button; a CLICK whose Ctrl+N opens the CPU dialog straight away skips that press
+const ctrlN = np!.options![0].steps;
+const came = ctrlN.find((s) => s.do === 'window' && s.title !== CLICK_MAIN)!;
+assert.ok(new RegExp(came.title!, 'i').test('Startup') && new RegExp(came.title!, 'i').test('Select a CPU Module'), 'Startup or the CPU dialog');
+assert.ok(!new RegExp(came.title!, 'i').test('CLICK Programming Software (Version4.00) - NewProject1.ckp - [Main Program]'), 'not the main window');
+const startNew = ctrlN.find((s) => s.do === 'click')!;
+assert.equal(startNew.optional, true);
+assert.equal(startNew.find?.order, 'left');
+assert.ok(new RegExp(startNew.find!.name!).test('') && !new RegExp(startNew.find!.name!).test('Close') && !new RegExp(startNew.find!.name!).test('OK'), 'the unnamed picture button, not Close / Help / OK');
+assert.equal(ctrlN.indexOf(startNew), ctrlN.indexOf(came) + 1);
 const cpu = allSteps(p).find((s) => s.do === 'click' && s.find?.name?.includes('C0'))!;
 assert.ok(new RegExp(cpu.find!.name!, 'i').test('C0-10DD1E-D  CLICK Ethernet Basic PLC'), 'the CPU item by its part number');
 assert.ok(!new RegExp(cpu.find!.name!, 'i').test('C0-10DD1E-D2'), 'not a longer part number');

@@ -10,7 +10,11 @@
  */
 
 /** How a step names a control: its UI Automation id, its name (a pattern), its control type, the nth match. */
-export interface ClickSelector { id?: string; name?: string; type?: string; index?: number }
+export interface ClickSelector {
+  id?: string; name?: string; type?: string; index?: number;
+  /** 'left': the matches counted left to right on the screen (CLICK 4's Startup buttons have no names). */
+  order?: 'left';
+}
 
 export interface ClickStep {
   do: 'window' | 'menu' | 'click' | 'doubleClick' | 'setText' | 'select' | 'check' | 'keys' | 'wait' | 'note' | 'waitGone' | 'waitUser' | 'oneOf';
@@ -37,7 +41,13 @@ export interface ClickStep {
 /** CLICK's main window. */
 export const CLICK_MAIN = '^CLICK Programming Software';
 /** The dialog where a new project's CPU is chosen (CLICK 3: "Select a CPU Module"). */
-const CPU_DIALOG = '(Select a CPU|CPU Module|New Project|Select CPU)';
+const CPU_DIALOG = '^(Select a CPU|CPU Module|New Project|Select CPU)';
+/**
+ * CLICK 4's "Startup" window (Select an Operation: Start a new project, Open an existing project, Connect to PLC): Ctrl+N
+ * opens it, and the CPU dialog opens inside it. Its three picture buttons have no names; Start a new project is the
+ * leftmost. Seen in a user's CLICK 4.00 log: main window → Startup (TfrmStartup) → Select a CPU Module (TfrmCPU).
+ */
+const STARTUP = '^Startup$';
 
 /** A text as a pattern matching it exactly. */
 export const literal = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -52,6 +62,16 @@ const treeItem = (name: string): ClickStep[] => [
   { do: 'doubleClick', find: { type: 'TreeItem', name } },
 ];
 
+/**
+ * After Ctrl+N: CLICK 4's Startup window or the CPU dialog, whichever comes; in Startup, its leftmost button (Start a new
+ * project). When the CPU dialog came straight away it has no such button: the optional press is skipped.
+ */
+const startupThenCpu = (cpuCame: ClickStep): ClickStep[] => [
+  { do: 'window', title: `${STARTUP}|${CPU_DIALOG}`, timeoutMs: 8000 },
+  { do: 'click', find: { type: 'Button', name: '^(Start a new project)?$', order: 'left' }, timeoutMs: 2000, optional: true },
+  cpuCame,
+];
+
 /** A new project with the CPU: File › New Project (CLICK 3), Ctrl+N or the ribbon's key tips (CLICK 4). */
 export function newProjectPlan(cpuId: string): ClickStep[] {
   const cpuCame: ClickStep = { do: 'window', title: CPU_DIALOG, timeoutMs: 8000 };
@@ -59,9 +79,9 @@ export function newProjectPlan(cpuId: string): ClickStep[] {
     { do: 'window', title: CLICK_MAIN, timeoutMs: 60000 },
     {
       do: 'oneOf', what: 'New project', say: 'New project', options: [
-        { label: 'Ctrl+N', steps: [main, { do: 'keys', keys: '^n' }, cpuCame] },
+        { label: 'Ctrl+N', steps: [main, { do: 'keys', keys: '^n' }, ...startupThenCpu(cpuCame)] },
         { label: 'the File menu', steps: [main, { do: 'menu', path: ['File', 'New Project'] }, cpuCame] },
-        { label: 'the ribbon key tips (Alt, F, N)', steps: [main, { do: 'keys', keys: '%f' }, { do: 'wait', ms: 500 }, { do: 'keys', keys: 'n' }, cpuCame] },
+        { label: 'the ribbon key tips (Alt, F, N)', steps: [main, { do: 'keys', keys: '%f' }, { do: 'wait', ms: 500 }, { do: 'keys', keys: 'n' }, ...startupThenCpu(cpuCame)] },
       ],
     },
     {
@@ -71,6 +91,9 @@ export function newProjectPlan(cpuId: string): ClickStep[] {
       ],
     },
     { do: 'click', find: { name: '^OK$', type: 'Button' } },
+    // CLICK 4: should its Startup window stay open behind the new project, close it (Close only chooses nothing)
+    { do: 'window', title: STARTUP, timeoutMs: 1500, optional: true },
+    { do: 'click', find: { type: 'Button', name: '^Close$' }, timeoutMs: 1000, optional: true },
     { do: 'window', title: CLICK_MAIN, timeoutMs: 30000 },
   ];
 }

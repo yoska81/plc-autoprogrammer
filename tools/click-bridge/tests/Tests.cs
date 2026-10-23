@@ -49,12 +49,26 @@ static class Tests
         public int Start(string exe) { Did.Add($"start {exe}"); return 42; }
         public IList<string> Windows(int pid) => Controls.Keys.ToList();
         public string Window(int pid, string title, int timeoutMs) => Controls.Keys.FirstOrDefault(w => System.Text.RegularExpressions.Regex.IsMatch(w, title, System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+        /// <summary>Where a control is on the screen, left to right (by id): for order "left".</summary>
+        public Dictionary<string, int> Left = new Dictionary<string, int>();
         public string Find(string window, Selector sel, int timeoutMs)
         {
+            if (!Controls.ContainsKey(window)) return null;
             var hits = Controls[window].Where(c => sel.Matches(c.id, c.name, c.type)).ToList();
-            return hits.Count > sel.Index ? $"{window}/{hits[sel.Index].name}" : null;
+            if (sel.Order == "left") hits = hits.OrderBy(c => Left.TryGetValue(c.id, out int x) ? x : 0).ToList();
+            return hits.Count > sel.Index ? $"{window}/{(hits[sel.Index].name == "" ? hits[sel.Index].id : hits[sel.Index].name)}" : null;
         }
-        public void Invoke(string el) => Did.Add($"press {el}");
+        /// <summary>Windows that a press opens (CLICK 4's Startup button opens the CPU dialog inside it), and that a Cancel / Close closes.</summary>
+        public Dictionary<string, string> PressOpens = new Dictionary<string, string>();
+        /// <summary>The controls a window gets when it opens (else just an OK button).</summary>
+        public Dictionary<string, List<(string id, string name, string type)>> Ready = new Dictionary<string, List<(string, string, string)>>();
+        void Open(string w) => Controls[w] = Ready.TryGetValue(w, out var c) ? c : new List<(string, string, string)> { ("", "OK", "Button") };
+        public void Invoke(string el)
+        {
+            Did.Add($"press {el}");
+            if (PressOpens.TryGetValue(el, out string opens)) Open(opens);
+            if (el.EndsWith("/Cancel") || el.EndsWith("/Close")) Controls.Remove(el.Substring(0, el.LastIndexOf('/')));
+        }
         public void SetText(string el, string text) => Did.Add($"text {el}={text}");
         public void DoubleClick(string el) => Did.Add($"double {el}");
         public void Check(string el, bool on) => Did.Add($"check {el}={on}");
@@ -63,12 +77,16 @@ static class Tests
         public bool NoMenus;
         public void Menu(string window, IList<string> path) { if (NoMenus) throw new BridgeError($"CLICK has no menu \"{path[0]}\"."); Did.Add($"menu {string.Join(">", path)}"); }
         public void Show(string window) => Did.Add($"show {window}");
+        /// <summary>Whether bringing CLICK to the front works (Windows may refuse); Raised counts the tries.</summary>
+        public bool RaiseWorks;
+        public int Raised;
+        public void Raise(string window) { Raised++; if (RaiseWorks) { Front = 42; FrontAt = null; } }
         /// <summary>A window that opens when keys are typed (CLICK 4's Ctrl+N opens the CPU dialog).</summary>
         public Dictionary<string, string> KeysOpen = new Dictionary<string, string>();
         public void Keys(string window, string keys)
         {
             Did.Add($"keys {keys}");
-            if (KeysOpen.TryGetValue(keys, out string opens)) Controls[opens] = new List<(string, string, string)> { ("", "OK", "Button") };
+            if (KeysOpen.TryGetValue(keys, out string opens)) Open(opens);
         }
         public int ForegroundProcess() => FrontAt != null ? FrontAt(++_calls) : Front;
         public string Dump(string window) => string.Join("\n", Controls[window].Select(c => $"{c.type} \"{c.name}\" id={c.id}"));
@@ -125,7 +143,7 @@ static class Tests
         Test("runner: another window in front pauses it (said), CLICK back in front goes on", () =>
         {
             var ui = Click(); var said = new List<string>();
-            ui.FrontAt = (call) => call <= 3 ? 7 : 42; // the user is in another program for the first checks
+            ui.FrontAt = (call) => call <= 20 ? 7 : 42; // the user is in another program, and bringing CLICK forward did not work
             new Runner(ui, 42, CancellationToken.None, said.Add) { PollMs = 1 }.Run(Plan("[{\"do\":\"window\",\"title\":\"^CLICK\"},{\"do\":\"keys\",\"keys\":\"{ENTER}\"}]"));
             True(said.Any(s => s.StartsWith("Paused: click on the CLICK window")), string.Join("|", said));
             True(said.Any(s => s.StartsWith("Going on")), "resumed");
@@ -315,6 +333,75 @@ static class Tests
             try { new Runner(ui, 42, CancellationToken.None, _ => { }).Run(steps); throw new Exception("should refuse"); }
             catch (BridgeError e) { True(e.Message.Contains("never saves"), e.Message); }
             True(!ui.Did.Any(d => d.StartsWith("keys")), "nothing typed");
+        });
+
+        // CLICK 4.00, from a user's log: Ctrl+N opens "Startup" (three picture buttons without names; Start a new project is
+        // the leftmost), and the CPU dialog opens inside it; the CPU list's entries are named by part number.
+        const string Cpu = "^(Select a CPU|CPU Module|New Project|Select CPU)";
+        string newProject(string cpu) => "[{\"do\":\"window\",\"title\":\"^CLICK\"},{\"do\":\"oneOf\",\"what\":\"New project\",\"options\":[" +
+            "{\"label\":\"Ctrl+N\",\"steps\":[{\"do\":\"window\",\"title\":\"^CLICK\"},{\"do\":\"keys\",\"keys\":\"^n\"}," +
+            "{\"do\":\"window\",\"title\":\"^Startup$|" + Cpu + "\",\"timeoutMs\":0}," +
+            "{\"do\":\"click\",\"find\":{\"type\":\"Button\",\"name\":\"^(Start a new project)?$\",\"order\":\"left\"},\"timeoutMs\":0,\"optional\":true}," +
+            "{\"do\":\"window\",\"title\":\"" + Cpu + "\",\"timeoutMs\":0}]}]}," +
+            "{\"do\":\"click\",\"find\":{\"name\":\"^" + cpu + "\\\\b\"},\"say\":\"CPU\"},{\"do\":\"click\",\"find\":{\"name\":\"^OK$\",\"type\":\"Button\"}}]";
+        FakeUi click4()
+        {
+            var ui = Click();
+            ui.Controls.Remove("Select a CPU Module");
+            ui.Controls["Navigation"] = new List<(string, string, string)> { ("", "Close", "Button") }; // a pane of CLICK, open before
+            ui.KeysOpen["^n"] = "Startup";
+            ui.Ready["Startup"] = new List<(string, string, string)> { ("b891", "", "Button"), ("b1035", "", "Button"), ("b747", "", "Button"), ("", "Close", "Button"), ("", "Help", "Button") };
+            ui.Left["b891"] = 891; ui.Left["b1035"] = 1035; ui.Left["b747"] = 747;
+            ui.PressOpens["Startup/b747"] = "Select a CPU Module";
+            ui.Ready["Select a CPU Module"] = new List<(string, string, string)> { ("", "ALL", "ComboBox"), ("", "C0-00DD1-D", "ListItem"), ("", "C0-10DD1E-D", "ListItem"), ("", "C0-10DD2E-D", "ListItem"), ("", "OK", "Button"), ("", "Cancel", "Button"), ("", "Help", "Button") };
+            return ui;
+        }
+
+        Test("runner (CLICK 4.00): Ctrl+N's Startup window → its leftmost button (Start a new project) → the CPU dialog inside it → the CPU → OK", () =>
+        {
+            var ui = click4();
+            new Runner(ui, 42, CancellationToken.None, _ => { }) { Version = "4.00" }.Run(Plan(newProject("C0-10DD1E-D")));
+            var did = string.Join(" | ", ui.Did);
+            Eq("keys ^n | press Startup/b747 | press Select a CPU Module/C0-10DD1E-D | press Select a CPU Module/OK", did);
+        });
+
+        Test("runner (CLICK 3 or a CLICK 4 without Startup): the CPU dialog straight after Ctrl+N; no Startup button pressed", () =>
+        {
+            var ui = click4();
+            ui.KeysOpen["^n"] = "Select a CPU Module";
+            new Runner(ui, 42, CancellationToken.None, _ => { }) { Version = "4.00" }.Run(Plan(newProject("C0-10DD1E-D")));
+            Eq("keys ^n | press Select a CPU Module/C0-10DD1E-D | press Select a CPU Module/OK", string.Join(" | ", ui.Did));
+        });
+
+        Test("runner: a run that fails closes the dialogs it opened, innermost first (Cancel, then Close); CLICK's own panes stay", () =>
+        {
+            var ui = click4();
+            var e = Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, _ => { }) { Version = "4.00" }.Run(Plan(newProject("C0-99XX-D"))));
+            True(e.Message.StartsWith("CLICK 4.00: could not do \"CPU\"") && e.Message.EndsWith("Nothing was saved."), e.Message);
+            var did = string.Join(" | ", ui.Did);
+            True(did.EndsWith("press Select a CPU Module/Cancel | press Startup/Close"), did);
+            True(ui.Controls.ContainsKey("Navigation") && !ui.Controls.ContainsKey("Startup"), "the pane open before the run stays; the dialogs are gone");
+        });
+
+        Test("runner: Stop leaves CLICK as it is (no dialog closed): the user may keep what was entered", () =>
+        {
+            var ui = click4();
+            using (var cts = new CancellationTokenSource())
+            {
+                var r = new Runner(ui, 42, cts.Token, s => { if (s.Contains("CPU")) cts.Cancel(); });
+                Throws<BridgeError>(() => r.Run(Plan(newProject("C0-10DD1E-D").Replace("\"say\":\"CPU\"", "\"say\":\"CPU\"},{\"do\":\"note\",\"text\":\"x\""))));
+                True(!ui.Did.Any(d => d.EndsWith("/Cancel") || d.EndsWith("/Close")), string.Join(" | ", ui.Did));
+            }
+        });
+
+        Test("runner: CLICK behind the app (its button was just pressed) is brought to the front, no pause", () =>
+        {
+            var ui = Click(); var said = new List<string>();
+            ui.Front = 7; ui.RaiseWorks = true;
+            new Runner(ui, 42, CancellationToken.None, said.Add) { PollMs = 1 }.Run(Plan("[{\"do\":\"window\",\"title\":\"^CLICK\"},{\"do\":\"keys\",\"keys\":\"{ENTER}\"}]"));
+            Eq(1, ui.Raised);
+            True(!said.Any(x => x.StartsWith("Paused")), string.Join("|", said));
+            Eq("keys {ENTER}", ui.Did.Single());
         });
 
         Test("commands: no CLICK installed says how to get it; run before start says to open CLICK", () =>
