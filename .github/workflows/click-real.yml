@@ -1,0 +1,112 @@
+# Send to CLICK in the REAL CLICK Programming Software: AutomationDirect's free CLICK 4.00 installed silently on the
+# Windows build server, then the example project sent the way the app sends it (tools/click-real). The fixes to the
+# one-click run are proved here before an installer goes to a user. Its record: the job log (every step and the
+# bridge's log, with each CLICK window's controls) and an artifact with the log and a screenshot every 2 s.
+name: Real CLICK
+
+on:
+  push:
+    branches: [claude/optimistic-maxwell-6nfcs6]
+    paths:
+      - 'tools/click-bridge/**'
+      - 'tools/click-real/**'
+      - 'src/plc/click/**'
+      - 'src/plc/core/clickExport.ts'
+      - 'electron/tiaBridge.cjs'
+      - '.github/workflows/click-real.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send-to-click:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      CLICK_ZIP_URL: https://cdn.automationdirect.com/static/software/clicksoftware_v400.zip
+      OUT: ${{ github.workspace }}\click-real-out
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: CLICK installer (cached)
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: click.zip
+          key: click-software-v400
+
+      - name: Download CLICK 4.00
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: Invoke-WebRequest -Uri $env:CLICK_ZIP_URL -OutFile click.zip
+
+      # InstallShield (InstallScript MSI): /s silent, /v passes the MSI options; both logs kept
+      - name: Install CLICK 4.00 silently
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force $env:OUT | Out-Null
+          Expand-Archive click.zip -DestinationPath "$env:RUNNER_TEMP\click" -Force
+          $exe = "$env:RUNNER_TEMP\click\CLICK_Setup.exe"
+          $msiLog = "$env:OUT\click-msi.log"
+          $p = Start-Process $exe -ArgumentList "/s /f2`"$env:OUT\click-setup.log`" /v`"/qn REBOOT=ReallySuppress /l*v \`"$msiLog\`"`"" -PassThru
+          if (-not $p.WaitForExit(1200000)) { Write-Host "::error::the CLICK installer did not finish in 20 minutes"; $p.Kill() }
+          Write-Host "installer exit code: $($p.ExitCode)"
+          Get-ChildItem "${env:ProgramFiles(x86)}\AutomationDirect" -Recurse -Filter CLICK*.exe -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "found: $($_.FullName)" }
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\AutomationDirect\CLICK Ver4.00\CLICK.exe")) {
+            if (Test-Path "$env:OUT\click-setup.log") { Get-Content "$env:OUT\click-setup.log" }
+            if (Test-Path $msiLog) { Get-Content $msiLog -Tail 80 }
+            Write-Host "::error::CLICK.exe was not installed"; exit 1
+          }
+
+      - name: Build the CLICK bridge
+        shell: bash
+        run: node scripts/build-click-bridge.cjs
+
+      - name: The example project's plans (as the app makes them)
+        shell: bash
+        run: npx tsx tools/click-real/plans.ts > plans.json
+
+      # A screenshot every 2 s while the run goes (what CLICK showed), then the run
+      - name: Send the example project to the real CLICK
+        shell: pwsh
+        run: |
+          $shots = "$env:OUT\shots"; New-Item -ItemType Directory -Force $shots | Out-Null
+          $cam = Start-Job -ArgumentList $shots -ScriptBlock {
+            param($dir)
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            for ($i = 0; $i -lt 900; $i++) {
+              try {
+                $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+                $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+                $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+                $bmp.Save(("{0}\{1:D4}.png" -f $dir, $i), [System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()
+              } catch { }
+              Start-Sleep -Seconds 2
+            }
+          }
+          $env:CLICK_BRIDGE_EXE = "$PWD\resources\click-bridge\ClickBridge.exe"
+          node tools/click-real/run.cjs plans.json $env:OUT
+          $code = $LASTEXITCODE
+          Stop-Job $cam; Remove-Job $cam -Force
+          exit $code
+
+      - name: The bridge's log
+        if: always()
+        shell: pwsh
+        run: if (Test-Path "$env:OUT\click-bridge.log") { Get-Content "$env:OUT\click-bridge.log" } else { Write-Host "no log" }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-click-run
+          path: click-real-out
+          if-no-files-found: warn
