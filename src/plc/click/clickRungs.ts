@@ -18,6 +18,8 @@ export interface ClickInstruction {
   list: string;
   /** The instruction dialog that opens (a pattern of its title). */
   dialog: string;
+  /** The rows it takes in the output column (a box: Copy 2; 1 if not given). */
+  rows?: number;
   /** Entry sheet field name → the control that takes it (setText; `select` for a pick list; `choose`: one button per
    * value, e.g. the Compare dialog's symbol buttons). */
   fields: Record<string, ClickSelector & { select?: boolean; choose?: Record<string, ClickSelector> }>;
@@ -97,9 +99,11 @@ export const DEFAULT_KEYMAP: ClickKeymap = {
     { match: /^Out coil/, how: { list: '^Out$', dialog: '^Out', fields: { Address: box('5002') } } },
     { match: /^Set coil/, how: { list: '^Set$', dialog: '^Set', fields: { Address: box('5002') } } },
     { match: /^Reset coil/, how: { list: '^Reset$', dialog: '^Reset', fields: { Address: box('5002') } } },
-    { match: /^Timer/, how: { list: '^Timer$', dialog: 'Timer', fields: { 'Timer number': box('5001'), Setpoint: box('5004'), Unit: { ...box('5006', 'ComboBox'), select: true } } } },
-    { match: /^Counter/, how: { list: '^Counter$', dialog: 'Counter', fields: { 'Counter number': box('5001'), Setpoint: box('5004') } } },
-    { match: /^Copy/, how: { list: '^Copy$', dialog: 'Copy', fields: { Source: box('5006'), Destination: box('5014') } } },
+    // the boxes' rows in the output column: Copy 2, Math 1 (measured on the real CLICK 4.00); Timer and Counter as
+    // drawn (Enable and Reset lines), not yet measured
+    { match: /^Timer/, how: { list: '^Timer$', dialog: 'Timer', rows: 2, fields: { 'Timer number': box('5001'), Setpoint: box('5004'), Unit: { ...box('5006', 'ComboBox'), select: true } } } },
+    { match: /^Counter/, how: { list: '^Counter$', dialog: 'Counter', rows: 2, fields: { 'Counter number': box('5001'), Setpoint: box('5004') } } },
+    { match: /^Copy/, how: { list: '^Copy$', dialog: 'Copy', rows: 2, fields: { Source: box('5006'), Destination: box('5014') } } },
     { match: /^Math/, how: { list: '^Math$', dialog: 'Math', fields: { Result: box('2001'), Formula: box('2006', 'Document') } } },
   ],
 };
@@ -194,18 +198,29 @@ export function rungSteps(km: ClickKeymap, r: EntryRung): { number: number; step
       at.row -= 1; // drawing the wire up takes the cursor up with it (seen in the real CLICK 4.00)
     }
   }
+  const tall = (o: EntryOutput) => km.instructions.find((i) => i.match.test(o.instruction))?.how.rows ?? 1;
+  const contactRows = rows;
+  if (r.outputs.length > 1 && contactRows > 1 && r.outputs.some((o) => tall(o) > 1)) return yours('several outputs beside parallel rows');
   for (const [oi, o] of r.outputs.entries()) {
     if (o.note && /second input line/.test(o.note) && /NO contact/.test(o.note)) return yours(`a ${o.instruction} with a reset input`);
     const s = instructionSteps(km, o, `rung ${r.number}, output ${oi + 1}`);
     if (!s) return yours(o.instruction);
-    goTo(1 + oi, km.outputColumn);
+    const above = oi > 0 ? tall(r.outputs[oi - 1]) : 0;
+    if (oi > 0 && contactRows === 1) {
+      // a row added under the output above (the cursor on its top row): CLICK puts the cursor on the new row, but
+      // under a box of several rows it stays on the box and Down goes past it to the new row (seen in the real
+      // CLICK 4.00: without it the next Copy replaced the one above)
+      steps.push(...km.newRow);
+      if (above > 1) steps.push({ do: 'keys', keys: '{DOWN}' });
+    } else goTo(1 + oi, km.outputColumn);
     steps.push(...s);
     entered();
     if (oi > 0) {
-      // a second output's row joins the first on the output column's left edge (without it the real CLICK 4.00's
-      // Syntax Check: "Row 2, Column AF: Missing line connection")
-      steps.push({ do: 'keys', keys: km.joinUp });
-      at.row -= 1;
+      // the output joins the one above on the output column's left edge, up past all of its rows (without it the
+      // real CLICK 4.00's Syntax Check: "Row 2, Column AF: Missing line connection"); then Down, past the box
+      // above, back on this output
+      for (let k = 0; k < above; k++) steps.push({ do: 'keys', keys: km.joinUp });
+      steps.push({ do: 'keys', keys: '{DOWN}' });
     }
   }
   if (r.comment && km.comment) {

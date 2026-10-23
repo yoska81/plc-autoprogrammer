@@ -59,7 +59,11 @@ assert.ok(!p2.some((x) => x.do === 'keys' && x.keys === km.comment!.keys), 'no c
 // Two outputs: the second on row 2 of the output column, joined up to the first on that column's left edge
 const two: Rung = { id: 'r5', comment: '', branches: [[{ type: 'NO', address: 'X001' }]], outputs: [{ type: 'OUT', address: 'Y001' }, { type: 'OUT', address: 'Y002' }] };
 const k5 = rungsOnly(rungsPlan(prog([two]), labels, km).steps).filter((x) => x.do === 'keys').map((x) => x.keys);
-assert.deepEqual(k5, [km.newRung, '{END}', '{INSERT}', km.joinUp], k5.join(' | '));
+assert.deepEqual(k5, [km.newRung, '{END}', '{INSERT}', km.joinUp, '{DOWN}'], k5.join(' | '));
+// Three Copy boxes (two rows each): the new row under a box is reached with Down; the join goes up past the box's rows
+const copies: Rung = { id: 'r6', comment: '', branches: [[{ type: 'NO', address: 'X001' }]], outputs: [1, 2, 3].map((i) => ({ type: 'COPY', source: `DS${i}`, dest: `DS${i + 1}` }) as Rung['outputs'][number]) };
+const k6 = rungsOnly(rungsPlan(prog([copies]), labels, km).steps).filter((x) => x.do === 'keys').map((x) => x.keys);
+assert.deepEqual(k6, [km.newRung, '{END}', '{INSERT}', '{DOWN}', km.joinUp, km.joinUp, '{DOWN}', '{INSERT}', '{DOWN}', km.joinUp, km.joinUp, '{DOWN}'], k6.join(' | '));
 
 // What the app cannot enter: the user's turn, in its place (the next rung is entered after it).
 const retentive: Rung = { id: 'r3', comment: 'Run hours', branches: [[{ type: 'NO', address: 'Y001' }]], outputs: [{ type: 'TMR', address: 'T2', mode: 'ON_DELAY', preset: '3600', unit: 'sec', accumulate: true, resetAddress: 'C5' }] };
