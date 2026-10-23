@@ -136,7 +136,7 @@ const FAKE = () => {
   log('failed:', failed.replace(/\s+/g, ' '));
   check(/^CLICK 3\.71: could not find New project \(tried: Ctrl\+N, the File menu, the ribbon key tips \(Alt, F, N\)\)\. Nothing was saved\./.test(failed.trim()), 'failure: one plain sentence');
   check(/Send this log to support: C:\\Users\\tech\\AppData\\Roaming\\ISA Auto Programmer\\logs\\click-bridge\.log/.test(failed), 'the log to send, by its path');
-  check((await page.evaluate(() => window.__click.calls)).filter((c) => c.cmd === 'start').length === 0, 'CLICK opened once per dialog');
+  check((await page.evaluate(() => window.__click.calls)).filter((c) => c.cmd === 'start').length === 1, 'CLICK asked for again on each run (it may have been closed since)');
   await dialog.getByTestId('click-open-log').click();
   check(await page.evaluate(() => window.__click.shownLog === true), 'Open log folder shows the log');
   await page.evaluate(() => { window.__click.failAt = 0; });
@@ -211,7 +211,8 @@ const FAKE = () => {
   // Stop during the one-click run.
   await page.evaluate(() => { window.__click.stepMs = 400; });
   await dialog.getByTestId('click-send-all').click();
-  await dialog.getByRole('status').filter({ hasText: /^\s*1\/\d+ / }).waitFor({ timeout: 5000 });
+  // (any step: each shows for stepMs only, and asking for CLICK first shifts when the first one shows)
+  await dialog.getByRole('status').filter({ hasText: /^\s*\d+\/\d+ / }).waitFor({ timeout: 5000 });
   await dialog.getByTestId('click-stop').click();
   await dialog.getByTestId('click-failed').waitFor({ timeout: 5000 });
   check(/Stopped at step \d+, as you asked\. Nothing was saved/.test(await dialog.getByTestId('click-failed').innerText()), 'Stop: the run ends, nothing saved, said');

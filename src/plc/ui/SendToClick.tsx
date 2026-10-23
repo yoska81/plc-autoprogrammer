@@ -71,9 +71,8 @@ export default function SendToClick({ profileId }: { profileId: string }) {
     finally { setBusy(null); setProgress(''); click.logPath().then(setLogPath, () => undefined); }
   };
   const notStopped = () => { if (stopAsked.current) throw new Error('Stopped, as you asked. Nothing was saved.'); };
-  /** CLICK open (the open one, else started), once per dialog. */
+  /** CLICK open: asked of the bridge before every run (it attaches to the one open, else starts it), since the user may close or open CLICK between runs. */
   const ensureStarted = async (): Promise<Started> => {
-    if (started) return started;
     setProgress('Opening CLICK…');
     const s = await click.call('start') as Started;
     setStarted(s);
