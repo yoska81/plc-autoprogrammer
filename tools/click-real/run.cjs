@@ -30,6 +30,19 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
     await step('start', () => b.call('start'));
     const file = await step('writeFile', () => b.call('writeFile', { name: plans.csvName, text: plans.csvText }));
     const setup = JSON.parse(JSON.stringify(plans.setup).split(plans.csvPlaceholder).join(file.path.replace(/\\/g, '\\\\')));
+    // A probe (tools/click-real/probe.json, while a step of CLICK is being learnt): after the new project, rounds of
+    // steps, each followed by a record of every CLICK window (in the log) and seen in the screenshots.
+    const probeFile = path.join(__dirname, 'probe.json');
+    if (fs.existsSync(probeFile)) {
+      const probe = JSON.parse(fs.readFileSync(probeFile, 'utf8'));
+      const upTo = setup.findIndex((x) => x.what === 'the Address Picker');
+      await step(`new project only (${upTo} steps), for the probe`, () => b.call('run', { steps: setup.slice(0, upTo) }));
+      for (const [i, round] of probe.rounds.entries()) {
+        await step(`probe round ${i + 1}: ${probe.why}`, () => b.call('run', { steps: round })).catch(() => undefined);
+        await b.call('dump', { show: false }).catch(() => undefined);
+      }
+      throw new Error('probe done (remove tools/click-real/probe.json for the full run)');
+    }
     await step(`set-up (${setup.length} steps: new project ${plans.cpu}, nicknames)`, () => b.call('run', { steps: setup }));
     await step(`rungs (${plans.rungs.length} steps, ${plans.entered} rungs; ${plans.leftForYou} left for the user)`, () => b.call('run', { steps: plans.rungs }));
     console.log(`${at()} ALL DONE: the example project is in CLICK`);

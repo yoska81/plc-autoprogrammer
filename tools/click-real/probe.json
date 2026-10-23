@@ -1,0 +1,8 @@
+{
+  "why": "CLICK 4's ribbon File menu (Import › Nickname): opened with its key tips, shown in the screenshots, its windows recorded",
+  "rounds": [
+    [{ "do": "window", "title": "^CLICK Programming Software" }, { "do": "keys", "keys": "%f" }, { "do": "wait", "ms": 2500 }],
+    [{ "do": "window", "title": "^CLICK Programming Software" }, { "do": "keys", "keys": "i" }, { "do": "wait", "ms": 2500 }],
+    [{ "do": "window", "title": "^CLICK Programming Software" }, { "do": "keys", "keys": "{ESC}" }, { "do": "wait", "ms": 500 }, { "do": "keys", "keys": "{ESC}" }, { "do": "wait", "ms": 500 }, { "do": "keys", "keys": "{ESC}" }]
+  ]
+}
