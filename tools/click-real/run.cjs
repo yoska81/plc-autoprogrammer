@@ -44,8 +44,8 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
     const probeFile = path.join(__dirname, 'probe.json');
     if (fs.existsSync(probeFile)) {
       const probe = JSON.parse(fs.readFileSync(probeFile, 'utf8'));
-      const upTo = setup.findIndex((x) => x.what === 'the Address Picker');
-      await step(`new project only (${upTo} steps), for the probe`, () => b.call('run', { steps: setup.slice(0, upTo) }));
+      const upTo = probe.afterSetup ? setup.length : setup.findIndex((x) => x.what === 'the nickname import');
+      await step(`set-up (${upTo} steps), for the probe`, () => b.call('run', { steps: setup.slice(0, upTo) }));
       for (const [i, round] of probe.rounds.entries()) {
         await step(`probe round ${i + 1}: ${probe.why}`, () => b.call('run', { steps: round })).catch(() => undefined);
         shot(`probe-${i + 1}`);

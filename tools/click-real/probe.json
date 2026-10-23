@@ -1,0 +1,446 @@
+{
+ "why": "every instruction dialog the app fills (its controls in the log, a screenshot each)",
+ "afterSetup": true,
+ "rounds": [
+  [
+   {
+    "do": "window",
+    "title": "^CLICK Programming Software"
+   },
+   {
+    "do": "keys",
+    "keys": "^{HOME}"
+   },
+   {
+    "do": "doubleClick",
+    "find": {
+     "name": "^Contact \\(NO\\)$"
+    }
+   },
+   {
+    "do": "wait",
+    "ms": 1500
+   },
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 3000
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 2000
+   },
+   {
+    "do": "keys",
+    "keys": "{ESC}"
+   },
+   {
+    "do": "wait",
+    "ms": 500
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^CLICK Programming Software"
+   },
+   {
+    "do": "keys",
+    "keys": "^{HOME}"
+   },
+   {
+    "do": "doubleClick",
+    "find": {
+     "name": "^Contact \\(NC\\)$"
+    }
+   },
+   {
+    "do": "wait",
+    "ms": 1500
+   },
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 3000
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 2000
+   },
+   {
+    "do": "keys",
+    "keys": "{ESC}"
+   },
+   {
+    "do": "wait",
+    "ms": 500
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^CLICK Programming Software"
+   },
+   {
+    "do": "keys",
+    "keys": "^{HOME}"
+   },
+   {
+    "do": "doubleClick",
+    "find": {
+     "name": "^Edge Contact$"
+    }
+   },
+   {
+    "do": "wait",
+    "ms": 1500
+   },
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 3000
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 2000
+   },
+   {
+    "do": "keys",
+    "keys": "{ESC}"
+   },
+   {
+    "do": "wait",
+    "ms": 500
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^CLICK Programming Software"
+   },
+   {
+    "do": "keys",
+    "keys": "^{HOME}"
+   },
+   {
+    "do": "doubleClick",
+    "find": {
+     "name": "^Compare$"
+    }
+   },
+   {
+    "do": "wait",
+    "ms": 1500
+   },
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 3000
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 2000
+   },
+   {
+    "do": "keys",
+    "keys": "{ESC}"
+   },
+   {
+    "do": "wait",
+    "ms": 500
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^CLICK Programming Software"
+   },
+   {
+    "do": "keys",
+    "keys": "^{HOME}"
+   },
+   {
+    "do": "doubleClick",
+    "find": {
+     "name": "^Out$"
+    }
+   },
+   {
+    "do": "wait",
+    "ms": 1500
+   },
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 3000
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 2000
+   },
+   {
+    "do": "keys",
+    "keys": "{ESC}"
+   },
+   {
+    "do": "wait",
+    "ms": 500
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^CLICK Programming Software"
+   },
+   {
+    "do": "keys",
+    "keys": "^{HOME}"
+   },
+   {
+    "do": "doubleClick",
+    "find": {
+     "name": "^Set$"
+    }
+   },
+   {
+    "do": "wait",
+    "ms": 1500
+   },
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 3000
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 2000
+   },
+   {
+    "do": "keys",
+    "keys": "{ESC}"
+   },
+   {
+    "do": "wait",
+    "ms": 500
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^CLICK Programming Software"
+   },
+   {
+    "do": "keys",
+    "keys": "^{HOME}"
+   },
+   {
+    "do": "doubleClick",
+    "find": {
+     "name": "^Reset$"
+    }
+   },
+   {
+    "do": "wait",
+    "ms": 1500
+   },
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 3000
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 2000
+   },
+   {
+    "do": "keys",
+    "keys": "{ESC}"
+   },
+   {
+    "do": "wait",
+    "ms": 500
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^CLICK Programming Software"
+   },
+   {
+    "do": "keys",
+    "keys": "^{HOME}"
+   },
+   {
+    "do": "doubleClick",
+    "find": {
+     "name": "^Timer$"
+    }
+   },
+   {
+    "do": "wait",
+    "ms": 1500
+   },
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 3000
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 2000
+   },
+   {
+    "do": "keys",
+    "keys": "{ESC}"
+   },
+   {
+    "do": "wait",
+    "ms": 500
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^CLICK Programming Software"
+   },
+   {
+    "do": "keys",
+    "keys": "^{HOME}"
+   },
+   {
+    "do": "doubleClick",
+    "find": {
+     "name": "^Counter$"
+    }
+   },
+   {
+    "do": "wait",
+    "ms": 1500
+   },
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 3000
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 2000
+   },
+   {
+    "do": "keys",
+    "keys": "{ESC}"
+   },
+   {
+    "do": "wait",
+    "ms": 500
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^CLICK Programming Software"
+   },
+   {
+    "do": "keys",
+    "keys": "^{HOME}"
+   },
+   {
+    "do": "doubleClick",
+    "find": {
+     "name": "^Copy$"
+    }
+   },
+   {
+    "do": "wait",
+    "ms": 1500
+   },
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 3000
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 2000
+   },
+   {
+    "do": "keys",
+    "keys": "{ESC}"
+   },
+   {
+    "do": "wait",
+    "ms": 500
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^CLICK Programming Software"
+   },
+   {
+    "do": "keys",
+    "keys": "^{HOME}"
+   },
+   {
+    "do": "doubleClick",
+    "find": {
+     "name": "^Math$"
+    }
+   },
+   {
+    "do": "wait",
+    "ms": 1500
+   },
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 3000
+   }
+  ],
+  [
+   {
+    "do": "window",
+    "title": "^(?!CLICK Programming Software).+",
+    "timeoutMs": 2000
+   },
+   {
+    "do": "keys",
+    "keys": "{ESC}"
+   },
+   {
+    "do": "wait",
+    "ms": 500
+   }
+  ]
+ ]
+}
