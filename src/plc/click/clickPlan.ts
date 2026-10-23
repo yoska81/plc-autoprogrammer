@@ -121,6 +121,7 @@ export function newProjectPlan(cpuId: string): ClickStep[] {
     // a question it may ask about going without a password (a message box: a plain title, Yes / OK)
     { do: 'window', title: MESSAGE_BOX, timeoutMs: 1500, optional: true },
     { do: 'click', find: { type: 'Button', name: '^(Yes|OK)$' }, optional: true },
+    { do: 'wait', ms: 300 }, // (ends the skipping: User Account Setup's OK is looked for whether or not a box came)
     { do: 'window', title: USER_ACCOUNTS, timeoutMs: 1500, optional: true },
     { do: 'click', find: { type: 'Button', name: '^OK$' }, optional: true },
     { do: 'wait', ms: 800 },
