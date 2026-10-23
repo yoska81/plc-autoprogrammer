@@ -100,6 +100,11 @@ jobs:
           Stop-Job $cam; Remove-Job $cam -Force
           exit $code
 
+      # The proof: CLICK's own printout of the ladder against the project, rung by rung
+      - name: Check what CLICK has (its printout against the project)
+        shell: bash
+        run: npx tsx tools/click-real/verify.ts "$OUT/click_ladder.pdf" plans.json
+
       - name: The bridge's log
         if: always()
         shell: pwsh

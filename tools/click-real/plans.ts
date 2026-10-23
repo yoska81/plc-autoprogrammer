@@ -10,6 +10,7 @@ import { hmiExtraTags } from '../../src/deliverables/exportContext';
 import { clickNicknameCsv } from '../../src/plc/core/clickExport';
 import { setupPlan } from '../../src/plc/click/clickPlan';
 import { rungsPlan } from '../../src/plc/click/clickRungs';
+import { printLadderPlan } from '../../src/plc/click/clickVerify';
 
 const warn = console.warn;
 console.warn = (...a: unknown[]) => { if (!String(a[0]).includes('zustand persist')) warn(...a); };
@@ -17,6 +18,7 @@ console.warn = (...a: unknown[]) => { if (!String(a[0]).includes('zustand persis
 seedSampleProject();
 const p = collectProject();
 const CSV = '__CSV_PATH__';
+const CSV_FOLDER = '__OUT_FOLDER__';
 const rungs = rungsPlan(p.ladder, p.labels, undefined, 'list');
 process.stdout.write(JSON.stringify({
   plc: p.profile.id,
@@ -24,8 +26,11 @@ process.stdout.write(JSON.stringify({
   csvName: `${p.fileBase}_nicknames.csv`,
   csvText: clickNicknameCsv(p.ladder, p.io, p.addresses, hmiExtraTags(p)),
   csvPlaceholder: CSV,
+  folderPlaceholder: CSV_FOLDER,
   setup: setupPlan({ cpuId: p.cpu.id, nicknameCsvPath: CSV }),
   rungs: rungs.steps,
   entered: rungs.entered,
   leftForYou: rungs.leftForYou.length,
+  leftForYouRungs: rungs.leftForYou.map((x) => x.number),
+  print: printLadderPlan(CSV_FOLDER, 'click_ladder.pdf'),
 }));

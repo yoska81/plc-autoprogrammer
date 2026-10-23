@@ -72,6 +72,15 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
       shot(`rung-${String(i + 1).padStart(2, "0")}`);
     }
     shot('all-rungs');
+    // the proof: CLICK prints its ladder to a PDF (the app's own print plan; this script stands in for the user
+    // pressing Save in Windows' dialog), checked against the project by tools/click-real/verify.ts
+    const folder = path.dirname(file.path).replace(/\\/g, '\\\\');
+    const print = JSON.parse(JSON.stringify(plans.print).split(plans.folderPlaceholder).join(folder));
+    const { spawn } = require('node:child_process');
+    const presser = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'press-save.ps1')], { stdio: 'inherit' });
+    await step(`print the ladder to a PDF (${print.length} steps)`, () => b.call('run', { steps: print }));
+    presser.kill();
+    shot('printed');
     console.log(`${at()} ALL DONE: the example project is in CLICK`);
   } catch {
     failed = true;
