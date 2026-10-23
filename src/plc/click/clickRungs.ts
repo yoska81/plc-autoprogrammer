@@ -191,6 +191,7 @@ export function rungSteps(km: ClickKeymap, r: EntryRung): { number: number; step
       // row joins the one above after its own instructions (seen in the real CLICK 4.00)
       goTo(ri + 1, row[row.length - 1].column + 1);
       steps.push({ do: 'keys', keys: km.joinUp });
+      at.row -= 1; // drawing the wire up takes the cursor up with it (seen in the real CLICK 4.00)
     }
   }
   for (const [oi, o] of r.outputs.entries()) {
