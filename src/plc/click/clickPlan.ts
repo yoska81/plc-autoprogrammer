@@ -81,7 +81,7 @@ const treeItem = (name: string): ClickStep[] => [
  */
 const startupThenCpu = (cpuCame: ClickStep): ClickStep[] => [
   { do: 'window', title: `${STARTUP}|${CPU_DIALOG}`, timeoutMs: 8000 },
-  { do: 'click', find: { type: 'Button', name: '^(Start a new project)?$', order: 'left' }, timeoutMs: 2000, optional: true },
+  { do: 'click', find: { type: 'Button', name: '^(Start a new project)?$', order: 'left' }, mouse: true, timeoutMs: 2000, optional: true },
   cpuCame,
 ];
 
@@ -99,7 +99,7 @@ export function newProjectPlan(cpuId: string): ClickStep[] {
         {
           label: 'the Startup window CLICK shows when it starts', steps: [
             { do: 'window', title: STARTUP, timeoutMs: 4000 },
-            { do: 'click', find: { type: 'Button', name: '^(Start a new project)?$', order: 'left' }, timeoutMs: 2000 },
+            { do: 'click', find: { type: 'Button', name: '^(Start a new project)?$', order: 'left' }, mouse: true, timeoutMs: 2000 },
             cpuCame,
           ],
         },
