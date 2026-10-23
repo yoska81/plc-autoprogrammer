@@ -94,7 +94,7 @@ namespace ClickBridge
                 }
                 version = inst.Version;
                 // maximized only when it is the main window (not the Startup dialog)
-                var mainWindow = ui.Window(pid, "^CLICK", 0);
+                var mainWindow = ui.Window(pid, "^CLICK Programming Software", 0); // not "ClickNewFeature", its welcome box
                 if (mainWindow != null) ui.Show(mainWindow); else ui.Raise(main);
                 Log.Write($"click pid {pid}, windows: {string.Join(" | ", ui.Windows(pid))}");
                 return new Dictionary<string, object> { ["version"] = inst.Version, ["processId"] = pid, ["windows"] = ui.Windows(pid).Cast<object>().ToList(), ["attached"] = running.Count > 0 };

@@ -52,8 +52,11 @@ const STARTUP = '^Startup$';
 const USER_ACCOUNTS = '^User Account Setup$';
 /** For the result, on CLICK 4: the app answered the password question with none. */
 export const clickPasswordNote = 'The new project has no password (CLICK 4 asked; the app chose none, like CLICK 3 projects): to protect it, set one in CLICK under Setup › User Account Setup.';
-/** CLICK 4's "What's New Feature Guide", shown when CLICK starts (a user's CLICK 4.00): nothing to do there but close it. */
-const WHATS_NEW = "^What.s New";
+/**
+ * CLICK 4's "What's New Feature Guide", shown when CLICK starts (a user's CLICK 4.00): nothing to do there but close
+ * it. Where its pictures cannot show (the build server's real CLICK) it is a small "ClickNewFeature" box with OK.
+ */
+const WHATS_NEW = '^(What.s New|ClickNewFeature)';
 
 /** A text as a pattern matching it exactly. */
 export const literal = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -86,7 +89,7 @@ export function newProjectPlan(cpuId: string): ClickStep[] {
     { do: 'window', title: `${CLICK_MAIN}|${STARTUP}|${WHATS_NEW}`, timeoutMs: 60000 },
     // and, first, its "What's New Feature Guide" (seen with CLICK 4.00): closed, it only tells news
     { do: 'window', title: WHATS_NEW, timeoutMs: 3000, optional: true },
-    { do: 'click', find: { type: 'Button', name: '^Close$' }, timeoutMs: 2000, optional: true },
+    { do: 'click', find: { type: 'Button', name: '^(Close|OK)$' }, timeoutMs: 2000, optional: true },
     {
       do: 'oneOf', what: 'New project', say: 'New project', options: [
         {

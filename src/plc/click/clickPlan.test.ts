@@ -23,9 +23,10 @@ assert.deepEqual(np!.options![2].steps.find((s) => s.do === 'menu')!.path, ['Fil
 // leftmost, unnamed button; a CLICK whose Ctrl+N opens the CPU dialog straight away skips that press
 // CLICK 4.00 shows its "What's New Feature Guide" when it starts: closed before anything else, when it comes
 const news = p.findIndex((s) => s.do === 'window' && s.optional && new RegExp(s.title!).test("What's New Feature Guide"));
+assert.ok(new RegExp(p[news].title!).test('ClickNewFeature'), 'its plain box where its pictures cannot show (the build server)');
 assert.ok(news > 0 && news < p.indexOf(np!), 'the guide is looked for before the new project');
 assert.equal(p[news + 1].do, 'click');
-assert.ok(p[news + 1].optional && new RegExp(p[news + 1].find!.name!).test('Close') && !new RegExp(p[news + 1].find!.name!).test('Next'), 'closed (its Close), not paged through');
+assert.ok(p[news + 1].optional && new RegExp(p[news + 1].find!.name!).test('Close') && new RegExp(p[news + 1].find!.name!).test('OK') && !new RegExp(p[news + 1].find!.name!).test('Next'), 'closed (its Close, or the box\'s OK), not paged through');
 assert.ok(new RegExp(p[0].title!).test("What's New Feature Guide"), 'the run can start while the guide is in front');
 // CLICK 4.00 asks for the new project's user accounts after the CPU: no password, then OK; skipped when it does not ask
 const ua = p.findIndex((s) => s.do === 'window' && new RegExp(s.title!).test('User Account Setup'));
