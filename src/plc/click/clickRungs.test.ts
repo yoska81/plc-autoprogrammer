@@ -7,7 +7,8 @@
  */
 import assert from 'node:assert/strict';
 import type { LadderProgram, Rung } from '../core/ladder';
-import { DEFAULT_KEYMAP, rungsPlan, value, type ClickKeymap } from './clickRungs';
+import { DEFAULT_KEYMAP, endRung, rungsPlan, value, type ClickKeymap } from './clickRungs';
+import type { ClickStep } from './clickPlan';
 import { saveSteps } from './clickPlan';
 import { seedSampleProject } from '../../preview/sampleProject';
 import { collectProject } from '../../deliverables/collect';
@@ -15,13 +16,17 @@ import { collectProject } from '../../deliverables/collect';
 const km: ClickKeymap = DEFAULT_KEYMAP;
 const prog = (rungs: Rung[]): LadderProgram => ({ rungs, tags: [] });
 const labels = new Map([['X001', 'Start'], ['X002', 'Stop'], ['Y001', 'Motor']]);
+// the plan's rungs without the END rung it ends with
+const rungsOnly = (steps: ClickStep[]) => steps.slice(0, steps.length - endRung(km).length);
 
 // A seal-in: X001 OR Y001 (row 2), AND NOT X002, → OUT Y001; with a comment.
 const sealIn: Rung = { id: 'r1', comment: 'Motor run', branches: [[{ type: 'NO', address: 'X001' }, { type: 'NC', address: 'X002' }], [{ type: 'NO', address: 'Y001' }]], outputs: [{ type: 'OUT', address: 'Y001' }] };
 const p1 = rungsPlan(prog([sealIn]), labels, km);
 assert.equal(p1.entered, 1);
 assert.deepEqual(p1.leftForYou, []);
-const s = p1.steps;
+const s = rungsOnly(p1.steps);
+assert.deepEqual(p1.steps.slice(s.length), endRung(km), 'the program ends with the END rung (CLICK\'s Syntax Check wants one)');
+assert.ok(endRung(km).some((x) => x.do === 'doubleClick' && x.find?.name === '^End$'));
 assert.equal(s[1].keys, km.newRung);
 assert.match(s[1].say!, /^Rung 1: Motor run$/);
 const opened = s.filter((x) => x.do === 'doubleClick').map((x) => x.find!.name!);
@@ -50,6 +55,11 @@ const p2 = rungsPlan(prog([timer]), labels, km).steps;
 assert.ok(p2.some((x) => x.do === 'click' && x.mouse && x.find?.id === '5010'), 'compare operator: its >= button (CLICK 4.00\'s symbol buttons)');
 assert.ok(p2.some((x) => x.do === 'setText' && x.text === '500') && p2.some((x) => x.do === 'select' && x.item === '^msec'), 'timer setpoint and unit');
 assert.ok(!p2.some((x) => x.do === 'keys' && x.keys === km.comment!.keys), 'no comment, no comment step');
+
+// Two outputs: the second on row 2 of the output column, joined up to the first on that column's left edge
+const two: Rung = { id: 'r5', comment: '', branches: [[{ type: 'NO', address: 'X001' }]], outputs: [{ type: 'OUT', address: 'Y001' }, { type: 'OUT', address: 'Y002' }] };
+const k5 = rungsOnly(rungsPlan(prog([two]), labels, km).steps).filter((x) => x.do === 'keys').map((x) => x.keys);
+assert.deepEqual(k5, [km.newRung, '{END}', '{INSERT}', km.joinUp], k5.join(' | '));
 
 // What the app cannot enter: the user's turn, in its place (the next rung is entered after it).
 const retentive: Rung = { id: 'r3', comment: 'Run hours', branches: [[{ type: 'NO', address: 'Y001' }]], outputs: [{ type: 'TMR', address: 'T2', mode: 'ON_DELAY', preset: '3600', unit: 'sec', accumulate: true, resetAddress: 'C5' }] };

@@ -201,6 +201,12 @@ export function rungSteps(km: ClickKeymap, r: EntryRung): { number: number; step
     goTo(1 + oi, km.outputColumn);
     steps.push(...s);
     entered();
+    if (oi > 0) {
+      // a second output's row joins the first on the output column's left edge (without it the real CLICK 4.00's
+      // Syntax Check: "Row 2, Column AF: Missing line connection")
+      steps.push({ do: 'keys', keys: km.joinUp });
+      at.row -= 1;
+    }
   }
   if (r.comment && km.comment) {
     steps.push(
@@ -235,5 +241,20 @@ export function rungsPlan(program: LadderProgram, labels: Map<string, string>, k
     out.entered++;
     last = p.number;
   }
+  out.steps.push(...endRung(km));
   return out;
+}
+
+/** The last rung: an unconditional END (CLICK's Syntax Check: "No unconditional END instruction in the Main Program"). */
+export function endRung(km: ClickKeymap): ClickStep[] {
+  return [
+    { do: 'window', title: CLICK_MAIN },
+    { do: 'keys', keys: km.newRung, say: 'Rung END: the end of the Main Program (CLICK needs it)' },
+    { do: 'keys', keys: '{END}' },
+    { do: 'window', title: CLICK_MAIN },
+    { do: 'doubleClick', find: { name: '^End$' }, say: 'the END instruction' },
+    { do: 'window', title: '^End', timeoutMs: 3000, optional: true },
+    { do: 'click', find: km.ok, optional: true },
+    { do: 'wait', ms: 300 },
+  ];
 }

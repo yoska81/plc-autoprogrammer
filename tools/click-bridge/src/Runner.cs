@@ -132,6 +132,10 @@ namespace ClickBridge
                 try { Do(s, i); }
                 catch (NotThere) when (s.Optional) { Log.Write($"step {i + 1}: not there, skipped (optional)"); skipping = true; }
                 catch (NotThere e) { throw Fail(i, s, e.Message); }
+                catch (StoppedError) { throw; }
+                // an optional step whose control is there but does not take it (not a check box, no such item):
+                // left as CLICK has it
+                catch (Exception e) when (s.Optional) { Log.Write($"step {i + 1}: could not ({e.InnerException?.Message ?? e.Message}), skipped (optional)"); }
                 catch (BridgeError) { throw; }
                 catch (Exception e) { throw Fail(i, s, e.InnerException?.Message ?? e.Message); }
             }

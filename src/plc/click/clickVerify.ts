@@ -46,8 +46,11 @@ export function printLadderPlan(folder: string, name: string): ClickStep[] {
         { label: 'the File menu', steps: [main, { do: 'menu', path: ['File', 'Print'] }, printCame] },
       ],
     },
-    { do: 'check', find: { name: '^Ladder' }, optional: true },
-    { do: 'select', find: { type: 'ComboBox', name: 'Printer|Name' }, item: 'Microsoft Print to PDF', optional: true },
+    // CLICK 4.00's Print dialog: the printer is its leftmost list (top); the Ladder tab's check box (on by default) is
+    // its leftmost unnamed one; the printout as text, not an image (the check reads the PDF's text)
+    { do: 'select', find: { type: 'ComboBox', order: 'left' }, item: '^Microsoft Print to PDF$', optional: true },
+    { do: 'check', find: { type: 'CheckBox', name: '^$', order: 'left' }, optional: true },
+    { do: 'check', find: { name: '^Improved Image Quality$' }, on: false, optional: true },
     { do: 'click', find: { type: 'Button', name: '^(OK|Print)$' } },
     { do: 'window', title: 'Save Print Output As', timeoutMs: 30000 },
     { do: 'setText', find: { type: 'Edit', name: '^File name' }, text: inFolder(folder, name) },
