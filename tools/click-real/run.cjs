@@ -69,7 +69,7 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
 
     for (const [i, r] of rungs.entries()) {
       await step(`rung ${i + 1}/${rungs.length} (${r.length} steps)`, () => b.call('run', { steps: r }));
-      if (i < 6) shot(`rung-${i + 1}`);
+      shot(`rung-${String(i + 1).padStart(2, "0")}`);
     }
     shot('all-rungs');
     console.log(`${at()} ALL DONE: the example project is in CLICK`);
