@@ -162,6 +162,18 @@ namespace ClickBridge
             Log.Write($"ui check {Describe(e)} = {(on ? "on" : "off")}");
         }
 
+        public void Screenshot(string file)
+        {
+            var b = System.Windows.Forms.SystemInformation.VirtualScreen;
+            using (var bmp = new System.Drawing.Bitmap(b.Width, b.Height))
+            {
+                using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(b.Left, b.Top, 0, 0, bmp.Size);
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file));
+                bmp.Save(file, System.Drawing.Imaging.ImageFormat.Png);
+            }
+            Log.Write($"ui screenshot {file}");
+        }
+
         public void MouseClick(string element)
         {
             var e = El(element);

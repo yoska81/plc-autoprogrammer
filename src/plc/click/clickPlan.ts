@@ -17,7 +17,8 @@ export interface ClickSelector {
 }
 
 export interface ClickStep {
-  do: 'window' | 'menu' | 'click' | 'doubleClick' | 'setText' | 'select' | 'check' | 'keys' | 'wait' | 'note' | 'waitGone' | 'waitUser' | 'oneOf';
+  /** shot: a screenshot named by `text` (the build server's real-CLICK test, while CLICK's keys are fitted). */
+  do: 'window' | 'menu' | 'click' | 'doubleClick' | 'setText' | 'select' | 'check' | 'keys' | 'wait' | 'note' | 'waitGone' | 'waitUser' | 'oneOf' | 'shot';
   title?: string;
   find?: ClickSelector;
   text?: string;

@@ -94,6 +94,7 @@ static class Tests
         public bool NoMenus;
         public void Menu(string window, IList<string> path) { if (NoMenus) throw new BridgeError($"CLICK has no menu \"{path[0]}\"."); Did.Add($"menu {string.Join(">", path)}"); }
         public void Show(string window) => Did.Add($"show {window}");
+        public void Screenshot(string file) => Did.Add($"shot {System.IO.Path.GetFileName(file)}");
         /// <summary>Whether bringing CLICK to the front works (Windows may refuse); Raised counts the tries.</summary>
         public bool RaiseWorks;
         public int Raised;
@@ -476,6 +477,16 @@ static class Tests
             var ui = Click();
             new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"window\",\"title\":\"^Select a CPU\"},{\"do\":\"click\",\"find\":{\"type\":\"Button\",\"name\":\"^OK$\"},\"mouse\":true}]"));
             Eq("mouse Select a CPU Module/OK", ui.Did.Single());
+        });
+
+        Test("runner: a shot step saves a screenshot (into the shot folder; nothing without one)", () =>
+        {
+            var ui = Click();
+            new Runner(ui, 42, CancellationToken.None, _ => { }) { ShotFolder = "C:\\x" }.Run(Plan("[{\"do\":\"shot\",\"text\":\"r1 after insert\"}]"));
+            Eq("shot r1_after_insert.png", ui.Did.Single());
+            ui = Click();
+            new Runner(ui, 42, CancellationToken.None, _ => { }).Run(Plan("[{\"do\":\"shot\",\"text\":\"x\"}]"));
+            Eq(0, ui.Did.Count);
         });
 
         Test("commands: no CLICK installed says how to get it; run before start says to open CLICK", () =>

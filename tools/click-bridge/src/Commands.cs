@@ -149,7 +149,7 @@ namespace ClickBridge
                         // a minimized CLICK has no place on the screen: restore and maximize it first
                         var main = ui.Window(pid, "CLICK", 5000);
                         if (main != null) ui.Show(main);
-                        int n = new Runner(ui, pid, cts.Token, pr, resume) { Version = version }.Run(steps);
+                        int n = new Runner(ui, pid, cts.Token, pr, resume) { Version = version, ShotFolder = folder }.Run(steps);
                         return new Dictionary<string, object> { ["steps"] = n };
                     }
                     finally { current = null; }

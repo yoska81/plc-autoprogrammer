@@ -24,7 +24,7 @@ namespace ClickBridge
 {
     public sealed class Step
     {
-        /// <summary>window · menu · click · doubleClick · setText · select · check · keys · wait · note · waitGone · waitUser</summary>
+        /// <summary>window · menu · click · doubleClick · setText · select · check · keys · wait · note · waitGone · waitUser · shot</summary>
         public string Do;
         /// <summary>The step may not happen (its window or control does not come): then it, and the steps up to the next
         /// non-optional one, are skipped.</summary>
@@ -84,6 +84,8 @@ namespace ClickBridge
         /// <summary>How long a run waits for the user to bring CLICK back to the front.</summary>
         public int PauseLimitMs = 10 * 60 * 1000;
         public int PollMs = 300;
+        /// <summary>Where shot steps save their screenshots (shots\&lt;text&gt;.png); none: shot steps do nothing.</summary>
+        public string ShotFolder;
         /// <summary>The CLICK version, for the messages ("CLICK 4.00: …").</summary>
         public string Version = "";
         string _window;
@@ -245,6 +247,9 @@ namespace ClickBridge
             {
                 case "note": _progress(s.Text ?? ""); return;
                 case "wait": Sleep(s.Ms, i); return;
+                case "shot":
+                    if (ShotFolder != null) _ui.Screenshot(System.IO.Path.Combine(ShotFolder, "shots", Regex.Replace(s.Text ?? $"step-{i + 1}", @"[^\w.-]+", "_") + ".png"));
+                    return;
                 case "window":
                     _window = Need(_ui.Window(_pid, s.Title, s.TimeoutMs), s);
                     Record(_window, s.Title);

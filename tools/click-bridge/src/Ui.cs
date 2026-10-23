@@ -56,6 +56,8 @@ namespace ClickBridge
         IList<string> Windows(int pid);
         /// <summary>Restores the window (a minimized CLICK has no place on the screen to click), maximizes it, brings it to the front.</summary>
         void Show(string window);
+        /// <summary>A screenshot of the whole screen into the file (a PNG): the record of a step while the keys are fitted.</summary>
+        void Screenshot(string file);
         /// <summary>Brings the window to the front as it is (no maximize): a run started from the app finds the app in front.</summary>
         void Raise(string window);
     }
