@@ -122,8 +122,10 @@ namespace ClickBridge
                 if (sel.Order == "left") all = all.OrderBy(e => e.Current.BoundingRectangle.X).ThenBy(e => e.Current.BoundingRectangle.Y).ToList();
                 if (all.Count > sel.Index) return Keep(all[sel.Index]);
                 // not in UI Automation's tree (CLICK 4's Print dialog: a tab page's controls): the window's child
-                // windows by their text
-                var hw = sel.Name != null && sel.Id == null && sel.Index == 0 ? ChildByText(root, sel.Name) : null;
+                // windows by their text (never for a list or tree entry: an entry is not a window, and a window with
+                // that text can be another control, e.g. a wide screen's ribbon "Copy" for the Instruction List's Copy)
+                var entry = sel.Type != null && Regex.IsMatch(sel.Type, "^(DataItem|ListItem|TreeItem)$", RegexOptions.IgnoreCase);
+                var hw = sel.Name != null && sel.Id == null && sel.Index == 0 && !entry ? ChildByText(root, sel.Name) : null;
                 if (hw != null) return Keep(hw);
                 Thread.Sleep(250);
             } while (DateTime.UtcNow < until);
