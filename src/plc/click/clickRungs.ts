@@ -108,6 +108,12 @@ export const DEFAULT_KEYMAP: ClickKeymap = {
   ],
 };
 
+/**
+ * The Instruction List's entries as UI Automation shows them (CLICK 4.00). Found only as these: on a wide screen the Home
+ * ribbon also shows its clipboard buttons, and its "Copy" came first (a user's PC: the clipboard copied, no Copy dialog).
+ */
+export const LIST_ITEM = 'DataItem';
+
 /** Text typed as it is (the keys syntax reads + ^ % ~ ( ) { } [ ] as keys; the bridge's SendKeys). */
 export const typed = (text: string) => text.replace(/[+^%~(){}[\]]/g, (c) => `{${c}}`);
 
@@ -122,7 +128,7 @@ function instructionSteps(km: ClickKeymap, what: EntryCell | EntryOutput, where:
   if (!how) return null;
   const steps: ClickStep[] = [
     { do: 'window', title: CLICK_MAIN },
-    { do: 'doubleClick', find: { name: how.list }, say: `${where}: ${what.instruction}` },
+    { do: 'doubleClick', find: { type: LIST_ITEM, name: how.list }, say: `${where}: ${what.instruction}` },
     { do: 'window', title: how.dialog },
   ];
   for (const [name, val] of what.fields) {
@@ -269,7 +275,7 @@ export function endRung(km: ClickKeymap): ClickStep[] {
     { do: 'keys', keys: km.newRung, say: 'Rung END: the end of the Main Program (CLICK needs it)' },
     { do: 'keys', keys: '{END}' },
     { do: 'window', title: CLICK_MAIN },
-    { do: 'doubleClick', find: { name: '^End$' }, say: 'the END instruction' },
+    { do: 'doubleClick', find: { type: LIST_ITEM, name: '^End$' }, say: 'the END instruction' },
     { do: 'window', title: '^End', timeoutMs: 3000, optional: true },
     { do: 'click', find: km.ok, optional: true },
     { do: 'wait', ms: 300 },

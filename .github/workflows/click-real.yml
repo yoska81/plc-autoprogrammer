@@ -95,6 +95,17 @@ jobs:
           Get-CimInstance Win32_Printer | Format-Table Name, Default, PortName
           if (-not $pdf) { Write-Host "::warning::no Microsoft Print to PDF printer on this server" }
 
+      # A user's wide screen (1920x1080; the server starts at 1024x768): CLICK's ribbon then shows its clipboard
+      # buttons ("Copy" among them) next to the Instruction List's Copy, as on a user's PC
+      - name: A wide screen, as on a user's PC
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          try { Set-DisplayResolution -Width 1920 -Height 1080 -Force -ErrorAction Stop } catch { Write-Host "Set-DisplayResolution: $($_.Exception.Message)" }
+          Add-Type -AssemblyName System.Windows.Forms
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          Write-Host "screen $($b.Width)x$($b.Height)"
+
       # A screenshot every 0.5 s while the run goes (what CLICK showed), then the run
       - name: Send the example project to the real CLICK
         shell: pwsh

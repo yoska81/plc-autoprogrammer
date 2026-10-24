@@ -95,4 +95,8 @@ assert.ok(all.entered > p.ladder.rungs.length / 2, `${all.entered} of ${p.ladder
 const order = all.steps.filter((x) => x.say && /^Rung \d+/.test(x.say)).map((x) => Number(/^Rung (\d+)/.exec(x.say!)![1]));
 assert.deepEqual(order, order.slice().sort((a, b) => a - b));
 assert.deepEqual(saveSteps(all.steps), []);
+// every instruction picked from the Instruction List as its entry (a wide screen's ribbon has a "Copy" button too)
+const picks = all.steps.filter((x) => x.do === 'doubleClick');
+assert.ok(picks.length > 40 && picks.every((x) => x.find?.type === 'DataItem'), 'Instruction List entries only, never a ribbon button');
+
 console.log(`clickRungs.test: all passed (${all.entered} of ${p.ladder.rungs.length} example rungs entered, ${all.leftForYou.length} handed over)`);
