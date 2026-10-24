@@ -8,7 +8,7 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../src/ClickDetect.cs;../src/Ui.cs;../src/Runner.cs;../src/Commands.cs" />
+    <Compile Include="../src/ClickDetect.cs;../src/Ui.cs;../src/Runner.cs;../src/Commands.cs;../src/Learn.cs" />
     <Compile Include="../../tia-bridge/src/Json.cs;../../tia-bridge/src/Protocol.cs;../../tia-bridge/src/Log.cs" />
     <Compile Include="*.cs" />
   </ItemGroup>
