@@ -98,16 +98,29 @@ export function actionText(o: LadderOutput, nameOf: NameOf): string {
   }
 }
 
-/** A rung's conditions as lines: each branch an AND (one line per condition), branches joined by OR. */
-function conditionLines(branches: LadderElement[][], nameOf: NameOf, skip?: (el: LadderElement) => boolean): string[] {
-  const lines: string[] = [];
-  branches.forEach((br, i) => {
-    const els = br.filter((el) => !skip?.(el));
-    if (i > 0) lines.push('— OR —');
-    if (!els.length) lines.push('always');
-    els.forEach((el, k) => lines.push(clip(`${k > 0 ? 'AND ' : ''}${conditionText(el, nameOf)}`)));
-  });
-  return lines.length ? lines : ['always'];
+/**
+ * A rung's conditions as lines. One path: one condition a line (AND). Several paths (OR): what every path needs is
+ * said once ("AND …"), what differs is listed under "ANY of:" (a path a line), so a seal-in or a two-way start reads
+ * in a few lines instead of the same conditions written per path.
+ */
+export function conditionLines(branches: LadderElement[][], nameOf: NameOf, skip?: (el: LadderElement) => boolean): string[] {
+  const paths = branches.map((br) => br.filter((el) => !skip?.(el)).map((el) => conditionText(el, nameOf)));
+  if (!paths.length) return ['always'];
+  if (paths.length === 1) return paths[0].length ? paths[0].map((c, k) => clip(`${k > 0 ? 'AND ' : ''}${c}`)) : ['always'];
+  // what every path has (as many times as the fewest have it)
+  const common: string[] = [];
+  for (const c of new Set(paths[0])) {
+    const n = Math.min(...paths.map((p) => p.filter((x) => x === c).length));
+    for (let i = 0; i < n; i++) common.push(c);
+  }
+  const rest = paths.map((p) => { const left = [...p]; for (const c of common) left.splice(left.indexOf(c), 1); return left; });
+  if (!common.length || rest.some((r) => !r.length)) {
+    // nothing shared (or a path that needs only the shared part): the paths one after the other
+    const lines: string[] = [];
+    paths.forEach((p, i) => { if (i > 0) lines.push('— OR —'); if (!p.length) lines.push('always'); p.forEach((c, k) => lines.push(clip(`${k > 0 ? 'AND ' : ''}${c}`))); });
+    return lines;
+  }
+  return ['ANY of:', ...rest.map((r) => clip(`• ${r.join(' AND ')}`)), ...common.map((c) => clip(`AND ${c}`))];
 }
 
 /** A step register: a word compared with constants (`== n`) and set by COPY of constants, with two values or more. */

@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { LadderElement, Rung } from '../core/ladder';
-import { actionText, conditionText, diagramOf, flowMap, nodesOfRung, stepRegisters } from './flowModel';
+import { actionText, conditionLines, conditionText, diagramOf, flowMap, nodesOfRung, stepRegisters } from './flowModel';
 import { seedSampleProject } from '../../preview/sampleProject';
 import { collectProject } from '../../deliverables/collect';
 import { importProgramFiles } from '../import';
@@ -54,6 +54,11 @@ assert.ok(d.nodes.some((n) => n.kind === 'any' && n.rungIds[0] === 'r0' && n.lin
 const lamp = d.nodes.filter((n) => n.rungIds.includes('r7'));
 assert.deepEqual(lamp.map((n) => n.kind), ['decision', 'action'], 'a rung outside the sequence: IF → THEN');
 assert.ok(d.nodes.every((n) => n.rungIds.every((id) => cycle.some((r) => r.id === id))), 'every box linked to its rungs');
+
+// several paths: what all need said once, what differs under ANY of
+assert.deepEqual(conditionLines([[NO('X002'), NO('X003'), NC('C5')], [NO('C1'), NO('X003'), NC('C5')]], nameOf),
+  ['ANY of:', '• Clamp closed ON', '• Run ON', 'AND Process done ON', 'AND NOT C5']);
+assert.deepEqual(conditionLines([[NO('X001')], [NO('X002')]], nameOf), ['Part present ON', '— OR —', 'Clamp closed ON'], 'nothing shared: the paths one after the other');
 
 // plain words
 assert.equal(conditionText({ type: 'CMP', left: 'DS1', op: '>=', right: '10' }, nameOf), 'DS1 ≥ 10');
