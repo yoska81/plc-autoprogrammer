@@ -21,7 +21,10 @@ const STROKE: Record<NodeState | 'none', string> = { active: '#16a34a', true: '#
 /** Zoomed out further than this, each function is one box. */
 const DETAIL_K = 0.32;
 
-function NodeShape({ n, st, selected, hit, onPick }: { n: FlowNode; st: NodeState | undefined; selected: boolean; hit: boolean; onPick: () => void }) {
+/** The tag above a box: what it is doing now. */
+const TAG: Partial<Record<NodeState, [string, string]>> = { active: ['● NOW', '#16a34a'], waiting: ['… WAITING', '#d97706'], broken: ['✖ STUCK', '#dc2626'] };
+
+function NodeShape({ n, st, why, selected, hit, onPick }: { n: FlowNode; st: NodeState | undefined; why?: string; selected: boolean; hit: boolean; onPick: () => void }) {
   const s = st ?? 'none';
   const sw = selected ? 3.5 : s === 'active' || s === 'broken' ? 3 : 1.5;
   const stroke = selected ? '#b45309' : STROKE[s];
@@ -36,8 +39,18 @@ function NodeShape({ n, st, selected, hit, onPick }: { n: FlowNode; st: NodeStat
       {hit && <rect x={x - 6} y={y - 6} width={w + 12} height={h + 12} rx={10} fill="none" stroke="#f59e0b" strokeWidth={3} strokeDasharray="5 4" />}
       {shape}
       <text x={x + pad} y={y + 18} fontSize={12} fontWeight={700} fill={n.kind === 'step' ? '#14532d' : '#1e293b'}>
-        {n.kind === 'decision' && n.title === 'IF' ? 'IF' : n.title}{s === 'active' ? '  ● NOW' : s === 'broken' ? '  ✖ STUCK' : s === 'waiting' ? '  … WAITING' : ''}
+        {n.title}
       </text>
+      {TAG[s] && (() => {
+        const [text, color] = s === 'broken' && why?.startsWith('Alarm') ? ['⚠ ALARM', '#dc2626'] : TAG[s]!;
+        const tw = text.length * 7 + 14;
+        return (
+          <g>
+            <rect x={x + w - tw - 8} y={y - 11} width={tw} height={18} rx={9} fill={color} />
+            <text x={x + w - tw / 2 - 8} y={y + 2} textAnchor="middle" fontSize={10.5} fontWeight={800} fill="#fff">{text}</text>
+          </g>
+        );
+      })()}
       {n.lines.map((l, i) => (
         <text key={i} x={x + pad} y={y + 36 + i * 15} fontSize={11.5} fill={l === '— OR —' ? '#64748b' : '#334155'} fontStyle={l === '— OR —' ? 'italic' : undefined}>{l}</text>
       ))}
@@ -72,7 +85,7 @@ function Diagram({ d, state, selected, hits, onPick, view, vw, vh }: {
           </g>
         );
       })}
-      {nodes.map((n) => <NodeShape key={n.id} n={n} st={state?.nodes.get(n.id)} selected={selected === n.id} hit={hits.has(n.id)} onPick={() => onPick(n)} />)}
+      {nodes.map((n) => <NodeShape key={n.id} n={n} st={state?.nodes.get(n.id)} why={state?.why.get(n.id)} selected={selected === n.id} hit={hits.has(n.id)} onPick={() => onPick(n)} />)}
     </g>
   );
 }

@@ -9,14 +9,14 @@ import { ArrowsPointingInIcon, ArrowsPointingOutIcon, MagnifyingGlassIcon } from
 import ResizablePane from '../../components/ResizablePane';
 import { useProgramStore } from '../../store/useProgramStore';
 import { usePlc } from '../core/usePlc';
-import type { LadderElement, LadderOutput, Rung } from '../core/ladder';
+import { rungWrites, type LadderElement, type LadderOutput, type Rung } from '../core/ladder';
 import { createSimulator, type CounterState, type RungPower, type Simulator, type TimerState } from '../sim/engine';
 import { rungAllAddresses } from '../sim/blocks';
 import LiveLadder from '../sim/LiveLadder';
 import { connectPlc, disconnectPlc, modbusBridge, useOnlineStore } from '../../online/useOnline';
 import { rungPowerFromValues } from '../../online/power';
 import { flowMap, type FlowDiagram, type FlowNode } from './flowModel';
-import { flowState, type FlowState, type StepClock } from './flowState';
+import { flowState, sequenceTimeouts, type FlowState, type StepClock } from './flowState';
 import FlowCanvas, { type FlowCanvasHandle } from './FlowCanvas';
 
 type Mode = 'diagram' | 'test' | 'watch';
@@ -58,6 +58,7 @@ export default function FlowPage() {
     return (a: string) => labels.get(a) || tags.get(a.toUpperCase()) || a;
   }, [labels, ladder.tags]);
   const map = useMemo(() => flowMap(ladder, nameOf), [ladder, nameOf]);
+  const timeouts = useMemo(() => sequenceTimeouts(ladder, map), [ladder, map]);
   const canvas = useRef<FlowCanvasHandle>(null);
   const [sel, setSel] = useState<{ d: FlowDiagram; n: FlowNode | null } | null>(null);
   const [query, setQuery] = useState('');
@@ -68,6 +69,8 @@ export default function FlowPage() {
   const [showList, setShowList] = useState(true);
   const [side, setSide] = useState<'shown' | 'hidden' | 'max'>('shown');
   const [ladderZoom, setLadderZoom] = useState(1);
+  // red when the machine stays longer than this in one step (seconds)
+  const [stuckSec, setStuckSec] = useState(30);
   useEffect(() => {
     const on = () => setFull(document.fullscreenElement === root.current);
     document.addEventListener('fullscreenchange', on);
@@ -91,7 +94,7 @@ export default function FlowPage() {
   const values = shown?.values ?? null;
   const state = shown?.state ?? null;
 
-  const publish = (m: Mode, v: Values) => setSnap({ mode: m, values: v, state: flowState(map, ladder, v.power, v.words, v.now, clock.current, nameOf) });
+  const publish = (m: Mode, v: Values) => setSnap({ mode: m, values: v, state: flowState(map, ladder, v.power, v.words, v.now, clock.current, nameOf, { stuckSec, bits: v.bits, timeouts }) });
   const publishSim = () => {
     const s = sim.current;
     if (!s) return;
@@ -162,7 +165,11 @@ export default function FlowPage() {
     return [...kinds].filter((k) => MEANING[k]);
   }, [selRungs]);
   // test switches: the inputs (X) and memory bits (C) the selected rungs read
-  const switches = useMemo(() => [...new Set(selRungs.flatMap((r) => r.branches.flat().flatMap((e) => (e.type === 'CMP' || e.type === 'RAW' ? [] : [e.address.toUpperCase()]))))].filter((a) => /^(X|C)\d/.test(a)).slice(0, 16), [selRungs]);
+  // what the program itself writes: shown, not switched (a scan would overwrite it at once)
+  const written = useMemo(() => new Set(ladder.rungs.flatMap((r) => rungWrites(r).map((a) => a.toUpperCase()))), [ladder]);
+  const readBits = useMemo(() => [...new Set(selRungs.flatMap((r) => r.branches.flat().flatMap((e) => (e.type === 'CMP' || e.type === 'RAW' ? [] : [e.address.toUpperCase()]))))].filter((a) => /^(X|C|T|CT|Y)\d/.test(a)), [selRungs]);
+  const switches = useMemo(() => readBits.filter((a) => a.startsWith('X') || (a.startsWith('C') && !a.startsWith('CT') && !written.has(a))).slice(0, 16), [readBits, written]);
+  const driven = useMemo(() => readBits.filter((a) => !switches.includes(a)).slice(0, 12), [readBits, switches]);
 
   if (profile.language !== 'ladder' || !ladder.rungs.length) {
     return <div className="p-6 text-sm text-steel-600">{!ladder.rungs.length ? <span>No program yet. Write it on the <Link to="/program" className="underline">PLC Program</Link> page first.</span> : 'The flow diagram is drawn from ladder programs.'}</div>;
@@ -185,6 +192,13 @@ export default function FlowPage() {
           {modeBtn('test', 'Test (simulator)', 'Run the program in the simulator and click its inputs: no machine needed')}
           {modeBtn('watch', 'Watch the real PLC', 'Read the machine and show where it is: read only, nothing is changed in the PLC')}
         </div>
+        {mode !== 'diagram' && map.diagrams.some((d) => d.register) && (
+          <label className="flex items-center gap-1 text-xs text-steel-600" title="A step that lasts longer than this turns red: where the machine is stuck">
+            Red after
+            <input type="number" min={1} max={3600} value={stuckSec} onChange={(e) => setStuckSec(Math.max(1, Number(e.target.value) || 30))} data-testid="flow-stuck" className="w-14 rounded border border-steel-300 px-1 py-0.5" />
+            s in a step
+          </label>
+        )}
         {mode === 'test' && (
           <div className="flex gap-1">
             <button type="button" onClick={() => setRunning((r) => !r)} className="rounded border border-steel-300 bg-white px-2 py-1 text-xs">{running ? 'Pause' : 'Run'}</button>
@@ -252,20 +266,42 @@ export default function FlowPage() {
                 {sel.n && <ul className="mt-1 text-steel-700">{sel.n.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
                 {why && <p className={`mt-2 rounded px-2 py-1 text-xs font-semibold ${state?.nodes.get(sel.n!.id) === 'broken' ? 'bg-red-100 text-red-900' : 'bg-amber-100 text-amber-900'}`} data-testid="flow-why">{why}</p>}
               </div>
-              {mode === 'test' && switches.length > 0 && (
+              {mode === 'test' && (switches.length > 0 || driven.length > 0) && (
                 <div data-testid="flow-switches">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-steel-400">Test: switch its inputs</p>
                   <div className="mt-1 grid grid-cols-2 gap-1">
                     {switches.map((a) => {
                       const on = (a.startsWith('X') ? values?.inputs.get(a) : values?.bits.get(a)) ?? false;
+                      const set = (v: boolean) => { const s = sim.current; if (!s) return; if (a.startsWith('X')) s.setInput(a, v); else s.write(a, v); s.step(10); };
                       return (
-                        <button key={a} type="button" onClick={() => { const s = sim.current; if (!s) return; if (a.startsWith('X')) s.setInput(a, !on); else s.write(a, !on); s.step(10); publishSim(); }}
-                          className={`truncate rounded border px-2 py-1 text-left text-xs ${on ? 'border-green-500 bg-green-50 text-green-900' : 'border-steel-300 bg-white text-steel-700'}`} title={a}>
-                          {on ? '● ON ' : '○ OFF '}{nameOf(a)}
-                        </button>
+                        <div key={a} className="flex min-w-0">
+                          <button type="button" onClick={() => { set(!on); publishSim(); }} data-switch={a}
+                            className={`min-w-0 flex-1 truncate rounded-l border px-2 py-1 text-left text-xs ${on ? 'border-green-500 bg-green-50 text-green-900' : 'border-steel-300 bg-white text-steel-700'}`} title={`${a}: switch ON / OFF`}>
+                            {on ? '● ON ' : '○ OFF '}{nameOf(a)}
+                          </button>
+                          {/* a push button: ON for half a second, then OFF (Start, Reset…) */}
+                          <button type="button" onClick={() => { set(true); sim.current?.run(500, 10); set(false); publishSim(); }} data-press={a}
+                            className="rounded-r border border-l-0 border-steel-300 bg-white px-1.5 text-[10px] font-semibold text-steel-600 hover:bg-steel-50" title={`Press ${nameOf(a)} (ON for 0.5 s, then OFF), like a push button`}>press</button>
+                        </div>
                       );
                     })}
                   </div>
+                  {driven.length > 0 && (
+                    <div className="mt-2" data-testid="flow-driven">
+                      <p className="text-[11px] text-steel-500">Set by the program (follow them to their own rungs):</p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {driven.map((a) => {
+                          const on = values?.bits.get(a) ?? false;
+                          return (
+                            <button key={a} type="button" title={`${a}: the program sets it. Click to find where.`} onClick={() => { setQuery(a); }}
+                              className={`rounded-full border px-2 py-0.5 text-[11px] ${on ? 'border-green-500 bg-green-50 text-green-900' : 'border-steel-300 bg-steel-50 text-steel-600'}`}>
+                              {on ? '●' : '○'} {nameOf(a)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               <div>

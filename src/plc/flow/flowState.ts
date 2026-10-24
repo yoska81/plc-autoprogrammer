@@ -20,10 +20,27 @@ export interface FlowState {
   steps: Map<string, number>;
 }
 
+/**
+ * Each step's own time limit from the program's cycle (CycleSequence: step i is value (i + 1) × 10; null = waits as
+ * long as needed), keyed `${diagramId}:${step}` for flowState.
+ */
+export function sequenceTimeouts(program: LadderProgram, map: FlowMap): Map<string, number | null> {
+  const out = new Map<string, number | null>();
+  const seq = program.sequence;
+  if (!seq?.register) return out;
+  for (const d of map.diagrams) {
+    if (norm(d.register ?? '') !== norm(seq.register)) continue;
+    seq.steps.forEach((st, i) => out.set(`${d.id}:${(i + 1) * 10}`, st.timeoutSec));
+  }
+  return out;
+}
+
 /** When each sequence entered its current step (diagram id → { step, since ms }): kept by the caller between reads. */
 export type StepClock = Map<string, { step: number; since: number }>;
 
 const norm = (a: string) => a.trim().toUpperCase();
+/** An alarm or fault bit, by its name ("ALM_Pusher_Fault", "Fault: motor overload", "E-stop alarm"). */
+const ALARM = /\b(ALM|ALARM|FAULT|FLT)|alarm|fault/i;
 
 /**
  * The diagram's state. `power`: each rung's power flow (rungPowerFromValues for the real PLC, the simulator's
@@ -31,7 +48,8 @@ const norm = (a: string) => a.trim().toUpperCase();
  * `stuckSec`: red after this long in one step when the step has no timeout of its own (default 30 s).
  */
 export function flowState(map: FlowMap, program: LadderProgram, power: Map<string, RungPower>, words: Map<string, number>,
-  now: number, clock: StepClock, nameOf: NameOf, opts: { stuckSec?: number; timeouts?: Map<string, number> } = {}): FlowState {
+  now: number, clock: StepClock, nameOf: NameOf, opts: { stuckSec?: number; timeouts?: Map<string, number | null>; bits?: Map<string, boolean> } = {}): FlowState {
+  const bits = opts.bits ?? new Map<string, boolean>();
   const nodes = new Map<string, NodeState>(), edges = new Set<string>(), why = new Map<string, string>(), steps = new Map<string, number>();
   const rungs = new Map(program.rungs.map((r) => [r.id, r]));
   for (const d of map.diagrams) {
@@ -58,11 +76,23 @@ export function flowState(map: FlowMap, program: LadderProgram, power: Map<strin
         if (isTrue) { nodes.set(n.id, 'true'); edges.add(`${n.id}:yes`); continue; }
         const rung = rungs.get(n.rungIds[0]);
         const off = rung ? offConditions(rung.branches, p[0], reg, nameOf) : [];
-        const limit = opts.timeouts?.get(`${d.id}:${from}`) ?? opts.stuckSec ?? 30;
+        // red only where the step does something (turns on a valve, a motor) and what it waits for does not come;
+        // a step that only waits (idle, the next part, the operator) waits as long as needed
+        const stepNode = d.nodes.find((x) => x.kind === 'step' && x.step === from);
+        const acts = (stepNode?.rungIds.length ?? 0) > 0;
+        const own = opts.timeouts?.get(`${d.id}:${from}`);
+        const limit = own === undefined ? (acts ? opts.stuckSec ?? 30 : Infinity) : own ?? Infinity;
         const stuck = inStepSec > limit;
         nodes.set(n.id, stuck ? 'broken' : 'waiting');
         edges.add(`${n.id}:in`);
         why.set(n.id, `${stuck ? 'Stuck' : 'Waiting'} ${inStepSec.toFixed(1)} s in step ${from}${off.length ? ` for: ${off.join(', ')}` : ''}${stuck ? ` (more than ${limit} s)` : ''}`);
+        continue;
+      }
+      // an alarm or fault the rung sets that is ON now: red, named (where the machine is stopped or warns)
+      const alarm = n.rungIds.flatMap((id) => rungs.get(id)?.outputs ?? []).find((o) => (o.type === 'SET' || o.type === 'OUT') && bits.get(norm(o.address)) && ALARM.test(`${o.address} ${nameOf(o.address)}`));
+      if (alarm && 'address' in alarm) {
+        nodes.set(n.id, 'broken');
+        why.set(n.id, `Alarm ON: ${nameOf(alarm.address)}${alarm.type === 'SET' ? ' (latched until reset)' : ''}`);
         continue;
       }
       nodes.set(n.id, isTrue ? 'true' : 'false');
