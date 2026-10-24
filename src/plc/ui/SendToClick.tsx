@@ -6,7 +6,7 @@ import { type ClickDetect } from '../../desktop/bridge';
 import { collectProject } from '../../deliverables/collect';
 import { hmiExtraTags } from '../../deliverables/exportContext';
 import { clickNicknameCsv } from '../core/clickExport';
-import { clickPasswordNote, modulesLine, newProjectPlan, setupPlan } from '../click/clickPlan';
+import { clickPasswordNote, modulesLine, newProjectPlan, setupPlan, writeToPlcPlan, type WriteToPlc } from '../click/clickPlan';
 import { CALIBRATION_PDF, CALIBRATION_REPORT, calibrationPlan, calibrationReport, calibrationResult, type Calibration } from '../click/clickCalibrate';
 import { rungsPlan } from '../click/clickRungs';
 import { compareNicknames, compareRungs, exportNicknamesPlan, printLadderPlan, type NicknameCheck, type RungCheck } from '../click/clickVerify';
@@ -39,7 +39,8 @@ interface Sent { version: string; cpu: string; nicknames: boolean; entered: numb
  * it uses the open CLICK or starts it (restored and maximized), makes a new project with the CPU, imports the
  * nicknames into the Address Picker and enters every rung, in order. What it cannot do (the modules, which are
  * added in System Configuration; a rung it cannot enter) is listed at the end, not asked in the middle. Stop (or
- * the Pause key) ends it at once; the app never saves. On a failure: one plain sentence, and the log to send to
+ * the Pause key) ends it at once; the app saves only for Write to the machine, after the user confirmed it, as its own
+ * copy in its machines folder. On a failure: one plain sentence, and the log to send to
  * support (the bridge records every CLICK window it opens in it, and all of them on a failure). Under Support:
  * the sample-rung calibration, the check of what CLICK has (its nickname export and printed ladder), and a
  * recording of the windows open now.
@@ -59,6 +60,11 @@ export default function SendToClick({ profileId }: { profileId: string }) {
   const stopAsked = useRef(false);
   const [checked, setChecked] = useState<{ nicknames: NicknameCheck; rungs: RungCheck } | null>(null);
   const [calibrated, setCalibrated] = useState<{ result: Calibration | null; report: string } | null>(null);
+  // Write to the machine: asked first (the confirm panel), then saved in the app's machines folder and written
+  const [confirmWrite, setConfirmWrite] = useState(false);
+  const [port, setPort] = useState<WriteToPlc['port']>('USB');
+  const [runAfter, setRunAfter] = useState(true);
+  const [written, setWritten] = useState<{ file: string } | null>(null);
 
   useEffect(() => (open && click ? click.onProgress((p) => setProgress(p.text)) : undefined), [open, click]);
 
@@ -157,6 +163,25 @@ export default function SendToClick({ profileId }: { profileId: string }) {
     });
   };
 
+  /**
+   * Write to the machine, after the user said yes in the confirm panel: the project saved as the app's own copy in its
+   * machines folder (the user's files untouched; the desktop app sets the folder, the bridge saves nowhere else),
+   * CLICK connected to the PLC, the project written into it.
+   */
+  const writeIt = async () => {
+    setConfirmWrite(false); setWritten(null);
+    stopAsked.current = false;
+    const p = collectProject();
+    const r = await step('run', async () => {
+      await ensureStarted();
+      const folder = await click.machinesFolder!();
+      const file = `${folder.replace(/[\\/]+$/, '')}\\${p.fileBase}.ckp`;
+      await click.call('run', { steps: writeToPlcPlan({ file, port, runAfter }), write: true });
+      return { file };
+    });
+    if (r) setWritten(r);
+  };
+
   const stop = () => { stopAsked.current = true; void click.call('stop').catch(() => undefined); setProgress('Stopping…'); };
   const record = async () => { const r = await step('record', async () => { await ensureStarted(); return click.call('dump') as Promise<{ file: string }>; }); if (r) setRecorded(r.file); };
   const showLog = click.showLog ? () => void click.showLog!().catch(() => undefined) : null;
@@ -174,7 +199,7 @@ export default function SendToClick({ profileId }: { profileId: string }) {
             <div className="flex items-start gap-3 border-b border-steel-200 px-5 py-3">
               <div className="flex-1">
                 <h2 className="text-base font-semibold text-steel-900">Send to CLICK</h2>
-                <p className="text-xs text-steel-500">One click: the app opens CLICK Programming Software and puts the whole project into it while you watch. Keep your hands off the mouse and keyboard while it runs; Stop (or the Pause key) ends it at once. The app never saves: you save in CLICK when you are happy with it.</p>
+                <p className="text-xs text-steel-500">One click: the app opens CLICK Programming Software and puts the whole project into it while you watch. Keep your hands off the mouse and keyboard while it runs; Stop (or the Pause key) ends it at once. The app saves only when you confirm Write to the machine, and only its own copy.</p>
               </div>
               <button onClick={() => setOpen(false)} disabled={Boolean(busy)} aria-label="Close" className="rounded p-1 text-steel-400 hover:bg-steel-100 hover:text-steel-700 disabled:opacity-40"><XMarkIcon className="h-5 w-5" /></button>
             </div>
@@ -207,7 +232,39 @@ export default function SendToClick({ profileId }: { profileId: string }) {
                 <div className="space-y-1 rounded border border-green-200 bg-green-50 p-3 text-green-950" data-testid="click-done">
                   <p><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />Done in CLICK {sent.version}: a new project with the CPU {sent.cpu}, the nicknames imported, {sent.entered} of {sent.rungs} rungs entered.</p>
                   {sent.toDo.length > 0 && (<><p className="font-medium">Still to do in CLICK:</p><ul className="ml-5 list-disc" data-testid="click-todo">{sent.toDo.map((t) => <li key={t}>{t}</li>)}</ul></>)}
-                  <p>Check it in CLICK, then save the project there (Ctrl+S).</p>
+                  {click.machinesFolder
+                    ? <p>Check it in CLICK, then write it into the machine:</p>
+                    : <p>Check it in CLICK, then save the project there (Ctrl+S).</p>}
+                  {click.machinesFolder && !confirmWrite && (
+                    <button onClick={() => setConfirmWrite(true)} disabled={Boolean(busy)} data-testid="click-write" className="rounded bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">Write to the machine…</button>
+                  )}
+                </div>
+              )}
+
+              {confirmWrite && (
+                <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-3 text-amber-950" data-testid="click-write-confirm">
+                  <p className="font-medium"><ExclamationTriangleIcon className="mr-1 inline h-4 w-4 text-amber-600" />Write this project into the machine?</p>
+                  <ul className="ml-5 list-disc text-xs">
+                    <li>The app saves the project as its own copy in Documents\ISA Auto Programmer\machines (your files are not touched), connects CLICK to the PLC and writes the project into it.</li>
+                    <li>The program in the PLC is replaced. The PLC may stop while it is written: make sure the machine is safe to stop.</li>
+                  </ul>
+                  <div className="flex flex-wrap items-center gap-4 text-xs">
+                    <span>The PC reaches the PLC by:</span>
+                    {(['USB', 'Ethernet'] as const).map((x) => (
+                      <label key={x} className="inline-flex items-center gap-1"><input type="radio" name="click-port" checked={port === x} onChange={() => setPort(x)} data-testid={`click-port-${x}`} />{x}</label>
+                    ))}
+                    <label className="inline-flex items-center gap-1"><input type="checkbox" checked={runAfter} onChange={(e) => setRunAfter(e.target.checked)} data-testid="click-run-after" />Put the PLC back in RUN after writing</label>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => void writeIt()} disabled={Boolean(busy)} data-testid="click-write-yes" className="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40">Yes, write it into the machine</button>
+                    <button onClick={() => setConfirmWrite(false)} disabled={Boolean(busy)} className={sub}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {written && (
+                <div className="space-y-1 rounded border border-green-200 bg-green-50 p-3 text-green-950" data-testid="click-written">
+                  <p><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />Written into the machine. The app's copy of the project: {written.file}</p>
                 </div>
               )}
 

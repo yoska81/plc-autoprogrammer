@@ -149,7 +149,9 @@ namespace ClickBridge
                         // a minimized CLICK has no place on the screen: restore and maximize it first
                         var main = ui.Window(pid, "CLICK", 5000);
                         if (main != null) ui.Show(main);
-                        int n = new Runner(ui, pid, cts.Token, pr, resume) { Version = version, ShotFolder = folder }.Run(steps);
+                        // saveIn: only the app's Write to PLC, after the user confirmed it in the app (its machines folder)
+                        string saveIn = a.TryGetValue("saveIn", out object si) ? si as string : null;
+                        int n = new Runner(ui, pid, cts.Token, pr, resume) { Version = version, ShotFolder = folder, SaveIn = string.IsNullOrWhiteSpace(saveIn) ? null : saveIn }.Run(steps);
                         return new Dictionary<string, object> { ["steps"] = n };
                     }
                     finally { current = null; }

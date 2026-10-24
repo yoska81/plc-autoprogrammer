@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('isaDesktop', {
     call: async (cmd, args) => { const r = await ipcRenderer.invoke('isa:click', cmd, args); if (!r.ok) throw new Error(r.error); return r.value; },
     logPath: () => ipcRenderer.invoke('isa:click-log'),
     showLog: () => ipcRenderer.invoke('isa:click-show-log'),
+    machinesFolder: () => ipcRenderer.invoke('isa:click-machines'),
     onProgress: (cb) => {
       const h = (_e, p) => cb(p);
       ipcRenderer.on('isa:click-progress', h);

@@ -7,7 +7,7 @@
  * Run with:  npx tsx src/plc/click/clickPlan.test.ts
  */
 import assert from 'node:assert/strict';
-import { allSteps, CLICK_MAIN, editorPlan, literal, modulesLine, newProjectPlan, nicknamePlan, saveSteps, setupPlan, type ClickStep } from './clickPlan';
+import { allSteps, CLICK_MAIN, editorPlan, literal, modulesLine, newProjectPlan, nicknamePlan, saveSteps, setupPlan, type ClickStep, writeToPlcPlan } from './clickPlan';
 
 const ways = (s: ClickStep | undefined) => (s?.options ?? []).map((o) => o.label);
 
@@ -81,4 +81,13 @@ assert.ok(allSteps(all).every((s) => s.do !== 'waitGone' && s.do !== 'waitUser')
 assert.deepEqual(saveSteps([{ do: 'keys', keys: '^s' }, { do: 'menu', path: ['File', 'Save Project As'] }, { do: 'click', find: { name: '^Save$' } }, { do: 'keys', keys: 'abc' }, { do: 'oneOf', options: [{ label: 'x', steps: [{ do: 'keys', keys: '{F12}' }] }] }]), [0, 1, 2, 4]);
 assert.equal(literal('C0-10DD1E-D'), 'C0-10DD1E-D');
 assert.equal(literal('a.b(c)'), 'a\\.b\\(c\\)');
+// Write to the machine: saves (the one run that may) the app's own copy, connects by the port asked, writes
+const wp = writeToPlcPlan({ file: 'C:\\Users\\tech\\Documents\\ISA Auto Programmer\\machines\\Line.ckp', port: 'USB', runAfter: true });
+assert.ok(saveSteps(wp).length > 0, 'it saves: the bridge allows it only for this confirmed run, in the app\'s folder');
+assert.ok(wp.some((s) => s.do === 'setText' && s.text === 'C:\\Users\\tech\\Documents\\ISA Auto Programmer\\machines\\Line.ckp'));
+assert.ok(wp.some((s) => s.do === 'select' && s.find?.id === '20050' && s.item === '^USB$'), 'Connect to CLICK PLC: Port Type USB');
+const order = ['^Connect$', '^Write Project into PLC$'].map((n) => wp.findIndex((s) => s.do === 'doubleClick' && s.find?.name === n));
+assert.ok(order[0] > 0 && order[1] > order[0], 'connect, then write');
+assert.ok(wp.findIndex((s) => s.do === 'keys' && s.keys === '^s') < order[0], 'saved before connecting');
+assert.ok(writeToPlcPlan({ file: 'x', port: 'Ethernet', runAfter: false }).some((s) => s.do === 'click' && s.find?.name === '^(No|Cancel)$'), 'not back to RUN when not asked');
 console.log('clickPlan.test: all passed');

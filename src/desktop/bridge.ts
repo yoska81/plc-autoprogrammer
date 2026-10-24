@@ -139,6 +139,8 @@ export interface ClickBridge {
   logPath(): Promise<string>;
   /** Shows the log file in Explorer (to send it to support). Older desktop apps lack it. */
   showLog?(): Promise<boolean>;
+  /** The app's machines folder (Write to the machine saves each machine's CLICK project there). Older apps lack it. */
+  machinesFolder?(): Promise<string>;
   onProgress(cb: (p: { id: number; text: string }) => void): () => void;
 }
 

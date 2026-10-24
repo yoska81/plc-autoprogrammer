@@ -156,6 +156,15 @@ static class Tests
                 True(e.Message.Contains("never saves"), e.Message);
             }
             Eq(4, ui.Did.Count);
+            // the one exception: the Write to PLC run the user confirmed in the app, saving only in the app's folder
+            const string mine = "C:\\Users\\tech\\Documents\\ISA Auto Programmer\\machines";
+            new Runner(ui, 42, CancellationToken.None, said.Add) { SaveIn = mine }.Run(Plan("[{\"do\":\"window\",\"title\":\"^CLICK Programming\"},{\"do\":\"keys\",\"keys\":\"^s\"}]"));
+            Eq("keys ^s", ui.Did.Last());
+            foreach (var outside in new[] { "D:\\\\plant\\\\line.ckp", "C:\\\\Users\\\\tech\\\\Documents\\\\ISA Auto Programmer\\\\machines\\\\..\\\\x.ckp" })
+            {
+                var e = Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, said.Add) { SaveIn = mine }.Run(Plan("[{\"do\":\"setText\",\"find\":{\"name\":\"^File name\"},\"text\":\"" + outside + "\"}]")));
+                True(e.Message.Contains("saves only there"), e.Message);
+            }
         });
 
         Test("runner: another window in front pauses it (said), CLICK back in front goes on", () =>

@@ -199,6 +199,70 @@ export function editorPlan(): ClickStep[] {
   ];
 }
 
+export interface WriteToPlc {
+  /** The CLICK project file, in the app's own machines folder (the bridge saves nowhere else). */
+  file: string;
+  /** How the PC reaches the PLC (CLICK's Connect window: Port Type). */
+  port: 'USB' | 'Ethernet';
+  /** Put the PLC back in RUN after writing, if CLICK asks. */
+  runAfter: boolean;
+}
+
+/** A CLICK message box answered (optional: CLICK asks only sometimes). */
+const answer = (button: string): ClickStep[] => [
+  { do: 'window', title: MESSAGE_BOX, timeoutMs: 2500, optional: true },
+  { do: 'click', find: { type: 'Button', name: button }, mouse: true, optional: true },
+  { do: 'wait', ms: 300 },
+];
+
+/**
+ * Write to the machine: the project the app put into CLICK saved in the app's machines folder (CLICK writes a saved
+ * project), CLICK connected to the PLC, the project written into it. Only after the user confirmed it in the app;
+ * the bridge allows this one run to save, in that folder only. CLICK 4.00's windows as recorded on the build server:
+ * the Navigation's PLC tab (Connect, Write Project into PLC), "Connect to CLICK PLC" (Port Type list, id 20050;
+ * Connect, button 1). The windows after Connect need a PLC, not on the build server: their names are CLICK's help's
+ * (Write Project Into PLC, the overwrite confirmation, the RUN mode warning, Write Complete); a window the run does
+ * not know stops it, named, with the log.
+ */
+export function writeToPlcPlan(w: WriteToPlc): ClickStep[] {
+  const plcTab: ClickStep = { do: 'click', find: { type: 'TabItem', name: '^PLC$' }, timeoutMs: 3000, optional: true };
+  return [
+    main,
+    // save (a new project's first save opens Save As)
+    { do: 'keys', keys: '^s', say: 'Saving the project in the app\'s machines folder' },
+    { do: 'window', title: '^Save', timeoutMs: 8000 },
+    { do: 'setText', find: { type: 'Edit', name: '^File name' }, text: w.file },
+    { do: 'click', find: { type: 'Button', name: '^Save$' }, mouse: true },
+    // the same file name again: replace it (the app's own copy)
+    ...answer('^(Yes|OK)$'),
+    { do: 'wait', ms: 1500 },
+    // connect
+    main,
+    plcTab,
+    { do: 'doubleClick', find: { type: 'TreeItem', name: '^Connect$' }, say: `Connecting to the PLC (${w.port})` },
+    { do: 'window', title: '^Connect to CLICK PLC$', timeoutMs: 15000 },
+    { do: 'select', find: { type: 'ComboBox', id: '20050' }, item: `^${w.port}$` },
+    { do: 'wait', ms: 800 },
+    { do: 'click', find: { type: 'Button', id: '1' }, mouse: true },
+    { do: 'waitGone', title: '^Connect to CLICK PLC$', say: 'Connecting to the PLC' },
+    ...answer('^OK$'),
+    // write
+    main,
+    plcTab,
+    { do: 'doubleClick', find: { type: 'TreeItem', name: '^Write Project into PLC$' }, say: 'Writing the project into the PLC' },
+    { do: 'window', title: '^Write Project', timeoutMs: 15000 },
+    { do: 'check', find: { name: '^Write Project File into PLC' }, optional: true },
+    { do: 'click', find: { type: 'Button', name: '^OK$' }, mouse: true },
+    // "overwrite the project in the PLC?", "the PLC is in RUN mode": the user confirmed both in the app
+    ...answer('^(Yes|OK)$'),
+    ...answer('^(Yes|OK)$'),
+    { do: 'waitGone', title: '^(Write Project|Writing|Progress)', say: 'Writing into the PLC' },
+    // "Write Complete"; then CLICK may ask to put the PLC back in RUN
+    ...answer('^OK$'),
+    ...answer(w.runAfter ? '^(Yes|OK)$' : '^(No|Cancel)$'),
+  ];
+}
+
 /** The project set up: CPU, nicknames, the ladder editor ready for the rungs (modules: modulesLine, after the run). */
 export function setupPlan(o: { cpuId: string; nicknameCsvPath: string }): ClickStep[] {
   return [...newProjectPlan(o.cpuId), ...nicknamePlan(o.nicknameCsvPath), ...editorPlan()];

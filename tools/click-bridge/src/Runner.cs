@@ -88,6 +88,12 @@ namespace ClickBridge
         public string ShotFolder;
         /// <summary>The CLICK version, for the messages ("CLICK 4.00: …").</summary>
         public string Version = "";
+        /// <summary>The app's own machines folder, set only for the Write to PLC run the user confirmed in the app: that
+        /// run may save the project (CLICK writes a saved project), and only there (every file name it types is in
+        /// it). Null for every other run: a save is refused.</summary>
+        public string SaveIn;
+        /// <summary>What a failure says was left as it was.</summary>
+        string Kept => SaveIn != null ? "Check in CLICK what was saved and written before trying again." : "Nothing was saved.";
         string _window;
         /// <summary>The windows already recorded in the log in this run (each once per run).</summary>
         readonly HashSet<string> _recorded = new HashSet<string>();
@@ -106,9 +112,19 @@ namespace ClickBridge
             if ((s.Do == "click" || s.Do == "doubleClick" || s.Do == "select") && s.Find?.Name != null && SaveName.IsMatch(s.Find.Name.TrimStart('^'))) throw new BridgeError("The plan has a step that would press Save; the app never saves for you.");
         }
 
+        /// <summary>In the confirmed Write to PLC run: a file name typed must be in the app's machines folder.</summary>
+        public static void GuardFolder(Step s, string folder)
+        {
+            foreach (var o in s.Options ?? new List<KeyValuePair<string, List<Step>>>()) foreach (var x in o.Value) GuardFolder(x, folder);
+            var root = folder.TrimEnd('\\', '/') + "\\";
+            if (s.Do == "setText" && s.Text != null && Regex.IsMatch(s.Text, @"^[A-Za-z]:\\|^\\\\") && (!s.Text.StartsWith(root, StringComparison.OrdinalIgnoreCase) || s.Text.Contains("..")))
+                throw new BridgeError($"The plan would save outside the app's machines folder ({s.Text}); the app saves only there.");
+        }
+
         public int Run(IList<Step> steps)
         {
-            foreach (var s in steps) Guard(s);
+            if (SaveIn == null) foreach (var s in steps) Guard(s);
+            else foreach (var s in steps) GuardFolder(s, SaveIn);
             try { _before = new HashSet<string>(_ui.Windows(_pid)); } catch (Exception) { _before = new HashSet<string>(); }
             try { Exec(steps); }
             // Stop keeps CLICK as it is (the user may keep what was entered); a failure closes what the run opened
@@ -161,7 +177,7 @@ namespace ClickBridge
                     if (main != null) { try { _ui.Keys(main, "{ESC}"); } catch (Exception) { /* nothing open */ } }
                 }
             }
-            throw new BridgeError($"{Ver}: could not find {s.What} (tried: {string.Join(", ", tried)}). Nothing was saved.");
+            throw new BridgeError($"{Ver}: could not find {s.What} (tried: {string.Join(", ", tried)}). {Kept}");
         }
 
         /// <summary>CLICK's main window (the plans' CLICK_MAIN).</summary>
@@ -212,7 +228,7 @@ namespace ClickBridge
 
         void Stopped(int i)
         {
-            if (_stop.IsCancellationRequested) throw new StoppedError($"Stopped at step {i + 1}, as you asked. Nothing was saved: close CLICK without saving, or keep what was entered and save it yourself.");
+            if (_stop.IsCancellationRequested) throw new StoppedError(SaveIn != null ? $"Stopped at step {i + 1}, as you asked. {Kept}" : $"Stopped at step {i + 1}, as you asked. Nothing was saved: close CLICK without saving, or keep what was entered and save it yourself.");
         }
 
         /// <summary>Waits while another window is in front (the user is doing something else); stops on Stop.</summary>
@@ -229,7 +245,7 @@ namespace ClickBridge
             while (_ui.ForegroundProcess() != _pid)
             {
                 Stopped(i);
-                if (waited >= PauseLimitMs) throw new BridgeError($"CLICK was not brought back to the front for {PauseLimitMs / 60000} minutes: stopped at step {i + 1}. Nothing was saved.");
+                if (waited >= PauseLimitMs) throw new BridgeError($"CLICK was not brought back to the front for {PauseLimitMs / 60000} minutes: stopped at step {i + 1}. {Kept}");
                 Thread.Sleep(PollMs);
                 waited += PollMs;
             }
@@ -287,7 +303,7 @@ namespace ClickBridge
             while (_ui.Window(_pid, s.Title, 0) != null)
             {
                 Stopped(i);
-                if (waited >= PauseLimitMs) throw new BridgeError($"The window \"{s.Title}\" stayed open for {PauseLimitMs / 60000} minutes: stopped at step {i + 1}. Nothing was saved.");
+                if (waited >= PauseLimitMs) throw new BridgeError($"The window \"{s.Title}\" stayed open for {PauseLimitMs / 60000} minutes: stopped at step {i + 1}. {Kept}");
                 Thread.Sleep(PollMs);
                 waited += PollMs;
             }
@@ -304,7 +320,7 @@ namespace ClickBridge
             {
                 Stopped(i);
                 waited += 100;
-                if (waited >= PauseLimitMs) throw new BridgeError($"Nobody pressed Continue for {PauseLimitMs / 60000} minutes: stopped at step {i + 1}. Nothing was saved.");
+                if (waited >= PauseLimitMs) throw new BridgeError($"Nobody pressed Continue for {PauseLimitMs / 60000} minutes: stopped at step {i + 1}. {Kept}");
             }
             Log.Write("the user pressed Continue");
         }
@@ -321,7 +337,7 @@ namespace ClickBridge
             Log.Write($"step {i + 1} ({s}) failed: {why}. Windows: {open}");
             RecordAll();
             // one plain sentence for the user; the details are in the log
-            return new BridgeError($"{Ver}: could not {(s.Say != null ? $"do \"{s.Say}\"" : $"do step {i + 1}")} ({why}). Nothing was saved.");
+            return new BridgeError($"{Ver}: could not {(s.Say != null ? $"do \"{s.Say}\"" : $"do step {i + 1}")} ({why}). {Kept}");
         }
     }
 }

@@ -55,6 +55,7 @@ const FAKE = () => {
       },
       logPath: async () => 'C:\\Users\\tech\\AppData\\Roaming\\ISA Auto Programmer\\logs\\click-bridge.log',
       showLog: async () => { window.__click.shownLog = true; return true; },
+      machinesFolder: async () => 'C:\\Users\\tech\\Documents\\ISA Auto Programmer\\machines',
       onProgress: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
     },
   };
@@ -126,7 +127,24 @@ const FAKE = () => {
   log('done:', done.replace(/\s+/g, ' ').slice(0, 300));
   check(/Done in CLICK 3\.71: a new project with the CPU C0-\S+, the nicknames imported, 39 of 42 rungs entered\./.test(done), 'done: what is in CLICK');
   check(/Still to do in CLICK:/.test(done) && /Type rung 13 from the entry sheet \(Load into PLC\) after rung 12/.test(done) && (done.match(/Type rung \d+/g) ?? []).length === 3, 'the rungs left for you, each with the rung it goes after');
-  check(/save the project there \(Ctrl\+S\)/.test(done), 'done: the user saves in CLICK');
+  check(/write it into the machine/.test(done), 'done: next, write it into the machine');
+
+  // Write to the machine: asked first (nothing runs before Yes), then one run that may save (the desktop app sets
+  // the folder), the project saved as the app's own copy, connected, written
+  const callsBefore = (await page.evaluate(() => window.__click.calls)).length;
+  await dialog.getByTestId('click-write').click();
+  const ask = await dialog.getByTestId('click-write-confirm').innerText();
+  check(/Write this project into the machine\?/.test(ask) && /your files are not touched/.test(ask) && /safe to stop/.test(ask), 'write: asked first, what happens said');
+  check((await page.evaluate(() => window.__click.calls)).length === callsBefore, 'write: nothing runs before Yes');
+  await dialog.getByTestId('click-port-Ethernet').check();
+  await dialog.getByTestId('click-write-yes').click();
+  await dialog.getByTestId('click-written').or(dialog.getByTestId('click-failed')).waitFor({ timeout: 60000 });
+  const wrun = (await page.evaluate(() => window.__click.calls)).filter((c) => c.cmd === 'run').at(-1);
+  check(wrun.args.write === true && !('saveIn' in wrun.args), 'write: the run asks to write; the folder is not the page\'s to set');
+  const ws = flat(wrun.args.steps);
+  check(ws.some((x) => x.do === 'setText' && x.text === 'C:\\Users\\tech\\Documents\\ISA Auto Programmer\\machines\\Conveyor_Cell_example.ckp'), 'write: saved as the app\'s own copy in its machines folder');
+  check(ws.some((x) => x.do === 'select' && x.item === '^Ethernet$') && ws.some((x) => x.do === 'doubleClick' && /Write Project into PLC/.test(x.find?.name ?? '')), 'write: connected by Ethernet, Write Project into PLC');
+  check(/Written into the machine/.test(await dialog.getByTestId('click-written').innerText()), 'write: done said');
 
   // A failure: one plain sentence, the log for support with Open log folder.
   // the New project step: step 4, after the What's New guide's two optional steps
