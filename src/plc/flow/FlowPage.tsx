@@ -61,7 +61,16 @@ export default function FlowPage() {
     const tags = new Map(ladder.tags.map((t) => [t.address.toUpperCase(), t.nickname]));
     return (a: string) => labels.get(a) || tags.get(a.toUpperCase()) || a;
   }, [labels, ladder.tags]);
-  const map = useMemo(() => flowMap(ladder, nameOf), [ladder, nameOf]);
+  // which addresses are the machine's real inputs and outputs (the I/O list), with their descriptions: shown in each
+  // box that reads or switches them; X / Y of a program without an I/O list count too
+  const [showIo, setShowIo] = useState(true);
+  const [showNotes, setShowNotes] = useState(true);
+  const ioOf = useMemo(() => {
+    const points = new Map<string, { dir: 'in' | 'out'; name: string }>();
+    for (const p of io) { const a = addresses.get(p.id); if (a) points.set(a.toUpperCase(), { dir: p.type === 'input' ? 'in' : 'out', name: p.description || nameOf(a) }); }
+    return (a: string) => points.get(a.toUpperCase()) ?? (/^X\d+$/i.test(a) ? { dir: 'in' as const, name: nameOf(a) } : /^Y\d+$/i.test(a) ? { dir: 'out' as const, name: nameOf(a) } : null);
+  }, [io, addresses, nameOf]);
+  const map = useMemo(() => flowMap(ladder, nameOf, { io: showIo ? ioOf : undefined, notes: showNotes }), [ladder, nameOf, ioOf, showIo, showNotes]);
   const timeouts = useMemo(() => sequenceTimeouts(ladder, map), [ladder, map]);
   // the diagrams as a PDF, to show another programmer how the machine works
   const projectName = useProgramStore((s) => s.projectName);
@@ -269,6 +278,8 @@ export default function FlowPage() {
         <div className="flex items-center gap-1" aria-label="Window">
           {[
             [showList ? 'Hide list' : 'Show list', () => setShowList((v) => !v), 'flow-toggle-list'],
+            [showIo ? 'Hide I/O' : 'Show I/O', () => setShowIo((v) => !v), 'flow-toggle-io'],
+            [showNotes ? 'Hide comments' : 'Show comments', () => setShowNotes((v) => !v), 'flow-toggle-notes'],
             [side === 'hidden' ? 'Show ladder' : 'Hide ladder', () => setSide((v) => (v === 'hidden' ? 'shown' : 'hidden')), 'flow-toggle-side'],
             [side === 'max' ? 'Ladder normal' : 'Ladder big', () => setSide((v) => (v === 'max' ? 'shown' : 'max')), 'flow-ladder-max'],
           ].map(([t, f, id]) => (
@@ -310,7 +321,7 @@ export default function FlowPage() {
           <button type="button" onClick={() => canvas.current?.fit()} className="mt-2 w-full px-3 py-1 text-left text-xs text-brand-700 underline">Whole program</button>
         </nav>}
         <div className={`min-w-0 flex-1 ${side === 'max' ? 'hidden' : ''}`}>
-          <FlowCanvas ref={canvas} map={map} state={state} selected={sel?.n?.id ?? null} hits={hits} onPick={(d, n) => { setSel({ d, n }); if (!n) canvas.current?.show(d.id); }} />
+          <FlowCanvas ref={canvas} map={map} state={state} bits={values?.bits} selected={sel?.n?.id ?? null} hits={hits} onPick={(d, n) => { setSel({ d, n }); if (!n) canvas.current?.show(d.id); }} />
         </div>
         {side !== 'hidden' && <ResizablePane id="flow.side" defaultSize={440} min={300} max={2000} handle="left" fill={side === 'max'} className="overflow-auto border-l border-steel-200 bg-white p-3 text-sm">
         <aside data-testid="flow-side">

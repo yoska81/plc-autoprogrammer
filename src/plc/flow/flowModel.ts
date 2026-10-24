@@ -25,8 +25,30 @@ export interface FlowNode {
   rungIds: string[];
   /** A step's value in its register (steps only). */
   step?: number;
+  /** The real inputs it reads and the outputs it switches (drawn in the box, under the lines). */
+  io?: FlowIo[];
+  /** Its rungs' comments, beside it as "// …" (laid out here: canvas and PDF draw the same). */
+  note?: { x: number; y: number; lines: string[]; /** Where its leader starts: the right edge of its row (an IF's THEN box). */ ax: number };
   x: number; y: number; w: number; h: number;
 }
+
+/** A real input or output a box uses: read in its conditions, or switched by its actions. */
+export interface FlowIo {
+  address: string;
+  dir: 'in' | 'out';
+  /** reads: a condition; drives: an output it switches. */
+  role: 'reads' | 'drives';
+  /** The point's name (its I/O description, or its tag name). */
+  name: string;
+  /** What the box needs or does: "ON", "OFF", "turns ON", "sets ON", "sets OFF", "rising". */
+  what: string;
+}
+
+/** A real I/O point of the project: its direction and description; null for an internal bit or word. */
+export type IoOf = (address: string) => { dir: 'in' | 'out'; name: string } | null;
+
+/** Options for the diagrams: which addresses are real I/O, and whether comments are written beside the boxes. */
+export interface FlowOpts { io?: IoOf; notes?: boolean }
 
 export interface FlowEdge {
   id: string;
@@ -145,8 +167,50 @@ const stepOf = (br: LadderElement[], reg: string): number | null => {
 const isStepCmp = (reg: string) => (el: LadderElement) => el.type === 'CMP' && norm(el.left) === reg;
 
 // sizes
-const STEP_W = 240, STEP_H = 64, DEC_W = 240, DEC_H = 96, ACT_W = 260, GAP = 30, LINE_H = 15;
-const boxH = (lines: number, min: number) => Math.max(min, 34 + lines * LINE_H);
+const STEP_W = 240, STEP_H = 64, DEC_W = 270, DEC_H = 96, ACT_W = 260, GAP = 30, LINE_H = 15;
+/** An I/O row's height, and the comments' column (its width, its gap from the boxes, its characters per line). */
+export const IO_H = 17;
+const NOTE_W = 330, NOTE_GAP = 24, NOTE_CHARS = 44, NOTE_LINE = 14, NOTE_MAX = 5;
+const boxH = (lines: number, min: number, io = 0) => Math.max(min, 34 + lines * LINE_H + (io ? 6 + io * IO_H : 0));
+
+/** The I/O a rung's conditions read, once each, in order. */
+function ioReads(branches: LadderElement[][], io: IoOf | undefined): FlowIo[] {
+  if (!io) return [];
+  const out: FlowIo[] = [];
+  for (const br of branches) for (const el of br) {
+    if (el.type !== 'NO' && el.type !== 'NC' && el.type !== 'RISE' && el.type !== 'FALL') continue;
+    const p = io(el.address);
+    if (!p || out.some((x) => norm(x.address) === norm(el.address))) continue;
+    out.push({ address: el.address, dir: p.dir, role: 'reads', name: p.name, what: el.type === 'NO' ? 'ON' : el.type === 'NC' ? 'OFF' : el.type === 'RISE' ? 'turns ON' : 'turns OFF' });
+  }
+  return out;
+}
+
+/** The outputs a rung's actions switch (and an I/O word it writes). */
+function ioDrives(outputs: LadderOutput[], io: IoOf | undefined): FlowIo[] {
+  if (!io) return [];
+  const out: FlowIo[] = [];
+  for (const o of outputs) {
+    const a = o.type === 'OUT' || o.type === 'SET' || o.type === 'RST' ? o.address : o.type === 'COPY' || o.type === 'MATH' ? o.dest : null;
+    if (!a) continue;
+    const p = io(a);
+    if (!p || out.some((x) => norm(x.address) === norm(a))) continue;
+    out.push({ address: a, dir: p.dir, role: 'drives', name: p.name, what: o.type === 'OUT' ? 'turns ON' : o.type === 'SET' ? 'sets ON (stays)' : o.type === 'RST' ? 'sets OFF' : 'writes' });
+  }
+  return out;
+}
+
+/** A comment wrapped to the comments' column. */
+function wrapNote(text: string): string[] {
+  const words = text.replace(/\s+/g, ' ').trim().split(' ');
+  const lines: string[] = [];
+  let line = '';
+  for (const w of words) {
+    if (line && line.length + 1 + w.length > NOTE_CHARS) { lines.push(line); line = w; } else line = line ? `${line} ${w}` : w;
+  }
+  if (line) lines.push(line);
+  return lines.length > NOTE_MAX ? [...lines.slice(0, NOTE_MAX - 1), `${lines[NOTE_MAX - 1].slice(0, NOTE_CHARS - 1)}…`] : lines;
+}
 
 interface Transition { from: number | null; to: number; rung: Rung; branch: LadderElement[] }
 
@@ -195,7 +259,9 @@ function stepName(step: number, transitions: Transition[]): string {
 }
 
 /** One function's diagram, laid out from (0, 0). */
-export function diagramOf(id: string, name: string, description: string, rungs: Rung[], nameOf: NameOf): FlowDiagram {
+export function diagramOf(id: string, name: string, description: string, rungs: Rung[], nameOf: NameOf, opts: FlowOpts = {}): FlowDiagram {
+  const io = opts.io;
+  const comments = new Map<string, string>();
   const nodes: FlowNode[] = [];
   const edges: FlowEdge[] = [];
   let y = 70;
@@ -212,8 +278,11 @@ export function diagramOf(id: string, name: string, description: string, rungs: 
     const fromAny = seq.transitions.filter((t) => t.from === null);
     for (const t of fromAny) {
       const lines = conditionLines([t.branch], nameOf, isStepCmp(reg));
-      const h = boxH(lines.length + 1, DEC_H);
-      nodes.push({ id: `${id}:any:${t.rung.id}:${t.to}`, kind: 'any', title: `From any step → ${stepName(t.to, seq.transitions)}`, lines, rungIds: [t.rung.id], x: 30, y, w: DEC_W + 40 + ACT_W, h });
+      const ios = ioReads([t.branch], io);
+      const h = boxH(lines.length + 1, DEC_H, ios.length);
+      const nid = `${id}:any:${t.rung.id}:${t.to}`;
+      if (t.rung.comment) comments.set(nid, t.rung.comment);
+      nodes.push({ id: nid, kind: 'any', title: `From any step → ${stepName(t.to, seq.transitions)}`, lines, rungIds: [t.rung.id], ...(ios.length ? { io: ios } : {}), x: 30, y, w: DEC_W + 40 + ACT_W, h });
       y += h + GAP;
     }
     // steps top to bottom, each followed by what it waits for
@@ -221,17 +290,23 @@ export function diagramOf(id: string, name: string, description: string, rungs: 
     seq.steps.forEach((s, i) => {
       const acts = (seq.acting.get(s) ?? []).flatMap((r) => r.outputs.map((o) => clip(actionText(o, nameOf))));
       const lines = acts.length ? acts : ['(waits)'];
-      const h = boxH(lines.length, STEP_H);
-      const node: FlowNode = { id: `${id}:step:${s}`, kind: 'step', title: `${s} · ${stepName(s, seq.transitions)}`, lines, rungIds: (seq.acting.get(s) ?? []).map((r) => r.id), step: s, x: cx - STEP_W / 2, y, w: STEP_W, h };
+      const acting = seq.acting.get(s) ?? [];
+      const ios = ioDrives(acting.flatMap((r) => r.outputs), io);
+      const h = boxH(lines.length, STEP_H, ios.length);
+      const node: FlowNode = { id: `${id}:step:${s}`, kind: 'step', title: `${s} · ${stepName(s, seq.transitions)}`, lines, rungIds: acting.map((r) => r.id), step: s, ...(ios.length ? { io: ios } : {}), x: cx - STEP_W / 2, y, w: STEP_W, h };
+      const said = acting.map((r) => r.comment.trim()).filter(Boolean);
+      if (said.length) comments.set(node.id, [...new Set(said)].join(' · '));
       nodes.push(node);
       stepNode.set(s, node);
       y += h + GAP;
       const outs = seq.transitions.filter((t) => t.from === s);
       outs.forEach((t, k) => {
         const lines2 = conditionLines([t.branch], nameOf, isStepCmp(reg));
-        const dh = boxH(lines2.length, DEC_H);
+        const ios = ioReads([t.branch], io);
+        const dh = boxH(lines2.length, DEC_H, ios.length);
         const dx = k === 0 ? cx - DEC_W / 2 : 30 + DEC_W + 40 + (k - 1) * (DEC_W + 30);
-        const dnode: FlowNode = { id: `${id}:dec:${s}:${k}:${t.rung.id}`, kind: 'decision', title: `→ ${t.to} · ${stepName(t.to, seq.transitions)}`, lines: lines2, rungIds: [t.rung.id], x: dx, y: k === 0 ? y : node.y, w: DEC_W, h: dh };
+        const dnode: FlowNode = { id: `${id}:dec:${s}:${k}:${t.rung.id}`, kind: 'decision', title: `→ ${t.to} · ${stepName(t.to, seq.transitions)}`, lines: lines2, rungIds: [t.rung.id], ...(ios.length ? { io: ios } : {}), x: dx, y: k === 0 ? y : node.y, w: DEC_W, h: dh };
+        if (t.rung.comment) comments.set(dnode.id, t.rung.comment);
         nodes.push(dnode);
         decisions.push({ t, node: dnode });
         width = Math.max(width, dx + DEC_W + 30);
@@ -268,20 +343,39 @@ export function diagramOf(id: string, name: string, description: string, rungs: 
     if (used.has(r.id)) continue;
     const lines = r.branches.length ? conditionLines(r.branches, nameOf) : ['always'];
     const acts = r.outputs.map((o) => clip(actionText(o, nameOf)));
-    const h = Math.max(boxH(lines.length, DEC_H), boxH(acts.length, STEP_H));
-    const dec: FlowNode = { id: `${id}:if:${r.id}`, kind: 'decision', title: r.comment ? clip(r.comment, 28) : 'IF', lines, rungIds: [r.id], x: cx - DEC_W / 2, y, w: DEC_W, h };
-    const act: FlowNode = { id: `${id}:then:${r.id}`, kind: 'action', title: 'THEN', lines: acts.length ? acts : ['(nothing)'], rungIds: [r.id], x: cx + DEC_W / 2 + 40, y: y + (h - boxH(acts.length, STEP_H)) / 2, w: ACT_W, h: boxH(acts.length, STEP_H) };
+    const reads = ioReads(r.branches, io), drives = ioDrives(r.outputs, io);
+    const ah = boxH(acts.length, STEP_H, drives.length);
+    const h = Math.max(boxH(lines.length, DEC_H, reads.length), ah);
+    const dec: FlowNode = { id: `${id}:if:${r.id}`, kind: 'decision', title: r.comment ? clip(r.comment, 28) : 'IF', lines, rungIds: [r.id], ...(reads.length ? { io: reads } : {}), x: cx - DEC_W / 2, y, w: DEC_W, h };
+    const act: FlowNode = { id: `${id}:then:${r.id}`, kind: 'action', title: 'THEN', lines: acts.length ? acts : ['(nothing)'], rungIds: [r.id], ...(drives.length ? { io: drives } : {}), x: cx + DEC_W / 2 + 40, y: y + (h - ah) / 2, w: ACT_W, h: ah };
+    if (r.comment) comments.set(dec.id, r.comment);
     nodes.push(dec, act);
     edges.push({ id: `${act.id}:yes`, from: dec.id, to: act.id, label: 'YES', points: [[dec.x + dec.w, dec.y + h / 2], [act.x, dec.y + h / 2]] });
     if (prev) edges.push({ id: `${dec.id}:next`, from: prev.id, to: dec.id, label: prev.kind === 'decision' ? 'NEXT' : undefined, points: [[cx, prev.y + prev.h], [cx, dec.y]] });
     prev = dec;
     y += h + GAP;
   }
+  // the comments, in a column right of the boxes, each level with its box (pushed down past the one above)
+  if (opts.notes && comments.size) {
+    const right = Math.max(width - 30, ...nodes.map((n) => n.x + n.w));
+    let below = 0;
+    for (const n of [...nodes].sort((a, b) => a.y - b.y || a.x - b.x)) {
+      const text = comments.get(n.id);
+      if (!text) continue;
+      const lines = wrapNote(text);
+      const ny = Math.max(n.y + 6, below);
+      const ax = Math.max(...nodes.filter((m) => m.rungIds.some((r) => n.rungIds.includes(r)) && Math.abs(m.y + m.h / 2 - (n.y + n.h / 2)) < n.h).map((m) => m.x + m.w), n.x + n.w);
+      n.note = { x: right + NOTE_GAP, y: ny, lines, ax };
+      below = ny + lines.length * NOTE_LINE + 10;
+    }
+    width = right + NOTE_GAP + NOTE_W;
+    y = Math.max(y, below + 10);
+  }
   return { id, name, description, register: reg, rungCount: rungs.length, nodes, edges, x: 0, y: 0, w: width, h: Math.max(y + 20, 160) };
 }
 
 /** The whole program: one diagram per block, in program order, laid out in rows across the map. */
-export function flowMap(program: LadderProgram, nameOf: NameOf, opts: { rowWidth?: number } = {}): FlowMap {
+export function flowMap(program: LadderProgram, nameOf: NameOf, opts: { rowWidth?: number } & FlowOpts = {}): FlowMap {
   const groups = new Map<string, Rung[]>();
   for (const r of program.rungs) {
     const k = r.block ?? '';
@@ -292,7 +386,7 @@ export function flowMap(program: LadderProgram, nameOf: NameOf, opts: { rowWidth
   const order = [...blocks.map((b) => b.id).filter((id) => groups.has(id)), ...[...groups.keys()].filter((k) => !blocks.some((b) => b.id === k))];
   const diagrams = order.map((k) => {
     const b = blocks.find((x) => x.id === k);
-    return diagramOf(k, b?.name ?? (k || 'General'), b?.description ?? '', groups.get(k)!, nameOf);
+    return diagramOf(k, b?.name ?? (k || 'General'), b?.description ?? '', groups.get(k)!, nameOf, opts);
   });
   // rows: diagrams side by side until the row is full, then the next row below
   const rowWidth = opts.rowWidth ?? 4000;

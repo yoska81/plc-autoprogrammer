@@ -24,9 +24,10 @@ seedSampleProject();
 const p = collectProject();
 const nameOf = (a: string) => p.labels.get(a) ?? p.ladder.tags.find((t) => t.address === a)?.nickname ?? a;
 const map = flowMap(p.ladder, nameOf);
+const ioOf = (a: string) => (/^X\d+$/.test(a) ? { dir: 'in' as const, name: nameOf(a) } : /^Y\d+$/.test(a) ? { dir: 'out' as const, name: nameOf(a) } : null);
 
 // bands: cover the diagram, and no box is cut where a page ends
-for (const d of map.diagrams) {
+for (const d of [...map.diagrams, ...flowMap(p.ladder, nameOf, { io: ioOf, notes: true }).diagrams]) {
   const bs = bands(d, 600);
   assert.equal(bs[0][0], 0);
   assert.equal(bs[bs.length - 1][1], d.h);
@@ -36,8 +37,9 @@ for (const d of map.diagrams) {
 
 const pdfText = async (b: Blob) => Buffer.from(await b.arrayBuffer()).toString('latin1');
 const changed = { ...p.ladder, rungs: p.ladder.rungs.map((r, i) => (i === 0 ? { ...r, comment: `${r.comment} (edited)` } : r)) };
+// the boxes with their real inputs / outputs and their comments beside them (as the page shows them)
 const blob = await buildFlowPdf({
-  projectName: 'Example', plcName: 'AutomationDirect CLICK', program: changed, map: flowMap(changed, nameOf), nameOf,
+  projectName: 'Example', plcName: 'AutomationDirect CLICK', program: changed, map: flowMap(changed, nameOf, { io: ioOf, notes: true }), nameOf,
   io: [{ address: 'X001', description: 'E-stop OK', kind: 'Input' }, { address: 'Y001', description: 'Conveyor motor', kind: 'Output' }],
   changes: flowChanges(p.ladder, changed, nameOf), date: '2026-10-24', compress: false,
 });
@@ -45,7 +47,7 @@ const raw = await pdfText(blob);
 const pages = (raw.match(/\/Type \/Page\b/g) ?? []).length;
 assert.ok(raw.startsWith('%PDF-'), 'a PDF');
 assert.ok(pages >= map.diagrams.length + 2, `a page or more per function (${pages} pages, ${map.diagrams.length} functions)`);
-for (const s of ['How to read the diagrams', 'Machine map', 'I/O list', 'Alarms and faults', 'What was changed', 'The ladder of']) assert.ok(raw.includes(s), `has "${s}"`);
+for (const s of ['How to read the diagrams', 'Machine map', 'I/O list', 'Alarms and faults', 'What was changed', 'The ladder of', 'IN / OUT rows', '(OUT Y003 ', '(// Main air dump valve']) assert.ok(raw.includes(s), `has "${s}"`);
 if (out) writeFileSync(join(out, 'flow-example.pdf'), Buffer.from(await blob.arrayBuffer()));
 
 // one function only: its diagram and ladder, still the map and the lists

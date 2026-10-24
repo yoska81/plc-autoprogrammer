@@ -8,7 +8,7 @@ import type { jsPDF } from 'jspdf';
 import type { LadderElement, LadderOutput, LadderProgram, Rung } from '../core/ladder';
 import { ACCENT, BRAND, INK, MUTED, PdfWriter, pdfSafe, type RGB } from '../../deliverables/docs/pdfWriter';
 import { rungWords, type FlowChange } from './flowEdit';
-import type { FlowDiagram, FlowMap, FlowNode, NameOf } from './flowModel';
+import { IO_H, type FlowDiagram, type FlowMap, type FlowNode, type NameOf } from './flowModel';
 
 export interface FlowPdfInput {
   projectName: string;
@@ -34,6 +34,7 @@ const STEP_FILL: RGB = [220, 252, 231], STEP_LINE: RGB = [22, 101, 52];
 const DEC_FILL: RGB = [254, 249, 195], DEC_LINE: RGB = [161, 98, 7];
 const ACT_FILL: RGB = [224, 242, 254], ACT_LINE: RGB = [3, 105, 161];
 const EDGE: RGB = [120, 132, 148];
+const IN_FILL: RGB = [224, 242, 254], IN_INK: RGB = [3, 105, 161], OUT_FILL: RGB = [255, 237, 213], OUT_INK: RGB = [194, 65, 12];
 const PX_MAX = 0.3; // mm per diagram unit at most (12 px text ≈ 10 pt)
 
 /** A diagram's vertical bands, one per page: each ends between boxes (a box is never cut). */
@@ -46,7 +47,11 @@ export function bands(d: FlowDiagram, bandH: number): [number, number][] {
       // move the cut up above any box it would cross
       for (let moved = true; moved;) {
         moved = false;
-        for (const n of d.nodes) if (n.y - 8 < y1 && n.y + n.h + 8 > y1 && n.y - 8 > y0) { y1 = n.y - 8; moved = true; }
+        for (const n of d.nodes) {
+          // a box with its comment beside it: neither cut
+          const top = Math.min(n.y, n.note?.y ?? n.y), bottom = Math.max(n.y + n.h, n.note ? n.note.y + n.note.lines.length * 14 + 4 : 0);
+          if (top - 8 < y1 && bottom + 8 > y1 && top - 8 > y0) { y1 = top - 8; moved = true; }
+        }
       }
       if (y1 <= y0 + 20) y1 = Math.min(d.h, y0 + bandH); // a box taller than a page: cut it
     }
@@ -91,6 +96,25 @@ function drawNode(doc: jsPDF, n: FlowNode, X: (x: number) => number, Y: (y: numb
     doc.setTextColor(...(l === '— OR —' ? MUTED : INK));
     doc.text(fit(l), x + pad, y + (36 + i * 15) * k);
   });
+  // the real inputs it reads (blue) and the outputs it switches (orange), as on the screen
+  n.io?.forEach((io, i) => {
+    const ry = y + (34 + n.lines.length * 15 + 6 + i * IO_H) * k;
+    const [fill, ink] = io.dir === 'in' ? [IN_FILL, IN_INK] : [OUT_FILL, OUT_INK];
+    doc.setFillColor(...fill); doc.setDrawColor(...ink); doc.setLineWidth(0.15);
+    doc.roundedRect(x + pad - 4 * k, ry, w - 2 * pad + 8 * k, (IO_H - 3) * k, 1, 1, 'FD');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10 * k / 0.3528); doc.setTextColor(...ink);
+    doc.text(fit(`${io.dir === 'in' ? 'IN' : 'OUT'} ${io.address} ${io.name} — ${io.what}`), x + pad, ry + 10.5 * k);
+  });
+}
+
+/** A box's comment beside it, as // … (monospace, grey), with its dotted leader. */
+function drawNote(doc: jsPDF, n: FlowNode, X: (x: number) => number, Y: (y: number) => number, k: number): void {
+  if (!n.note) return;
+  doc.setDrawColor(...EDGE); doc.setLineWidth(0.15); doc.setLineDashPattern([0.5, 0.8], 0);
+  doc.line(X(n.note.ax), Y(n.y + 14), X(n.note.x - 6), Y(n.note.y + 6));
+  doc.setLineDashPattern([], 0);
+  doc.setFont('courier', 'normal'); doc.setFontSize(11 * k / 0.3528); doc.setTextColor(...MUTED);
+  n.note.lines.forEach((l, i) => doc.text(pdfSafe(`// ${l}`), X(n.note!.x), Y(n.note!.y + 10 + i * 14)));
 }
 
 /** A function's diagram over as many pages as it needs, scaled to the page width. */
@@ -128,7 +152,7 @@ function drawDiagram(w: PdfWriter, d: FlowDiagram): void {
         doc.text(pdfSafe(e.label), X(lx) + 4 * k, Y(ly) - 4 * k);
       }
     }
-    for (const n of d.nodes) if (n.y < y1 && n.y + n.h > y0) drawNode(doc, n, X, Y, k);
+    for (const n of d.nodes) if (n.y < y1 && n.y + n.h > y0) { drawNode(doc, n, X, Y, k); drawNote(doc, n, X, Y, k); }
     doc.restoreGraphicsState();
     w.y = top + (y1 - y0) * k + 3;
     if (list.length > 1) {
@@ -243,6 +267,8 @@ const LEGEND: [string, string][] = [
   ['Step (green, rounded)', 'A stage of the machine\'s cycle, by its number and name (the step register holds it). Inside: what the machine does in that step.'],
   ['Diamond (yellow)', 'An IF: the conditions to go on. In a step sequence: the way out of a step to the next one. Elsewhere: a rung\'s conditions.'],
   ['Box (blue)', 'THEN: what the PLC turns on, off, starts or sets when the IF before it is true.'],
+  ['IN / OUT rows', 'Inside a box: the real inputs it reads (blue, with the state it needs) and the outputs it switches (orange, with what it does), by address and name.'],
+  ['// text', 'Beside a box: the comment of its rungs, as a programmer writes it in the code.'],
   ['Dashed box', 'From any step: a way that leaves whichever step is running (a stop, a fault).'],
   ['Arrows', 'The order things happen. YES / NO on an arrow: which way the IF goes. Dashed arrows go back up (the cycle repeats).'],
   ['Ladder', 'After each diagram: the same rungs drawn as ladder. Symbols on a row are in series (AND); rows under each other are parallel (OR). Under each rung: the same logic in words.'],

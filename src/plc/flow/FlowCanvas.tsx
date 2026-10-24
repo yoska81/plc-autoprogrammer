@@ -5,7 +5,7 @@
  * one box: a program of thousands of rungs stays quick.
  */
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, forwardRef } from 'react';
-import type { FlowDiagram, FlowMap, FlowNode } from './flowModel';
+import { IO_H, type FlowDiagram, type FlowIo, type FlowMap, type FlowNode } from './flowModel';
 import type { FlowState, NodeState } from './flowState';
 
 export interface FlowCanvasHandle {
@@ -21,10 +21,42 @@ const STROKE: Record<NodeState | 'none', string> = { active: '#16a34a', true: '#
 /** Zoomed out further than this, each function is one box. */
 const DETAIL_K = 0.32;
 
+/** I/O rows: an input (blue) or an output (orange); filled while it is ON (Test, Watch). */
+const IO_COLOR = { in: ['#e0f2fe', '#0369a1'], out: ['#ffedd5', '#c2410c'] } as const;
+
+/** What a box does to an output, in words ("turns ON" → "turns it ON"). */
+const DOES: Record<string, string> = { 'turns ON': 'turns it ON (OFF again when the conditions go)', 'sets ON (stays)': 'sets it ON (it stays ON until a reset)', 'sets OFF': 'sets it OFF', writes: 'writes its value' };
+
+/** One real input or output of a box: IN / OUT, its address and name, what the box needs or does with it. */
+function IoRow({ io, x, y, w, on }: { io: FlowIo; x: number; y: number; w: number; on: boolean | undefined }) {
+  const [fill, ink] = IO_COLOR[io.dir];
+  const text = `${io.dir === 'in' ? 'IN' : 'OUT'} ${io.address} ${io.name} — ${io.what}`;
+  const max = Math.floor((w - 10) / 5.9);
+  return (
+    <g data-io={io.address}>
+      <rect x={x} y={y} width={w} height={IO_H - 3} rx={4} fill={on ? ink : fill} stroke={ink} strokeWidth={0.8} />
+      <text x={x + 5} y={y + 10.5} fontSize={10} fontWeight={600} fill={on ? '#ffffff' : ink}>{text.length > max ? `${text.slice(0, max - 1)}…` : text}</text>
+      <title>{`${io.dir === 'in' ? 'Input' : 'Output'} ${io.address} — ${io.name}: ${io.role === 'reads' ? `this box needs it ${io.what}` : `this box ${DOES[io.what] ?? io.what}`}${on === undefined ? '' : on ? ' (ON now)' : ' (OFF now)'}`}</title>
+    </g>
+  );
+}
+
+/** A box's comment beside it, as // … (its own layer: not part of the box's click area). */
+function Note({ n }: { n: FlowNode }) {
+  if (!n.note) return null;
+  const { x, y, lines } = n.note;
+  return (
+    <g data-note={n.id} pointerEvents="none">
+      <line x1={n.note.ax} y1={n.y + 14} x2={x - 6} y2={y + 6} stroke="#cbd5e1" strokeDasharray="2 3" />
+      {lines.map((l, i) => <text key={i} x={x} y={y + 10 + i * 14} fontSize={11} fontFamily="ui-monospace, Consolas, monospace" fill="#64748b">{`// ${l}`}</text>)}
+    </g>
+  );
+}
+
 /** The tag above a box: what it is doing now. */
 const TAG: Partial<Record<NodeState | 'none', [string, string]>> = { active: ['● NOW', '#16a34a'], waiting: ['… WAITING', '#d97706'], broken: ['✖ STUCK', '#dc2626'] };
 
-function NodeShape({ n, st, why, selected, hit, onPick }: { n: FlowNode; st: NodeState | undefined; why?: string; selected: boolean; hit: boolean; onPick: () => void }) {
+function NodeShape({ n, st, why, selected, hit, onPick, bits }: { n: FlowNode; st: NodeState | undefined; why?: string; selected: boolean; hit: boolean; onPick: () => void; bits?: Map<string, boolean> }) {
   const s = st ?? 'none';
   const sw = selected ? 3.5 : s === 'active' || s === 'broken' ? 3 : 1.5;
   const stroke = selected ? '#b45309' : STROKE[s];
@@ -54,12 +86,13 @@ function NodeShape({ n, st, why, selected, hit, onPick }: { n: FlowNode; st: Nod
       {n.lines.map((l, i) => (
         <text key={i} x={x + pad} y={y + 36 + i * 15} fontSize={11.5} fill={l === '— OR —' ? '#64748b' : '#334155'} fontStyle={l === '— OR —' ? 'italic' : undefined}>{l}</text>
       ))}
+      {n.io?.map((io, i) => <IoRow key={io.address} io={io} x={x + pad - 4} y={y + 34 + n.lines.length * 15 + 6 + i * IO_H} w={w - 2 * pad + 8} on={bits?.get(io.address.toUpperCase())} />)}
     </g>
   );
 }
 
-function Diagram({ d, state, selected, hits, onPick, view, vw, vh }: {
-  d: FlowDiagram; state: FlowState | null; selected: string | null; hits: Set<string>; onPick: (n: FlowNode) => void; view: View; vw: number; vh: number;
+function Diagram({ d, state, selected, hits, onPick, view, vw, vh, bits }: {
+  d: FlowDiagram; state: FlowState | null; selected: string | null; hits: Set<string>; onPick: (n: FlowNode) => void; view: View; vw: number; vh: number; bits?: Map<string, boolean>;
 }) {
   // the part of the diagram on screen (in its own coordinates), with a margin
   const left = (-view.x) / view.k - d.x - 200, top = (-view.y) / view.k - d.y - 200;
@@ -85,7 +118,8 @@ function Diagram({ d, state, selected, hits, onPick, view, vw, vh }: {
           </g>
         );
       })}
-      {nodes.map((n) => <NodeShape key={n.id} n={n} st={state?.nodes.get(n.id)} why={state?.why.get(n.id)} selected={selected === n.id} hit={hits.has(n.id)} onPick={() => onPick(n)} />)}
+      {nodes.map((n) => <NodeShape key={n.id} n={n} st={state?.nodes.get(n.id)} why={state?.why.get(n.id)} selected={selected === n.id} hit={hits.has(n.id)} onPick={() => onPick(n)} bits={bits} />)}
+      {nodes.map((n) => <Note key={`note:${n.id}`} n={n} />)}
     </g>
   );
 }
@@ -106,7 +140,9 @@ function DiagramBox({ d, state, onPick }: { d: FlowDiagram; state: FlowState | n
 
 export default forwardRef<FlowCanvasHandle, {
   map: FlowMap; state: FlowState | null; selected: string | null; hits: Set<string>; onPick: (d: FlowDiagram, n: FlowNode | null) => void;
-}>(function FlowCanvas({ map, state, selected, hits, onPick }, ref) {
+  /** The bits now (Test, Watch): an input or output row is filled while it is ON. */
+  bits?: Map<string, boolean>;
+}>(function FlowCanvas({ map, state, selected, hits, onPick, bits }, ref) {
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 900, h: 600 });
   const [view, setView] = useState<View>({ x: 20, y: 20, k: 0.6 });
@@ -178,7 +214,7 @@ export default forwardRef<FlowCanvasHandle, {
             const vis = d.x * view.k + view.x < size.w && (d.x + d.w) * view.k + view.x > 0 && d.y * view.k + view.y < size.h && (d.y + d.h) * view.k + view.y > 0;
             if (!vis) return null;
             return detail
-              ? <Diagram key={d.id} d={d} state={state} selected={selected} hits={hits} onPick={(n) => onPick(d, n)} view={view} vw={size.w} vh={size.h} />
+              ? <Diagram key={d.id} d={d} state={state} selected={selected} hits={hits} onPick={(n) => onPick(d, n)} view={view} vw={size.w} vh={size.h} bits={bits} />
               : <DiagramBox key={d.id} d={d} state={state} onPick={() => onPick(d, null)} />;
           })}
         </g>

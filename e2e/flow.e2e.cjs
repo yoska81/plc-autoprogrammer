@@ -26,6 +26,16 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 
   await page.goto(BASE + '/flow');
   const canvas = page.getByTestId('flow-canvas');
+  /** Clicks a diamond that is wholly on screen (the first in the page may be half under the edge). */
+  const clickShownIf = async () => {
+    const cb = await canvas.boundingBox();
+    const ifs = canvas.locator('[data-node*=":if:"]');
+    for (let i = 0; i < await ifs.count(); i++) {
+      const b = await ifs.nth(i).boundingBox();
+      if (b && b.y > cb.y + 10 && b.y + b.height < cb.y + cb.height - 10 && b.x > cb.x && b.x + b.width < cb.x + cb.width) { await ifs.nth(i).click(); return; }
+    }
+    throw new Error('no diamond wholly on screen');
+  };
   await canvas.waitFor();
   await page.waitForTimeout(500);
   const fns = await page.getByTestId('flow-functions').locator('button').allInnerTexts();
@@ -40,12 +50,27 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(boxes > 4, `the function's boxes drawn (${boxes})`);
   await page.screenshot({ path: OUT + '02-pusher.png' });
 
-  // click a diamond: its ladder beside it, the symbols explained
-  await canvas.locator('[data-node*=":if:"]').first().click();
+  // click a diamond (one fully on screen): its ladder beside it, the symbols explained
+  await clickShownIf();
   await page.getByTestId('flow-ladder').locator('text=TRUE').or(page.getByTestId('flow-ladder').locator('text=FALSE')).first().waitFor();
   const learn = await page.getByTestId('flow-learn').innerText();
   check(/Normally (open|closed) contact/.test(learn) && /OR/.test(learn), 'the ladder beside it, the symbols explained');
   await page.screenshot({ path: OUT + '03-selected-with-ladder.png' });
+
+  // each box: the real inputs it reads and the outputs it switches; the rung's comment beside it as // …
+  await page.getByTestId('flow-functions').getByRole('button', { name: /Outputs/ }).click();
+  await page.waitForTimeout(400);
+  const y003 = canvas.locator('[data-io="Y003"]').first();
+  check(/^OUT Y003 .*turns ON/.test(((await y003.textContent()) ?? '').trim()), `an output's row: OUT, address, name, what the box does (${(await y003.textContent())?.trim()})`);
+  check(await canvas.locator('[data-note]', { hasText: '// Main air dump valve SOL2' }).count() === 1, 'the rung\'s comment beside its box, as // …');
+  await page.getByTestId('flow-toggle-io').click();
+  await page.getByTestId('flow-toggle-notes').click();
+  await page.waitForTimeout(300);
+  check(await canvas.locator('[data-io]').count() === 0 && await canvas.locator('[data-note]').count() === 0, 'Hide I/O / Hide comments');
+  await page.getByTestId('flow-toggle-io').click();
+  await page.getByTestId('flow-toggle-notes').click();
+  await page.waitForTimeout(300);
+  check(await canvas.locator('[data-io]').count() > 0 && await canvas.locator('[data-note]').count() > 0, 'shown again');
 
   // Test: the simulator runs; switching an input changes the diagram
   await page.getByTestId('flow-mode-test').click();
@@ -63,6 +88,13 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   const green = await canvas.locator('[data-node] polygon[stroke="#34d399"], [data-node] rect[stroke="#34d399"]').count();
   check(green > 0, `true rungs lit green on the diagram (${green})`);
   await page.screenshot({ path: OUT + '04-test.png' });
+  // the safety input ON in the test: the air dump valve's output row lit (filled) in Outputs
+  if (/ON/.test(after)) {
+    await page.getByTestId('flow-functions').getByRole('button', { name: /Outputs/ }).click();
+    await page.waitForTimeout(800);
+    check(await canvas.locator('[data-io="Y003"] rect[fill="#c2410c"]').count() > 0, 'an output that is ON now: its row filled');
+    await page.screenshot({ path: OUT + '04b-test-io-on.png' });
+  }
 
   // search
   await page.getByTestId('flow-find').fill('Conveyor');
@@ -80,7 +112,8 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
 
   // window options: full screen, the ladder bigger, the ladder panel maximized and hidden
   await page.getByTestId('flow-functions').getByRole('button', { name: /Pusher/ }).click();
-  await canvas.locator('[data-node*=":if:"]').first().click();
+  await page.waitForTimeout(400);
+  await clickShownIf();
   const w0 = (await page.getByTestId('flow-ladder').boundingBox()).height;
   await page.getByTestId('flow-ladder-bigger').click(); await page.getByTestId('flow-ladder-bigger').click();
   const w1 = (await page.getByTestId('flow-ladder').boundingBox()).height;
