@@ -455,7 +455,7 @@ async function journey(browser, mc) {
     log(mc.key, 'fault log entry', entry.slice(0, 160));
   });
   // Every page: look and click.
-  for (const route of ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine', '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/simulate', '/review', ...(mc.routes ?? []), '/export']) {
+  for (const route of ['/spec', '/project', '/equipment', '/io', '/electrical?tab=design', '/electrical?tab=cabinet', '/electrical?tab=machine', '/electrical?tab=picture', '/electrical?tab=machining', '/electrical?tab=labels', '/hmi', '/program', '/flow', '/simulate', '/review', ...(mc.routes ?? []), '/export']) {
     await step(`page ${route}`, async () => {
       await page.goto(BASE + route);
       await page.waitForTimeout(1200);
