@@ -37,7 +37,7 @@ const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
   { host: /(^|\.)bannerengineering\.com$/, makers: /banner/i },
   { host: /(^|\.)pilz\.com$/, makers: /pilz/i },
   // e-mechatronics.com is Yaskawa's own product and catalog site (dlc.e-mechatronics.com serves the catalog PDFs)
-  { host: /(^|\.)(yaskawa\.(com|eu)|e-mechatronics\.com)$/, makers: /yaskawa/i },
+  { host: /(^|\.)(yaskawa\.(com|eu|eu\.com|de)|e-mechatronics\.com)$/, makers: /yaskawa/i },
   { host: /(^|\.)(nvent\.com|hoffmanonline\.com)$/, makers: /hoffman|nvent/i },
   { host: /(^|\.)rittal\.(com|us)$/, makers: /rittal/i },
   { host: /(^|\.)phoenixcontact\.com$/, makers: /phoenix/i },
@@ -125,8 +125,8 @@ const UNVERIFIED_OK: Record<string, string> = {
   'VFD7A5MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
 };
 
-/** A maker's document (PDF catalog / datasheet or documentation portal) covering many parts. */
-const isMakerDocument = (u: URL) => /\.pdf$/i.test(u.pathname) || /\.pdf$/i.test(u.searchParams.get('documentName') ?? '') || /\/dl\/files\//.test(u.pathname) || /\/library\/Download\.aspx$/i.test(u.pathname) || /^docs\.|^literature\./.test(u.host);
+/** A maker's document (PDF catalog / datasheet or documentation portal) covering many parts (Yaskawa's manuals: /_downloads/download_d<n>, a PDF). */
+const isMakerDocument = (u: URL) => /\.pdf$/i.test(u.pathname) || /^\/_downloads\/download_d\d+$/.test(u.pathname) || /\.pdf$/i.test(u.searchParams.get('documentName') ?? '') || /\/dl\/files\//.test(u.pathname) || /\/library\/Download\.aspx$/i.test(u.pathname) || /^docs\.|^literature\./.test(u.host);
 
 const isAdHost = (u: string) => /(^|\.)automationdirect\.com$/.test(new URL(u).host);
 const has = (p: CatalogPart, k: string) => (ALIASES[k] ?? [k]).some((a) => p.ratings[a] !== undefined && p.ratings[a] !== '');
