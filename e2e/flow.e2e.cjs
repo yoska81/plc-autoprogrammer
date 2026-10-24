@@ -99,6 +99,15 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   check(fb.width >= 1490 && fb.y <= 1, `full screen (${Math.round(fb.width)}×${Math.round(fb.height)})`);
   await page.screenshot({ path: OUT + '08-full-screen.png' });
 
+  // Save as PDF: the whole program, then the chosen function only
+  for (const [id, rx] of [['flow-pdf', /_program_flow\.pdf$/], ['flow-pdf-one', /_flow\.pdf$/]]) {
+    if (id === 'flow-pdf-one') await page.getByTestId('flow-functions').getByRole('button').first().click();
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.getByTestId(id).click()]);
+    const file = OUT + dl.suggestedFilename();
+    await dl.saveAs(file);
+    const head = fs.readFileSync(file).subarray(0, 5).toString();
+    check(rx.test(dl.suggestedFilename()) && head === '%PDF-' && fs.statSync(file).size > 20000, `${id}: ${dl.suggestedFilename()} (${Math.round(fs.statSync(file).size / 1024)} KB)`);
+  }
   check(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await browser.close();
   if (fails.length) { console.log(`\nflow e2e: ${fails.length} failed`); process.exit(1); }

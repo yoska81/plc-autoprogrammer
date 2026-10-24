@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowsPointingInIcon, ArrowsPointingOutIcon, MagnifyingGlassIcon } from '@heroicons/react/20/solid';
+import { ArrowDownTrayIcon, ArrowsPointingInIcon, ArrowsPointingOutIcon, MagnifyingGlassIcon } from '@heroicons/react/20/solid';
 import ResizablePane from '../../components/ResizablePane';
 import { useProgramStore } from '../../store/useProgramStore';
 import { usePlc } from '../core/usePlc';
@@ -19,6 +19,9 @@ import { flowMap, nodesOfRung, type FlowDiagram, type FlowNode } from './flowMod
 import FlowEditPanel from './FlowEditPanel';
 import { flowState, sequenceTimeouts, type FlowState, type StepClock } from './flowState';
 import FlowCanvas, { type FlowCanvasHandle } from './FlowCanvas';
+import { flowChanges } from './flowEdit';
+import { saveBlob } from '../../deliverables/save';
+import { notify } from '../../store/useNoticeStore';
 
 type Mode = 'diagram' | 'edit' | 'test' | 'watch';
 
@@ -53,13 +56,36 @@ const parallel = 'Rows one under the other are parallel paths: OR. Symbols one a
 
 export default function FlowPage() {
   const ladder = useProgramStore((s) => s.ladder);
-  const { labels, profile } = usePlc();
+  const { labels, profile, cpu, io, addresses } = usePlc();
   const nameOf = useMemo(() => {
     const tags = new Map(ladder.tags.map((t) => [t.address.toUpperCase(), t.nickname]));
     return (a: string) => labels.get(a) || tags.get(a.toUpperCase()) || a;
   }, [labels, ladder.tags]);
   const map = useMemo(() => flowMap(ladder, nameOf), [ladder, nameOf]);
   const timeouts = useMemo(() => sequenceTimeouts(ladder, map), [ladder, map]);
+  // the diagrams as a PDF, to show another programmer how the machine works
+  const projectName = useProgramStore((s) => s.projectName);
+  const versions = useProgramStore((s) => s.versions);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const exportPdf = async (only?: FlowDiagram) => {
+    setPdfBusy(true);
+    try {
+      const { buildFlowPdf } = await import('./flowPdf');
+      const last = versions[versions.length - 1]?.program;
+      const pdf = await buildFlowPdf({
+        projectName, plcName: `${profile.vendor} ${profile.name} · ${cpu.label}`, program: ladder, map, nameOf,
+        io: io.map((x) => ({ address: addresses.get(x.id) ?? x.plcAddress ?? '', description: x.description, kind: x.type === 'input' ? 'Input' : 'Output' })).filter((x) => x.address),
+        changes: last ? flowChanges(last, ladder, nameOf) : undefined,
+        date: new Date().toLocaleString(), only: only ? [only.id] : undefined,
+      });
+      const base = projectName.replace(/[^\w-]+/g, '_') || 'program';
+      saveBlob(only ? `${base}_${only.name.replace(/[^\w-]+/g, '_')}_flow.pdf` : `${base}_program_flow.pdf`, pdf);
+    } catch (e) {
+      notify(`The PDF could not be made: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPdfBusy(false);
+    }
+  };
   // the diagram now (an edit's new box is found in it a moment after the edit)
   const mapRef = useRef(map);
   useEffect(() => { mapRef.current = map; }, [map]);
@@ -248,6 +274,14 @@ export default function FlowPage() {
           ].map(([t, f, id]) => (
             <button key={id as string} type="button" onClick={f as () => void} data-testid={id as string} className="rounded border border-steel-300 bg-white px-2 py-1 text-xs text-steel-700 hover:bg-steel-50">{t as string}</button>
           ))}
+          <button type="button" onClick={() => void exportPdf()} disabled={pdfBusy} data-testid="flow-pdf" title="Save the diagrams with their ladder, the I/O list and the alarms as a PDF (for another programmer)" className="inline-flex items-center gap-1 rounded border border-steel-300 bg-white px-2 py-1 text-xs text-steel-700 hover:bg-steel-50 disabled:opacity-60">
+            <ArrowDownTrayIcon className="h-4 w-4" />{pdfBusy ? 'Making PDF…' : 'Save as PDF'}
+          </button>
+          {sel && (
+            <button type="button" onClick={() => void exportPdf(sel.d)} disabled={pdfBusy} data-testid="flow-pdf-one" title={`Only ${sel.d.name}: its diagram and ladder, with the map, I/O list and alarms`} className="rounded border border-steel-300 bg-white px-2 py-1 text-xs text-steel-700 hover:bg-steel-50 disabled:opacity-60">
+              PDF: {sel.d.name.length > 18 ? `${sel.d.name.slice(0, 17)}…` : sel.d.name}
+            </button>
+          )}
           <button type="button" onClick={toggleFull} data-testid="flow-full" title={full ? 'Leave full screen (Esc)' : 'Full screen'} className="inline-flex items-center gap-1 rounded border border-steel-300 bg-white px-2 py-1 text-xs text-steel-700 hover:bg-steel-50">
             {full ? <ArrowsPointingInIcon className="h-4 w-4" /> : <ArrowsPointingOutIcon className="h-4 w-4" />}{full ? 'Exit full screen' : 'Full screen'}
           </button>
