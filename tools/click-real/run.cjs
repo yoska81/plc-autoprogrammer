@@ -96,6 +96,16 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
     presser.kill();
     shot('printed');
     console.log(`${at()} ALL DONE: the example project is in CLICK`);
+    // a look at what writing to a PLC takes (no PLC here): the Navigation's PLC tab, its Connect window, recorded
+    // and shot; nothing is written, a failure here does not fail the run
+    for (const [name, steps] of [
+      ['plc-tab', [{ do: 'window', title: '^CLICK Programming Software' }, { do: 'click', find: { type: 'TabItem', name: '^PLC$' }, timeoutMs: 3000 }, { do: 'wait', ms: 1000 }]],
+      ['connect', [{ do: 'window', title: '^CLICK Programming Software' }, { do: 'doubleClick', find: { type: 'TreeItem', name: '^Connect' }, timeoutMs: 3000 }, { do: 'wait', ms: 4000 }]],
+    ]) {
+      await step(`look: ${name}`, () => b.call('run', { steps })).catch(() => undefined);
+      await b.call('dump', { show: false }).catch(() => undefined);
+      shot(`look-${name}`);
+    }
   } catch {
     failed = true;
     shot('failed');
