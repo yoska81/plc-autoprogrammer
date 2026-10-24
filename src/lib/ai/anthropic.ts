@@ -1,0 +1,269 @@
+import type Anthropic from '@anthropic-ai/sdk';
+import { reportAiProgress } from './progress';
+import { useSettingsStore, type Effort } from '../../store/useSettingsStore';
+import { IS_PREVIEW } from '../../preview/mode';
+import { callClaudeAccount } from '../../preview/claudeAccount';
+import { trackAi } from './busy';
+import { KIND_TEXT, totalLimitFor, withRetries, withWatchdog, type AiErrorInfo } from './errors';
+import { reportRetry } from './jobs';
+import { effectiveEffort, effectiveModel, MAX_ANSWER_TOKENS, TASK_MAX_TOKENS, type AiTask } from './tasks';
+import { cachedAnswer } from './cache';
+import { aiNow, logAiCall } from './timing';
+
+// The SDK is a large part of the app's code: loaded with the first request, not at startup.
+let sdk: typeof Anthropic | null = null;
+async function loadSdk(): Promise<typeof Anthropic> {
+  sdk ??= (await import('@anthropic-ai/sdk')).default;
+  return sdk;
+}
+
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/** A user turn with images/PDFs (used by Import). */
+export interface RichTurn {
+  role: 'user';
+  content: Anthropic.Beta.Messages.BetaContentBlockParam[];
+}
+
+export interface ClaudeResult {
+  text: string;
+  reasoning: string | null;
+  /** Pages the answer used (web search): what the user can open to check it. */
+  sources?: WebSource[];
+}
+
+/** A web page found by the web search tool, or cited in the answer. */
+export interface WebSource { url: string; title: string; pageAge?: string | null }
+
+/**
+ * One Claude request. With `schema`, the reply is constrained to that JSON
+ * schema (structured outputs) and `text` is the JSON string.
+ */
+export interface PromptUsage { cacheRead: number; cacheWrite: number }
+
+export type ClaudeOptions = {
+  apiKey: string;
+  model: string;
+  effort: Effort;
+  system: string;
+  messages: (ChatTurn | RichTurn)[];
+  schema?: Record<string, unknown>;
+  /** Aborts the request (job Cancel). */
+  signal?: AbortSignal;
+  /**
+   * Let Claude search the web (server tool; API key only, not in the preview). The pages it read come
+   * back in `sources`. Not combined with `schema`: the answer is asked for as JSON in the prompt.
+   */
+  webSearch?: { maxUses?: number; allowedDomains?: string[] };
+  /** What the request is for: sets its effort in Speed "fast" (src/lib/ai/tasks.ts) and names it in the timing log. */
+  task?: AiTask;
+  /** Called once, when the answer starts arriving (the prompt is processed and cached by then); at once for an answer from the answer cache and in the preview; a test interceptor calls it itself. */
+  onStarted?: () => void;
+  /** Filled by callClaude's request with the prompt-cache tokens the API reports (for the timing log). */
+  usage?: PromptUsage;
+  /** May be answered from the answer cache (Update all). Without it the request is always made (a page's Generate); the answer is stored either way. */
+  cache?: boolean;
+  /** Most tokens of the answer (thinking included); default the task's (TASK_MAX_TOKENS), else MAX_ANSWER_TOKENS. */
+  maxTokens?: number;
+};
+
+/**
+ * Test hook (AI quality harness, tools/ai-quality): when set, every request goes
+ * through it; it may answer from a recording or call `real` and record the reply.
+ * Never set in the app.
+ */
+export type ClaudeInterceptor = (opts: ClaudeOptions, real: (o: ClaudeOptions) => Promise<ClaudeResult>) => Promise<ClaudeResult>;
+let interceptor: ClaudeInterceptor | null = null;
+export function setClaudeInterceptor(fn: ClaudeInterceptor | null) { interceptor = fn; }
+
+/**
+ * One Claude request with automatic retries: a dropped connection, an overloaded service (429 / 529 /
+ * 5xx) or a timeout is retried up to 3 times with backoff ("retrying (2/3)…" in the status bar), then
+ * reported in plain English. `opts.signal` stops it (job Cancel).
+ */
+export async function callClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
+  // Speed "fast": the task's own effort level (and the small-task model when one is set).
+  const { speed, smallTaskModel } = useSettingsStore.getState();
+  // onStarted once per call (not again on a retry or a paused turn)
+  let started = false;
+  const onStarted = opts.onStarted && (() => { if (!started) { started = true; opts.onStarted!(); } });
+  // prompt-cache tokens over every attempt and turn (the timing log shows whether the parts read the cache)
+  const usage: PromptUsage = { cacheRead: 0, cacheWrite: 0 };
+  const o: ClaudeOptions = { ...opts, onStarted, usage, effort: effectiveEffort(opts.effort, opts.task, speed), model: effectiveModel(opts.model, opts.task, smallTaskModel), maxTokens: opts.maxTokens ?? (opts.task ? TASK_MAX_TOKENS[opts.task] : MAX_ANSWER_TOKENS) };
+  const startedAt = aiNow();
+  const promptChars = o.system.length + JSON.stringify(o.messages).length + (o.schema ? JSON.stringify(o.schema).length : 0);
+  const log = (ok: boolean, outChars: number, cached: 'memory' | 'stored' | 'shared' | null) =>
+    logAiCall({ task: o.task ?? 'other', model: o.model, effort: o.effort, startedAt, endedAt: aiNow(), promptChars, outChars, cached, ok, ...(cached ? {} : usage) });
+  try {
+    const { answer, hit } = await cachedAnswer({ model: o.model, effort: o.effort, system: o.system, messages: o.messages, schema: o.schema }, () => trackAi(() => withRetries(() => (interceptor ? interceptor(o, requestClaude) : requestClaude(o)), {
+      signal: o.signal,
+      onRetry: (n) => reportRetry(o.signal, n),
+      explain: (err, info) => explainFailure(err, info, o.model),
+    })), { fresh: !o.cache, signal: o.signal });
+    if (hit) o.onStarted?.();
+    log(true, answer.text.length, hit);
+    return answer;
+  } catch (err) {
+    log(false, 0, null);
+    throw err;
+  }
+}
+
+// The preview's Claude account answers two requests at a time reliably (more get rate-limited).
+const PREVIEW_PARALLEL = 2;
+let previewRunning = 0;
+const previewQueue: (() => void)[] = [];
+async function previewSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (previewRunning >= PREVIEW_PARALLEL) await new Promise<void>((resolve) => previewQueue.push(resolve));
+  previewRunning++;
+  try { return await fn(); } finally { previewRunning--; previewQueue.shift()?.(); }
+}
+
+/** Final message for a failed request (after any retries). */
+function explainFailure(err: unknown, info: AiErrorInfo, model: string): string {
+  if (sdk && (err instanceof sdk.APIError || err instanceof sdk.APIConnectionError)) return explainApiError(err, model);
+  const msg = err instanceof Error ? err.message : String(err);
+  if (err instanceof Error && err.name === 'WatchdogTimeout') return `${msg} Try again; if it keeps happening, check the connection or lower the thinking effort in Settings.`;
+  if (info.kind === 'network' || info.kind === 'timeout') return `${KIND_TEXT[info.kind]} before the answer was complete. Check the internet connection and try again.`;
+  return msg;
+}
+
+/** The dynamic-filtering web search on current models; the basic variant on older ones. */
+const webSearchType = (model: string) =>
+  (/opus-5|opus-4-[678]|sonnet-5|sonnet-4-6|fable-5/.test(model) ? 'web_search_20260209' : 'web_search_20250305') as 'web_search_20250305';
+
+async function requestClaude(opts: ClaudeOptions): Promise<ClaudeResult> {
+  // The preview can't reach the API; the viewer's own Claude account answers instead.
+  // A watchdog makes sure no request hangs: no data for 3 min, or longer than the cap for its
+  // effort level, aborts it as a timeout (retried by callClaude, then reported).
+  const totalMs = totalLimitFor(opts.effort);
+  if (IS_PREVIEW && opts.webSearch) throw new Error('Web search needs your own Anthropic API key (Settings); the preview cannot search the web.');
+  if (IS_PREVIEW) {
+    // no prompt cache to wait for here: parts that wait for this one may start now
+    opts.onStarted?.();
+    // plain answers stream their text (progress); JSON answers arrive at once (total cap only)
+    return previewSlot(() => withWatchdog((signal, progress) => callClaudeAccount({ ...(opts as Parameters<typeof callClaudeAccount>[0]), signal, onProgress: (chars) => { progress(); if (chars !== undefined) reportAiProgress(opts.signal, chars); } }),
+      { signal: opts.signal, totalMs, reportsProgress: !opts.schema }));
+  }
+  // Keys live in the user's own browser; there is no backend to proxy through.
+  // Retries are done by callClaude (also for streams that drop half-way), not by the SDK.
+  const client = new (await loadSdk())({ apiKey: opts.apiKey, dangerouslyAllowBrowser: true, maxRetries: 0 });
+
+  // Streamed so long, deep-thinking generations don't hit HTTP timeouts.
+  // `fallbacks: 'default'` lets the API retry on another model if a safety
+  // classifier declines the request instead of returning nothing.
+  const tools = opts.webSearch
+    ? [{ type: webSearchType(opts.model), name: 'web_search' as const, max_uses: opts.webSearch.maxUses ?? 5, ...(opts.webSearch.allowedDomains?.length ? { allowed_domains: opts.webSearch.allowedDomains } : {}) }]
+    : undefined;
+  let messages: Anthropic.Beta.Messages.BetaMessageParam[] = opts.messages;
+  const content: Anthropic.Beta.Messages.BetaContentBlock[] = [];
+  let message: Anthropic.Beta.Messages.BetaMessage;
+  // A server tool (web search) may pause a long turn: send it back to let Claude continue (a few times at most).
+  for (let turn = 0; ; turn++) {
+    message = await withWatchdog(async (signal, progress) => {
+      const stream = client.beta.messages.stream({
+        model: opts.model,
+        max_tokens: opts.maxTokens ?? MAX_ANSWER_TOKENS,
+        betas: ['server-side-fallback-2026-07-01'],
+        fallbacks: 'default',
+        thinking: { type: 'adaptive', display: 'summarized' },
+        output_config: {
+          effort: opts.effort,
+          ...(opts.schema ? { format: { type: 'json_schema' as const, schema: opts.schema } } : {}),
+        },
+        // The system prompt is static per stage: cached across calls (5 min) when it is long enough.
+        system: [{ type: 'text', text: opts.system, cache_control: { type: 'ephemeral' } }],
+        messages,
+        ...(tools ? { tools } : {}),
+      }, { signal });
+      let started = false;
+      stream.on('streamEvent', () => { if (!started) { started = true; opts.onStarted?.(); } progress(); });
+      stream.on('text', (_delta, snapshot) => reportAiProgress(opts.signal, snapshot.length));
+      return stream.finalMessage();
+    }, { signal: opts.signal, totalMs, reportsProgress: true });
+    content.push(...message.content);
+    if (opts.usage) { opts.usage.cacheRead += message.usage.cache_read_input_tokens ?? 0; opts.usage.cacheWrite += message.usage.cache_creation_input_tokens ?? 0; }
+    if (message.stop_reason !== 'pause_turn' || turn >= 3) break;
+    messages = [...messages, { role: 'assistant', content: message.content as Anthropic.Beta.Messages.BetaContentBlockParam[] }];
+  }
+
+  if (message.stop_reason === 'refusal') {
+    throw new Error('Claude declined this request. Try rephrasing it.');
+  }
+  // Cut off at a task's smaller cap (a long think): asked again once with the full answer size.
+  if (message.stop_reason === 'max_tokens' && (opts.maxTokens ?? MAX_ANSWER_TOKENS) < MAX_ANSWER_TOKENS) return requestClaude({ ...opts, maxTokens: MAX_ANSWER_TOKENS });
+  if (message.stop_reason === 'max_tokens') {
+    throw new Error('The answer was cut off (output limit reached). Try splitting the machine into smaller parts.');
+  }
+
+  const text = content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
+  const reasoning = content
+    .flatMap((b) => (b.type === 'thinking' && b.thinking ? [b.thinking] : []))
+    .join('\n\n');
+  if (!text) throw new Error('Claude returned an empty response.');
+  return { text, reasoning: reasoning || null, ...(opts.webSearch ? { sources: webSources(content) } : {}) };
+}
+
+/** Every page the web search returned or the answer cited (each URL once, cited first). */
+function webSources(content: Anthropic.Beta.Messages.BetaContentBlock[]): WebSource[] {
+  const out = new Map<string, WebSource>();
+  for (const b of content) {
+    if (b.type !== 'text') continue;
+    for (const c of b.citations ?? []) {
+      if (c.type === 'web_search_result_location' && !out.has(c.url)) out.set(c.url, { url: c.url, title: c.title ?? c.url });
+    }
+  }
+  for (const b of content) {
+    // A failed search returns an error object instead of a result list.
+    if (b.type !== 'web_search_tool_result' || !Array.isArray(b.content)) continue;
+    for (const r of b.content) if (!out.has(r.url)) out.set(r.url, { url: r.url, title: r.title, pageAge: r.page_age ?? null });
+  }
+  return [...out.values()];
+}
+
+/** Plain-English text for an Anthropic API failure (shared by generation and the connection test). */
+function explainApiError(err: unknown, model: string): string {
+  const Anthropic = sdk;
+  if (!Anthropic) return err instanceof Error ? err.message : String(err);
+  if (err instanceof Anthropic.AuthenticationError) return 'Anthropic rejected the key (401). It is wrong, was revoked, or was copied incompletely. Copy it again from console.anthropic.com → API keys and paste it in Settings.';
+  if (err instanceof Anthropic.PermissionDeniedError) return `The key is valid but not allowed to use ${model} (403). Check the key's workspace permissions in the console, or pick another model in Settings.`;
+  if (err instanceof Anthropic.NotFoundError) return `The model ${model} is not available to this account (404). Pick another model in Settings.`;
+  if (err instanceof Anthropic.RateLimitError) return 'The key works but the rate or spend limit is reached (429). Wait a moment and try again, or raise the limit in the console.';
+  if (err instanceof Anthropic.APIConnectionError) return 'Could not reach api.anthropic.com. Check the internet connection; a firewall, VPN or browser extension may be blocking it.';
+  if (err instanceof Anthropic.APIError) {
+    if (/credit balance|billing/i.test(err.message)) return 'The key works but the account has no credit. Add credit at console.anthropic.com → Billing.';
+    if (err.status === 529 || (err.status ?? 0) >= 500) return `The AI service is busy or having a problem right now (${err.status}). Wait a minute and try again.`;
+    return `Anthropic error ${err.status ?? ''}: ${err.message}`;
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Check an API key with one tiny request and explain any problem in plain
+ * words. In the preview it checks the viewer's Claude account instead.
+ */
+export async function testAnthropicConnection(apiKey: string, model: string): Promise<{ ok: boolean; message: string }> {
+  if (IS_PREVIEW) {
+    try {
+      await callClaudeAccount({ model, effort: 'low', system: 'Reply with the single word OK.', messages: [{ role: 'user', content: 'Connection test' }] });
+      return { ok: true, message: 'Connected: Claude answered through your Claude account. No API key is needed in this preview.' };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  }
+  const key = apiKey.trim();
+  if (!key) return { ok: false, message: 'No API key entered. Create one at console.anthropic.com → API keys, then paste it here.' };
+  if (!key.startsWith('sk-ant-')) {
+    return { ok: false, message: 'This does not look like an Anthropic API key (they start with "sk-ant-"). A Claude.ai subscription login is not an API key: create a key at console.anthropic.com → API keys.' };
+  }
+  const client = new (await loadSdk())({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 0 });
+  try {
+    await client.messages.create({ model, max_tokens: 16, messages: [{ role: 'user', content: 'Reply with OK.' }] });
+    return { ok: true, message: `Connected: ${model} answered. The key works.` };
+  } catch (err) {
+    return { ok: false, message: explainApiError(err, model) };
+  }
+}

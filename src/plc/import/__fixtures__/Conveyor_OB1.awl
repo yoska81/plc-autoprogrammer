@@ -1,0 +1,56 @@
+ORGANIZATION_BLOCK "Main"
+TITLE = "Conveyor line 4 - main cycle"
+VERSION : 0.1
+
+BEGIN
+NETWORK
+TITLE = Run latch: start, stop (NC) and E-stop
+      A(    ;
+      O     "Start_PB";
+      O     "Running";
+      )     ;
+      A     "Stop_PB";
+      A     "EStop_OK";
+      =     "Running";
+NETWORK
+TITLE = Conveyor motor while running and no jam
+      A     "Running";
+      AN    "Jam";
+      =     "Conveyor_Motor";
+      =     "Run_Lamp";
+NETWORK
+TITLE = Jam: product eye blocked for 4 s
+      A     "Product_PE";
+      L     S5T#4S;
+      SD    T 1;
+NETWORK
+TITLE = Jam latch, reset with the reset button
+      A     T 1;
+      S     "Jam";
+      A     "Reset_PB";
+      R     "Jam";
+NETWORK
+TITLE = Count products, preset 50 per box
+      A     "Product_PE";
+      FP    M 20.0;
+      CU    C 1;
+      A     "Box_Change";
+      L     C#50;
+      S     C 1;
+NETWORK
+TITLE = Box full lamp
+      L     "Box_Count_Act";
+      L     50;
+      >=I   ;
+      =     "Box_Full_Lamp";
+NETWORK
+TITLE = Speed setpoint to the drive
+      L     "Speed_SP";
+      T     "Drive_Speed_Ref";
+NETWORK
+TITLE = Skip the sorter when not in auto
+      AN    "Auto_Mode";
+      JC    SKIP;
+      CALL  "Sorter_FB", "Sorter_DB";
+SKIP: NOP   0;
+END_ORGANIZATION_BLOCK

@@ -1,0 +1,5 @@
+{
+ "stage": "electrical",
+ "model": "e2e-fixture",
+ "text": "{\"motors\":[{\"tag\":\"M1\",\"description\":\"Conveyor motor\",\"power\":1,\"unit\":\"hp\",\"powerGiven\":true,\"start\":\"dol\",\"vertical\":false,\"zone\":\"Conveyor\"}],\"estops\":1,\"guardDoors\":[],\"lightCurtains\":[],\"zones\":[\"Conveyor\",\"Pusher station\"],\"interfaces\":[],\"questions\":[\"Confirm the conveyor motor nameplate current.\"]}"
+}

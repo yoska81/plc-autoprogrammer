@@ -1,0 +1,5 @@
+{
+ "stage": "equipment",
+ "model": "hand-written",
+ "text": "{\"summary\":\"CLICK Ethernet Analog CPU (2 AI / 2 AO built in) with one 16-point input module and an 8-point output module; C-more 7\\\" for the temperature and dwell setpoints.\",\"estimatedIO\":{\"digitalInputs\":12,\"digitalOutputs\":6,\"analogInputs\":1,\"analogOutputs\":1,\"motionAxes\":0},\"plc\":{\"profileId\":\"click\",\"cpuId\":\"C0-12DD1E-D\",\"why\":\"Built-in analog for the heater temperature and the VFD speed; Ethernet for the HMI.\"},\"modules\":[{\"partNumber\":\"C0-16ND3\",\"quantity\":1,\"why\":\"Inputs\"},{\"partNumber\":\"C0-08TD1\",\"quantity\":1,\"why\":\"Outputs\"}],\"hmi\":{\"partNumber\":\"CM5-T7W\",\"why\":\"7\\\" for setpoints and alarms\"},\"alternatives\":[],\"cautions\":[\"The thermocouple needs a transmitter (4-20 mA) or a thermocouple module.\"]}"
+}

@@ -1,0 +1,53 @@
+supply 120VAC-1PH | NEMA 12
+motor M1 0.5 HP contactor-overload — Conveyor motor
+
+ENC1     SCE-24EL2008LP     x1    Main enclosure 24x20x8 NEMA 12 — smallest catalog enclosure with everything placed and 27% spare panel space (target >= 20%)
+SP1      SCE-24P20          x1    Back panel
+DS1      22013003           x1    Main disconnect 30A — load 12.5 A (motors + 25% of the largest + control) x 1.15
+DS1H     14831111           x1    Disconnect handle
+DS1S     14070520           x1    Disconnect shaft
+CB1      GMCBU-1C-20        x1    Motor M1 branch protection — 20 A C-curve, 2.0 x FLA 9.8 A (rides through the start, max. 250% NEC 430.52) [M1]
+K1       SC-E03PG-24VDC     x1    Conveyor motor contactor — rated 0.5 HP at 120 V single-phase >= 0.5 HP / 9.8 A, 24 VDC coil [M1]
+K1-AUX   SZ-A11T            x1    K1 aux contact — N.C. 61-62 for the safety relay feedback (EDM); SC-E03PG-24VDC has no built-in aux [M1]
+OL1      TK-E02-1300        x1    Conveyor motor overload — range 9-13 A, set to FLA 9.8 A [M1]
+CB2      GMCBU-1C-5         x1    24VDC power supply primary — 5 A for a 30 W supply (inrush)
+PS1      PSL-24-030         x1    24VDC control power supply — 1.25 A >= load 0.8 A + 25%
+PLC      C0-10DD1E-D        x1    PLC CPU
+SR1      LG5925-48-61-24    x1    E-stop safety relay — dual channel, monitored manual reset, removes power from the motion outputs (24+S)
+ES1      GCX1131            x1    Emergency stop, cabinet door — dual channel into SR1
+ES1C     ECX1030-2          x1    Second NC contact for dual-channel E-stop ES1
+ES1L     ECX1651            x1    EMERGENCY STOP legend plate for ES1
+PB1      GCX1102            x1    Start
+PB2      GCX1101            x1    Stop
+PE1      C18D-0P-1A         x1    Part at end photo-eye
+LS1      PNK-AP-3H          x1    Pusher extended
+LS2      PNK-AP-3H          x1    Pusher retracted
+SOL1     100222015324006    x1    Pusher valve
+SOL2     100222033324004    x1    Main air dump valve
+PB3      GCX1104            x1    Safety reset — blue, monitored manual reset of SR1 (releasing an E-stop never restarts anything)
+TB1      DN-T10-A           x30   Feed-through terminals
+TBG      DN-G10             x4    Ground terminals
+TBC      DN-EC1210          x3    Terminal end covers
+TBE      DN-EB35            x6    End brackets
+DIN      DN-R35S1           x1    DIN rail
+WD       T1-1530G-1         x2    Wire duct
+GB1      SCE-GB10           x1    Ground bar
+
+X001   SR1    safety-relay-output  Cabinet        E-Stop OK (safety relay)
+X002   PB1    pushbutton-no        Cabinet door   Start Button
+X003   PB2    pushbutton-nc        Cabinet door   Stop Button
+X004   PE1    sensor-pnp           Pusher         Part at end photo-eye
+X005   LS1    sensor-pnp           Pusher         Pusher extended
+X006   LS2    sensor-pnp           Pusher         Pusher retracted
+Y001   K1     contactor-coil       Cabinet        Conveyor motor contactor
+Y002   SOL1   solenoid             Pusher         Pusher solenoid
+Y003   SOL2   solenoid             Pusher         Main air dump valve
+
+zones ["Pusher","Conveyor"]
+junctionBoxes [{"tag":"JB1","location":"Pusher","partNumber":"SCE-16EL1206LP"}]
+motorLocations {"M1":"Conveyor"}
+routing {"PE1":"JB1","LS1":"JB1","LS2":"JB1","SOL1":"JB1","SOL2":"JB1"}
+
+note: Motor currents from NEC Table 430.250 / 430.248: M1 0.5 HP 9.8 A — confirm the nameplates.
+
+explanation: Rule-based design: NEMA 12 SCE-24EL2008LP, 120 V single-phase through 30A — load 12.5 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 0.5 HP across the line; 24 VDC from PSL-24-030 for 0.8 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 27% spare panel space.

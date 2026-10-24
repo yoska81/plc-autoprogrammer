@@ -1,0 +1,13 @@
+Device,Symbol,Comment
+X0,Start_PB,Start pushbutton
+X1,Stop_PB,Stop pushbutton (NC)
+X2,Case_PE,Case at the sealer
+X3,Reset_PB,Alarm and batch reset
+Y0,Conveyor,Conveyor motor
+Y1,Seal_Head,Seal head down valve
+Y2,Batch_Lamp,Batch full lamp
+M0,Running,Machine running
+M10,Jam,Jam alarm
+T0,Seal_Delay,Case settle before sealing
+T1,Jam_Tmr,Jam timer
+C0,Case_Count,Cases in the batch

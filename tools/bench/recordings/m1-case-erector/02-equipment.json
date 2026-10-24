@@ -1,0 +1,5 @@
+{
+ "stage": "equipment",
+ "model": "hand-written",
+ "text": "{\"summary\": \"About 15 inputs and 9 outputs with a 7-inch touch panel. A CLICK Ethernet CPU with one 16-point input module covers it with spare room.\", \"estimatedIO\": {\"digitalInputs\": 15, \"digitalOutputs\": 9, \"analogInputs\": 0, \"analogOutputs\": 0, \"motionAxes\": 0}, \"plc\": {\"profileId\": \"click\", \"cpuId\": \"C0-11DD1E-D\", \"why\": \"Ethernet for the touch panel, 24 VDC sinking/sourcing I/O for the solenoids.\"}, \"modules\": [{\"partNumber\": \"C0-16ND3\", \"quantity\": 1, \"why\": \"Inputs beyond the 8 built in, with spare.\"}, {\"partNumber\": \"C0-08TD1\", \"quantity\": 1, \"why\": \"Outputs beyond the 6 built in.\"}], \"hmi\": {\"partNumber\": \"EA3-T6CL\", \"why\": \"Counts, alarms and manual controls fit a 6-inch screen.\"}, \"alternatives\": [{\"label\": \"Room to grow\", \"cpuId\": \"C0-11DD1E-D\", \"hmiPartNumber\": \"CM5-T10W\", \"tradeoff\": \"Larger screen, more cost.\"}], \"cautions\": [\"The guard door and E-stop circuit must be a safety relay, not PLC logic.\"]}"
+}

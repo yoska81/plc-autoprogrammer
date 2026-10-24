@@ -1,0 +1,165 @@
+supply 480VAC-3PH | NEMA 12
+motor M1 1 HP contactor-overload — Conveyor motor
+motor M2 3 HP contactor-overload — Pump motor
+motor M3 5 HP vfd — Belt 1 motor
+motor M4 5 HP vfd — Belt 2 motor
+motor M5 5 HP vfd — Belt 3 motor
+motor M6 5 HP vfd — Belt 4 motor
+
+ENC1     SCE-42EL3612LP     x1    Main enclosure 42x36x12 NEMA 12 — smallest catalog enclosure with everything placed and 38% spare panel space (target >= 20%)
+SP1      SCE-42P36          x1    Back panel
+DS1      22013006           x1    Main disconnect 60A — load 39.4 A (motors + 25% of the largest + control) x 1.15
+DS1H     14831111           x1    Disconnect handle
+DS1S     14070532           x1    Disconnect shaft
+CB1      GMCBU-3C-5         x1    Motor M1 branch protection — 5 A C-curve, 2.4 x FLA 2.1 A (rides through the start, max. 250% NEC 430.52) [M1]
+K1       SC-E02PG-24VDC     x1    Conveyor motor contactor — rated 5 HP at 480 V 3-phase >= 1 HP / 2.1 A, 24 VDC coil [M1]
+K1-AUX   SZ-A11T            x1    K1 aux contact — N.C. 61-62 for the safety relay feedback (EDM); SC-E02PG-24VDC has no built-in aux [M1]
+OL1      TK-E02-220         x1    Conveyor motor overload — range 1.4-2.2 A, set to FLA 2.1 A [M1]
+CB2      GMCBU-3C-10        x1    Motor M2 branch protection — 10 A C-curve, 2.1 x FLA 4.8 A (rides through the start, max. 250% NEC 430.52) [M2]
+K2       SC-E02PG-24VDC     x1    Pump motor contactor — rated 5 HP at 480 V 3-phase >= 3 HP / 4.8 A, 24 VDC coil [M2]
+K2-AUX   SZ-A11T            x1    K2 aux contact — N.C. 61-62 for the safety relay feedback (EDM); SC-E02PG-24VDC has no built-in aux [M2]
+OL2      TK-E02-600         x1    Pump motor overload — range 4-6 A, set to FLA 4.8 A [M2]
+FU1      T60060-3CR         x1    Motor M3 drive branch fuses — Class T block (the GS23-45P0 fuses for its 100 kA SCCR) [M3]
+FU1F     TJS45-1            x3    Class T fuses 45A for FU1 — GS23-45P0 manual fuse chart [M3]
+VFD1     GS23-45P0          x1    Belt 1 motor drive, STO from safety relay — 9 A output >= FLA 7.6 A; Safe Torque Off for the safety stop [M3]
+FU2      T60060-3CR         x1    Motor M4 drive branch fuses — Class T block (the GS23-45P0 fuses for its 100 kA SCCR) [M4]
+FU2F     TJS45-1            x3    Class T fuses 45A for FU2 — GS23-45P0 manual fuse chart [M4]
+VFD2     GS23-45P0          x1    Belt 2 motor drive, STO from safety relay — 9 A output >= FLA 7.6 A; Safe Torque Off for the safety stop [M4]
+FU3      T60060-3CR         x1    Motor M5 drive branch fuses — Class T block (the GS23-45P0 fuses for its 100 kA SCCR) [M5]
+FU3F     TJS45-1            x3    Class T fuses 45A for FU3 — GS23-45P0 manual fuse chart [M5]
+VFD3     GS23-45P0          x1    Belt 3 motor drive, STO from safety relay — 9 A output >= FLA 7.6 A; Safe Torque Off for the safety stop [M5]
+FU4      T60060-3CR         x1    Motor M6 drive branch fuses — Class T block (the GS23-45P0 fuses for its 100 kA SCCR) [M6]
+FU4F     TJS45-1            x3    Class T fuses 45A for FU4 — GS23-45P0 manual fuse chart [M6]
+VFD4     GS23-45P0          x1    Belt 4 motor drive, STO from safety relay — 9 A output >= FLA 7.6 A; Safe Torque Off for the safety stop [M6]
+CB3      GMCBU-3C-3         x1    24VDC power supply primary — 3 A for a 120 W supply (inrush)
+PS1      PSR-24-120-3       x1    24VDC control power supply, 3-phase 480 VAC input — 5 A >= load 3.5 A + 25%
+PLC      C0-11DD1E-D        x1    PLC CPU
+IO1      C0-16ND3           x1    I/O module, slot 1
+IO2      C0-16ND3           x1    I/O module, slot 2
+IO3      C0-16TD1           x1    I/O module, slot 3
+SR1      LG5925-48-61-24    x1    E-stop safety relay — dual channel, monitored manual reset, removes power from the motion outputs (24+S)
+ES1      GCX1131            x1    Emergency stop, cabinet door — dual channel into SR1
+ES1C     ECX1030-2          x1    Second NC contact for dual-channel E-stop ES1
+ES1L     ECX1651            x1    EMERGENCY STOP legend plate for ES1
+PB1      GCX1102            x1    Start
+PB2      GCX1101            x1    Stop
+PE1      C18D-0P-1A         x1    Part at end photo-eye
+LS1      PNK-AP-3H          x1    Pusher extended
+LS2      PNK-AP-3H          x1    Pusher retracted
+SS1      GCX1300            x1    Auto/Manual
+PB3      GCX1100            x1    Reset
+PE2      C18D-0P-1A         x1    Infeed part present 1
+PE3      C18D-0P-1A         x1    Infeed part present 2
+PE4      C18D-0P-1A         x1    Infeed part present 3
+PE5      C18D-0P-1A         x1    Infeed part present 4
+PE6      C18D-0P-1A         x1    Infeed part present 5
+PE7      C18D-0P-1A         x1    Infeed part present 6
+PE8      C18D-0P-1A         x1    Infeed part present 7
+PE9      C18D-0P-1A         x1    Infeed part present 8
+PE10     C18D-0P-1A         x1    Infeed part present 9
+PE11     C18D-0P-1A         x1    Infeed part present 10
+PE12     C18D-0P-1A         x1    Infeed part present 11
+PE13     C18D-0P-1A         x1    Infeed part present 12
+PE14     C18D-0P-1A         x1    Outfeed part present 13
+PE15     C18D-0P-1A         x1    Outfeed part present 14
+PE16     C18D-0P-1A         x1    Outfeed part present 15
+PE17     C18D-0P-1A         x1    Outfeed part present 16
+PE18     C18D-0P-1A         x1    Outfeed part present 17
+PE19     C18D-0P-1A         x1    Outfeed part present 18
+PE20     C18D-0P-1A         x1    Outfeed part present 19
+PE21     C18D-0P-1A         x1    Outfeed part present 20
+PE22     C18D-0P-1A         x1    Outfeed part present 21
+PE23     C18D-0P-1A         x1    Outfeed part present 22
+PE24     C18D-0P-1A         x1    Outfeed part present 23
+PE25     C18D-0P-1A         x1    Outfeed part present 24
+SOL1     100222015324006    x1    Pusher valve
+SOL2     100222033324004    x1    Main air dump valve
+SOL3     100222015324006    x1    Infeed diverter 2 valve
+SOL4     100222015324006    x1    Infeed diverter 3 valve
+SOL5     100222015324006    x1    Infeed diverter 4 valve
+SOL6     100222015324006    x1    Infeed diverter 5 valve
+SOL7     100222015324006    x1    Outfeed diverter 6 valve
+SOL8     100222015324006    x1    Outfeed diverter 7 valve
+SOL9     100222015324006    x1    Outfeed diverter 8 valve
+SOL10    100222015324006    x1    Outfeed diverter 9 valve
+PL1      GCX1232-24L        x1    Running
+PL2      GCX1231-24L        x1    Fault
+STK1     LR4-302WJNW-RYG    x1    Stack light (top of the enclosure)
+PB4      GCX1104            x1    Safety reset — blue, monitored manual reset of SR1 (releasing an E-stop never restarts anything)
+TB1      DN-T10-A           x100  Feed-through terminals
+TBG      DN-G10             x10   Ground terminals
+TBC      DN-EC1210          x3    Terminal end covers
+TBE      DN-EB35            x6    End brackets
+DIN      DN-R35S1           x4    DIN rail
+WD       T1-2240G-1         x4    Wire duct
+GB1      SCE-GB10           x2    Ground bar
+FAN1     018722-30          x1    Filter fan (inlet, low on the left wall) — 156 m³/h with filters >= 102 m³/h to carry 493 W (673 W in the cabinet, 56 °C rise without it, limit 15 °C), 24 VDC 0.50 A
+FAN1F    118720-00          x1    Exhaust filter for FAN1 (outlet, high on the right wall)
+TH1      011160-00          x1    Thermostat for FAN1 — N.O. closes on rise; set to ~35 °C
+
+X001   SR1    safety-relay-output  Cabinet        E-Stop OK (safety relay)
+X002   PB1    pushbutton-no        Cabinet door   Start Button
+X003   PB2    pushbutton-nc        Cabinet door   Stop Button
+X004   PE1    sensor-pnp           Infeed         Part at end photo-eye
+X005   LS1    sensor-pnp           Pusher         Pusher extended
+X006   LS2    sensor-pnp           Pusher         Pusher retracted
+X007   SS1    selector             Cabinet door   Auto/Manual selector
+X008   PB3    pushbutton-no        Cabinet door   Reset PB
+X101   PE2    sensor-pnp           Infeed         Infeed part present 1
+X102   PE3    sensor-pnp           Infeed         Infeed part present 2
+X103   PE4    sensor-pnp           Infeed         Infeed part present 3
+X104   PE5    sensor-pnp           Infeed         Infeed part present 4
+X105   PE6    sensor-pnp           Infeed         Infeed part present 5
+X106   PE7    sensor-pnp           Infeed         Infeed part present 6
+X107   PE8    sensor-pnp           Infeed         Infeed part present 7
+X108   PE9    sensor-pnp           Infeed         Infeed part present 8
+X109   PE10   sensor-pnp           Infeed         Infeed part present 9
+X110   PE11   sensor-pnp           Infeed         Infeed part present 10
+X111   PE12   sensor-pnp           Infeed         Infeed part present 11
+X112   PE13   sensor-pnp           Infeed         Infeed part present 12
+X113   PE14   sensor-pnp           Outfeed        Outfeed part present 13
+X114   PE15   sensor-pnp           Outfeed        Outfeed part present 14
+X115   PE16   sensor-pnp           Outfeed        Outfeed part present 15
+X116   PE17   sensor-pnp           Outfeed        Outfeed part present 16
+X201   PE18   sensor-pnp           Outfeed        Outfeed part present 17
+X202   PE19   sensor-pnp           Outfeed        Outfeed part present 18
+X203   PE20   sensor-pnp           Outfeed        Outfeed part present 19
+X204   PE21   sensor-pnp           Outfeed        Outfeed part present 20
+X205   PE22   sensor-pnp           Outfeed        Outfeed part present 21
+X206   PE23   sensor-pnp           Outfeed        Outfeed part present 22
+X207   PE24   sensor-pnp           Outfeed        Outfeed part present 23
+X208   PE25   sensor-pnp           Outfeed        Outfeed part present 24
+X209   VFD1   vfd-input            Cabinet        Belt 1 VFD fault
+X210   VFD2   vfd-input            Cabinet        Belt 2 VFD fault
+X211   VFD3   vfd-input            Cabinet        Belt 3 VFD fault
+X212   VFD4   vfd-input            Cabinet        Belt 4 VFD fault
+Y001   K1     contactor-coil       Cabinet        Conveyor motor contactor
+Y002   SOL1   solenoid             Pusher         Pusher solenoid
+Y003   SOL2   solenoid             Infeed         Main air dump valve
+Y004   K2     contactor-coil       Cabinet        Pump motor contactor
+Y005   VFD1   vfd-input            Cabinet        Belt 1 VFD run
+Y006   VFD2   vfd-input            Cabinet        Belt 2 VFD run
+Y301   VFD3   vfd-input            Cabinet        Belt 3 VFD run
+Y302   VFD4   vfd-input            Cabinet        Belt 4 VFD run
+Y303   SOL3   solenoid             Infeed         Infeed diverter 2 solenoid
+Y304   SOL4   solenoid             Infeed         Infeed diverter 3 solenoid
+Y305   SOL5   solenoid             Infeed         Infeed diverter 4 solenoid
+Y306   SOL6   solenoid             Infeed         Infeed diverter 5 solenoid
+Y307   SOL7   solenoid             Outfeed        Outfeed diverter 6 solenoid
+Y308   SOL8   solenoid             Outfeed        Outfeed diverter 7 solenoid
+Y309   SOL9   solenoid             Outfeed        Outfeed diverter 8 solenoid
+Y310   SOL10  solenoid             Outfeed        Outfeed diverter 9 solenoid
+Y311   PL1    pilot-light          Cabinet door   Running light
+Y312   PL2    pilot-light          Cabinet door   Fault light
+Y313   STK1   stack-light          Cabinet door   Stack light red
+Y314   STK1   stack-light          Cabinet door   Stack light green
+
+zones ["Infeed","Outfeed","Pusher","Conveyor"]
+junctionBoxes [{"tag":"JB1","location":"Infeed","partNumber":"SCE-16EL1206LP"},{"tag":"JB2","location":"Outfeed","partNumber":"SCE-16EL1206LP"}]
+motorLocations {"M1":"Conveyor","M2":"Infeed","M3":"Infeed","M4":"Infeed","M5":"Infeed","M6":"Infeed"}
+routing {"PE1":"JB1","PE2":"JB1","PE3":"JB1","PE4":"JB1","PE5":"JB1","PE6":"JB1","PE7":"JB1","PE8":"JB1","PE9":"JB1","PE10":"JB1","PE11":"JB1","PE12":"JB1","PE13":"JB1","SOL2":"JB1","SOL3":"JB1","SOL4":"JB1","SOL5":"JB1","SOL6":"JB1","PE14":"JB2","PE15":"JB2","PE16":"JB2","PE17":"JB2","PE18":"JB2","PE19":"JB2","PE20":"JB2","PE21":"JB2","PE22":"JB2","PE23":"JB2","PE24":"JB2","PE25":"JB2","SOL7":"JB2","SOL8":"JB2","SOL9":"JB2","SOL10":"JB2","LS1":null,"LS2":null,"SOL1":null}
+
+note: Motor currents from NEC Table 430.250 / 430.248: M1 1 HP 2.1 A, M2 3 HP 4.8 A, M3 5 HP 7.6 A, M4 5 HP 7.6 A, M5 5 HP 7.6 A, M6 5 HP 7.6 A — confirm the nameplates.
+note: VFD1, VFD2, VFD3, VFD4: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.
+
+explanation: Rule-based design: NEMA 12 SCE-42EL3612LP, 480 V 3-phase through 60A — load 39.4 A (motors + 25% of the largest + control) x 1.15 disconnect; motors: M1 1 HP across the line, M2 3 HP across the line, M3 5 HP on GS23-45P0 (STO), M4 5 HP on GS23-45P0 (STO), M5 5 HP on GS23-45P0 (STO), M6 5 HP on GS23-45P0 (STO); 24 VDC from PSR-24-120-3 for 3.5 A load + 25%; dual-channel E-stop into a safety relay with monitored manual reset; 38% spare panel space.

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The CLICK bridge's tests: a console program (dotnet run) with a fake CLICK. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../src/ClickDetect.cs;../src/Ui.cs;../src/Runner.cs;../src/Commands.cs" />
+    <Compile Include="../../tia-bridge/src/Json.cs;../../tia-bridge/src/Protocol.cs;../../tia-bridge/src/Log.cs" />
+    <Compile Include="*.cs" />
+  </ItemGroup>
+</Project>

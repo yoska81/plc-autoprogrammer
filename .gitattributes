@@ -1,0 +1,5 @@
+# Test samples are checked out byte for byte on every OS (Windows would turn LF into CRLF and
+# change what the readers and golden comparisons see). The readers handle CRLF files themselves.
+**/__fixtures__/** -text
+fixtures/** -text
+e2e/fixtures/** -text

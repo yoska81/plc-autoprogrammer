@@ -1,0 +1,5 @@
+{
+ "stage": "hmi",
+ "model": "hand-written",
+ "text": "{\"machineName\": \"Case Erector\", \"actuators\": [{\"index\": 0, \"name\": \"Outfeed Conveyor\", \"manual\": true}, {\"index\": 1, \"name\": \"Case Opener\", \"manual\": true}, {\"index\": 2, \"name\": \"Vacuum\", \"manual\": true}, {\"index\": 3, \"name\": \"Flap Folders\", \"manual\": true}, {\"index\": 4, \"name\": \"Pusher\", \"manual\": true}], \"states\": [{\"value\": 0, \"text\": \"Stopped\", \"style\": \"normal\"}, {\"value\": 1, \"text\": \"Running\", \"style\": \"ok\"}, {\"value\": 2, \"text\": \"Wait Case\", \"style\": \"ok\"}, {\"value\": 3, \"text\": \"Opening\", \"style\": \"ok\"}, {\"value\": 4, \"text\": \"Folding\", \"style\": \"ok\"}, {\"value\": 5, \"text\": \"Taping\", \"style\": \"ok\"}, {\"value\": 6, \"text\": \"Faulted\", \"style\": \"alarm\"}, {\"value\": 7, \"text\": \"Manual\", \"style\": \"warning\"}, {\"value\": 8, \"text\": \"Safety Stop\", \"style\": \"alarm\"}]}"
+}

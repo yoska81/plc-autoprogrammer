@@ -1,0 +1,11 @@
+Address,Data Type,Nickname,Initial Value,Retentive,Address Comment
+X001,BIT,"Start_PB",0,No,"Start pushbutton"
+X002,BIT,"Stop_PB",0,No,"Stop pushbutton NC"
+X003,BIT,"Part_Sensor",0,No,"Part at end of conveyor"
+X004,BIT,"Pusher_Extended",0,No,"Pusher reed switch extended"
+Y001,BIT,"Conveyor_Motor",0,No,"Conveyor motor contactor"
+Y002,BIT,"Pusher_Solenoid",0,No,"Pusher valve"
+C1,BIT,"Running",0,No,"Machine running"
+T1,BIT,"Push_Timer",0,No,""
+CT1,BIT,"Part_Count",0,Yes,"Parts pushed"
+DS1,INT,"Push_Time_Set",30,Yes,"Pusher time 0.1 s (HMI)"

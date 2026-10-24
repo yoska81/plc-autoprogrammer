@@ -1,0 +1,72 @@
+/**
+ * CLICK analog channels and their DF registers.
+ *
+ * AutomationDirect sources:
+ * - Ethernet Analog / Analog CPUs (C0-12xxE-D, C0-02xx-D): 2 inputs AD1/AD2 (0-5 VDC on ADnV or
+ *   4-20 mA sink on ADnI, one terminal per channel, type selected in the CPU built-in I/O setup) and
+ *   2 outputs DA1/DA2 (DAnV / DAnI) — spec sheets c012dred.pdf, c002dd1d.pdf.
+ * - C0-04AD-1: 4-channel current sinking input 0-20 mA, 13-bit, single ended, terminals CH1–CH4,
+ *   0V (internally connected), external 24 VDC — spec sheet c004ad1.pdf.
+ * - C0-04DA-1: 4-channel current sourcing output 4-20 mA, 12-bit, load 0–600 Ω at 24 VDC, terminals
+ *   CH1–CH4, 0V, external 24 VDC — spec sheet c004da1.pdf.
+ * - Every analog channel is given a DF register (floating point) in Setup > System Configuration,
+ *   optionally as continuous addresses, and is scaled there from the input/output range to the
+ *   engineering-unit "Scale Range" (with an optional range limiter); the program reads/writes the
+ *   scaled value — CLICK help "C0-04DA-2 Settings" (Content/096.htm) and "CPU Built-in I/O Setup"
+ *   (Content/209.htm). CLICK has no scaling instruction in ladder.
+ *
+ * Addressing used here (the engineer enters the same in System Configuration): channels in slot
+ * order, CPU first, inputs before outputs within a module, DF1, DF2, … continuously.
+ */
+import { getPart } from '../../../electrical/catalog';
+import type { AnalogRange } from '../../../types/io';
+import type { AnalogChannel, CpuModel, ModuleSlot } from '../profile';
+
+function rangesOf(signal: unknown, range: unknown, kind: 'input' | 'output'): AnalogRange[] {
+  const r = String(range ?? '').replace(/\s/g, '');
+  // Thermocouple modules (C0-04THM) read the thermocouple directly, in degrees.
+  if (/thermocouple/i.test(String(signal))) return ['thermocouple'];
+  if (String(signal) === 'current') return kind === 'input' && r === '0-20mA' ? ['4-20mA', '0-20mA'] : ['4-20mA'];
+  if (String(signal) === 'voltage') return r.includes('10') ? ['0-10V', '0-5V'] : ['0-5V'];
+  return ['4-20mA'];
+}
+
+/**
+ * Slot number of each chosen module: a CLICK PLUS option-slot module is slot 0 (the CPU's own I/O, X001… /
+ * Y001…, where its high-speed inputs and pulse outputs are); the stackable modules are slots 1..8 in order.
+ */
+// CLICK PLUS CPUs have one option slot (catalog optionSlots: 1); a second option-slot module, should one ever be
+// listed, is numbered as a stackable here — check the CLICK help before giving it a slot of its own.
+export function clickSlots(modules: ModuleSlot[]): number[] {
+  let next = 1;
+  const option = modules.findIndex((m) => m.optionSlot);
+  return modules.map((_, i) => (i === option ? 0 : next++));
+}
+
+export function clickAnalogChannels(cpu: CpuModel, modules: ModuleSlot[]): AnalogChannel[] {
+  const out: AnalogChannel[] = [];
+  let df = 1;
+  const r = getPart(cpu.id)?.ratings ?? {};
+  const cpuIn = Number(r.analogInputs ?? (/analog/i.test(cpu.label) ? 2 : 0));
+  const cpuOut = Number(r.analogOutputs ?? (/analog/i.test(cpu.label) ? 2 : 0));
+  for (let c = 1; c <= cpuIn; c++) {
+    out.push({ kind: 'input', slot: 0, channel: c, partNumber: cpu.id, label: `CPU AD${c}`, ranges: ['4-20mA', '0-5V'], terminals: [`AD${c}I`, `AD${c}V`], address: `DF${df++}` });
+  }
+  for (let c = 1; c <= cpuOut; c++) {
+    out.push({ kind: 'output', slot: 0, channel: c, partNumber: cpu.id, label: `CPU DA${c}`, ranges: ['4-20mA', '0-5V'], terminals: [`DA${c}I`, `DA${c}V`], address: `DF${df++}` });
+  }
+  const slots = clickSlots(modules);
+  modules.forEach((m, i) => {
+    const pr = getPart(m.partNumber)?.ratings ?? {};
+    const slot = slots[i];
+    for (const kind of ['input', 'output'] as const) {
+      const n = kind === 'input' ? m.analogInputs ?? 0 : m.analogOutputs ?? 0;
+      for (let c = 1; c <= n; c++) {
+        out.push({ kind, slot, channel: c, partNumber: m.partNumber, label: slot === 0 ? `Option slot CH${c}` : `Slot ${slot} CH${c}`, ranges: rangesOf(pr.signal, pr.range, kind), terminals: /thermocouple/i.test(String(pr.signal)) ? [`CH${c}+`, `CH${c}-`] : [`CH${c}`, '0V'], address: `DF${df++}` });
+      }
+    }
+  });
+  return out;
+}
+
+export { channelTerminal } from '../analog';

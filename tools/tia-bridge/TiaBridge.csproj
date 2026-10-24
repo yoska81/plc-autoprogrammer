@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- net48: the bridge the installer ships (TIA Portal V16–V20 Openness is .NET Framework 4.8).
+       net8.0: the same code for the tests (tests/), which run on any OS. No Siemens assembly is referenced:
+       Siemens.Engineering.dll is loaded from the user's TIA Portal at run time. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net48;net8.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>TiaBridge</AssemblyName>
+    <RootNamespace>TiaBridge</RootNamespace>
+    <Version>0.1.0</Version>
+    <Product>ISA Auto Programmer TIA bridge</Product>
+    <Company>ISA</Company>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="src/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

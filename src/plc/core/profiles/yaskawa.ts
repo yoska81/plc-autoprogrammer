@@ -1,0 +1,441 @@
+/**
+ * Yaskawa MP2000 / MP3000 machine controllers (MPE720 Ver.7 ladder).
+ *
+ * The app's program stays in its neutral memory (X / Y / C / DS / DD / DF / T / CT …, what the rules engine,
+ * the simulator, the drawings and the HMI all work on). Everything the user sees and every exported file
+ * names the MP registers in MPE720's own forms (the same forms the .YMW7 reader writes, import/mpe720.ts):
+ *   I / O registers   4 hex digits: IW0010; a bit adds one hex digit: IB00000 = IW0000 bit 0, OB0001F
+ *   M registers       5 decimal digits: MW01000, ML06000 (2 words), MF08500 (2 words); bits MB000000 =
+ *                     MW00000 bit 0, MB01234A = MW01234 bit 10 (the bit digit is hex)
+ *   system            SB000004 (always ON, as the reader reads it from a real project)
+ *   constants         #00100
+ * I / O: each module's points from its leading register, 16 points per word. Without catalog data the leading
+ * registers follow MPE720's self-configuration (slot order after the CPU's own registers, each module on a 16-word
+ * boundary): that is marked "assumed" (check the module configuration in MPE720).
+ * Register widths: the short form the reader prints and the user's CPU-301 files hold (4 hex I / O digits, 5 decimal
+ * M digits); the MP3000 long form (5 hex / 7 decimal) only for a number that does not fit (mpRegister, one place).
+ * Memory: each neutral area sits in its own MW range (the layout). A new project uses the defaults; a program
+ * imported from MPE720 keeps its own registers (TagDefinition.native) and the app's areas are moved into MW
+ * ranges it does not use (allocateMemory), stored with the project so they never move by themselves.
+ * Read only for now: the app cannot write a file MPE720 loads yet, so the profile is not offered in the picker. A
+ * program read from MPE720 (.YMW7) stays on it with its own I/O registers as the points' addresses (IB00000 …) until
+ * the user chooses the PLC to move it to; it becomes a normal choice once the MPE720 export exists.
+ */
+import type { AddressInfo, AnalogChannel, CpuModel, IecDataType, ModuleSlot, PlcProfile } from '../profile';
+import type { LadderProgram, TagDefinition } from '../ladder';
+import { rungAddresses, type Rung } from '../ladder';
+import { clickRetentive, dataTypeOf as neutralType, neutralAutoAddresses, parseAddress as neutralParse } from './click';
+import type { IOPoint } from '../../../types/io';
+import { getPart } from '../../../electrical/catalog';
+
+export const YASKAWA_PROFILE_ID = 'yaskawa-mp';
+
+/** The hardware family (the panels' driver lists name these): MP2000 or MP3000. */
+export type YaskawaFamily = 'yaskawa-mp2000' | 'yaskawa-mp3000';
+
+const cpu = (id: string, family: YaskawaFamily, inputs: number, outputs: number, label: string, axes: number) => ({ id, label, builtInInputs: inputs, builtInOutputs: outputs, family, axes });
+
+/**
+ * CPUs (ids to be matched with Dev 4's catalog part numbers). The MP3000 CPUs have no discrete I/O of their own.
+ * No platformId yet: the platforms (yaskawa-mp2000 / yaskawa-mp3000, src/plc/core/platforms.ts) come with the
+ * catalog's CPU and LIO parts; until then the CPU fit is the generic one.
+ */
+export const YASKAWA_CPUS = [
+  cpu('JAPMC-CP3301-1-E', 'yaskawa-mp3000', 0, 0, 'JAPMC-CP3301-1-E — MP3300 CPU-301, 16 axes (I/O on LIO modules)', 16),
+  cpu('JAPMC-CP3301-2-E', 'yaskawa-mp3000', 0, 0, 'JAPMC-CP3301-2-E — MP3300 CPU-301, 32 axes (I/O on LIO modules)', 32),
+  cpu('JAPMC-CP3302-1-E', 'yaskawa-mp3000', 0, 0, 'JAPMC-CP3302-1-E — MP3300 CPU-302, 16 axes (I/O on LIO modules)', 16),
+  cpu('JAPMC-CP3302-2-E', 'yaskawa-mp3000', 0, 0, 'JAPMC-CP3302-2-E — MP3300 CPU-302, 32 axes (I/O on LIO modules)', 32),
+  cpu('JEPMC-CP3201-E', 'yaskawa-mp3000', 0, 0, 'JEPMC-CP3201-E — MP3200 CPU-201 (I/O on LIO modules)', 16),
+  cpu('JEPMC-CP3202-E', 'yaskawa-mp3000', 0, 0, 'JEPMC-CP3202-E — MP3200 CPU-202 (I/O on LIO modules)', 32),
+  cpu('JEPMC-MP2310-E', 'yaskawa-mp2000', 0, 0, 'JEPMC-MP2310-E — MP2310 basic module (I/O on LIO modules)', 16),
+  cpu('JEPMC-MP2300S-E', 'yaskawa-mp2000', 0, 0, 'JEPMC-MP2300S-E — MP2300S basic module (I/O on LIO modules)', 16),
+  cpu('JEPMC-MP2300-E', 'yaskawa-mp2000', 8, 4, 'JEPMC-MP2300-E — MP2300 basic module, 8 DI / 4 DO built in', 16),
+  // A controller an MPE720 project names that the list does not have (or does not say which).
+  cpu('MP-CPU', 'yaskawa-mp3000', 0, 0, 'MP-CPU — MP2000 / MP3000 controller (model not known)', 0),
+];
+
+/** MPE720's controller names → the CPU part ("CPU-301(16axes)" → the 16-axis CPU-301). */
+const CPU_NAMES: [RegExp, string][] = [
+  [/^CPU-?301\(32/, 'JAPMC-CP3301-2-E'], [/^CPU-?301/, 'JAPMC-CP3301-1-E'],
+  [/^CPU-?302\(32/, 'JAPMC-CP3302-2-E'], [/^CPU-?302/, 'JAPMC-CP3302-1-E'],
+  [/^CPU-?201/, 'JEPMC-CP3201-E'], [/^CPU-?202/, 'JEPMC-CP3202-E'],
+  [/^MP-?2310/, 'JEPMC-MP2310-E'], [/^MP-?2300S/, 'JEPMC-MP2300S-E'], [/^MP-?2300/, 'JEPMC-MP2300-E'],
+];
+
+/** The CPU an MPE720 controller name stands for; the generic MP CPU when the list does not have it. */
+export function yaskawaCpuOf(controller: string): CpuModel {
+  const c = controller.toUpperCase().replace(/\s+/g, '');
+  const id = CPU_NAMES.find(([re]) => re.test(c))?.[1] ?? 'MP-CPU';
+  return YASKAWA_CPUS.find((x) => x.id === id)!;
+}
+
+const cpuOf = (cpuId?: string): CpuModel => YASKAWA_CPUS.find((c) => c.id === cpuId) ?? YASKAWA_CPUS[YASKAWA_CPUS.length - 1];
+
+/** The family of a Yaskawa CPU (null for other CPUs). */
+export const yaskawaFamily = (cpuId: string): YaskawaFamily | null => YASKAWA_CPUS.find((c) => c.id === cpuId)?.family ?? null;
+
+// ── MPE720 register forms ──
+
+const hex = (n: number, digits: number) => n.toString(16).toUpperCase().padStart(digits, '0');
+/** M words in 5 decimal digits; the MP3000 long form (7) only past 65535. */
+const dec = (n: number) => String(n).padStart(n > 65535 ? 7 : 5, '0');
+/** I / O words in 4 hex digits; the long form (5) only past FFFF. */
+const ioHex = (n: number) => hex(n, n > 0xffff ? 5 : 4);
+
+/** An MP register in MPE720's form: area I / O (hex words) or M (decimal words), width B (with the bit) / W / L / F. */
+export function mpRegister(area: 'I' | 'O' | 'M', width: 'B' | 'W' | 'L' | 'F', word: number, bit = 0): string {
+  const w = area === 'M' ? dec(word) : ioHex(word);
+  return `${area}${width}${w}${width === 'B' ? hex(bit, 1) : ''}`;
+}
+
+/** The MW words an M register occupies (MB012340 → [1234]; ML06000 → [6000, 6001]); null when it is not an M register. */
+export function mWords(register: string): number[] | null {
+  const r = register.trim().toUpperCase();
+  const m = /^MB(\d{5}|\d{7})([0-9A-F])$/.exec(r) ?? /^M([WLF])(\d{5}|\d{7})$/.exec(r);
+  if (!m) return null;
+  if (r[1] === 'B') return [Number(m[1])];
+  const w = Number(m[2]);
+  return m[1] === 'L' || m[1] === 'F' ? [w, w + 1] : [w];
+}
+
+/** MP I / O registers as operands (an imported program keeps them): IB / OB word + bit, IW / OW / IL / OL / IF / OF words (servo registers 8000 and up too). */
+const IO_BIT = /^([IO])B([0-9A-F]{4,5})([0-9A-F])$/;
+const IO_WORD = /^([IO])([WLF])([0-9A-F]{4,5})$/;
+const isMpIo = (a: string) => IO_BIT.test(a) || IO_WORD.test(a);
+
+// ── I / O ──
+
+interface Lead { input: number; output: number; assumed: boolean }
+
+/**
+ * Where the registers the CPU itself uses end, so the first option module starts after them (self-configuration
+ * defaults): MP3300 CPU-301 / CPU-302: 218IFD IW/OW 0000–07FF, MECHATROLINK-III I/O 0800–0BFF, M-EXECUTOR
+ * 0C00–0C3F (SIEP C880725 21E); MP2300: built-in 8 DI at IW0000, 4 DO at OW0001 (SIEP C880700 03G). Others: 0.
+ */
+function cpuWords(c: CpuModel): number {
+  if (/^JAPMC-CP330[12]/.test(c.id)) return 0x0c40;
+  if (c.builtInInputs || c.builtInOutputs) return 2;
+  return 0;
+}
+
+/** MP2300 built-in I/O: inputs IW0000, outputs OW0001 (SIEP C880700 03G). */
+const BUILT_IN = { input: 0, output: 1 };
+
+/**
+ * Leading register of each option module, the same number for its inputs and outputs (a 2-word LIO-01 / LIO-02
+ * block puts its outputs on the second word: ratings.outputWordOffset). From the catalog (ratings.leadRegister,
+ * hex) when known; else self-configuration's rule: in slot order after the CPU's own registers, each module on a
+ * 16-word boundary (SIEP C880700 34 §1.3) — marked assumed.
+ */
+export function ioLeads(c: CpuModel, modules: ModuleSlot[]): Lead[] {
+  let next = cpuWords(c);
+  return modules.map((m) => {
+    const r = getPart(m.partNumber)?.ratings ?? {};
+    const given = r.leadRegister != null ? parseInt(String(r.leadRegister), 16) : NaN;
+    const lead = isNaN(given) ? Math.ceil(next / 16) * 16 : given;
+    const off = Number(r.outputWordOffset ?? 0);
+    const words = Math.max(Math.ceil(m.inputs / 16) + (m.analogInputs ?? 0), off + Math.ceil(m.outputs / 16) + (m.analogOutputs ?? 0), 1);
+    next = lead + words;
+    return { input: lead, output: lead + off, assumed: isNaN(given) };
+  });
+}
+
+/** Analog channels: one IW / OW word each, after the module's discrete words (DF registers in the program, raw counts). */
+export function yaskawaAnalogChannels(_c: CpuModel, modules: ModuleSlot[]): AnalogChannel[] {
+  const out: AnalogChannel[] = [];
+  let df = 0;
+  modules.forEach((m, k) => {
+    for (let i = 0; i < (m.analogInputs ?? 0); i++) out.push({ kind: 'input', slot: k + 1, channel: i + 1, partNumber: m.partNumber, label: `Module ${k + 1} CH${i + 1}`, ranges: ['4-20mA', '0-10V'], terminals: [`CH${i + 1}`], address: `DF${++df}` });
+    for (let i = 0; i < (m.analogOutputs ?? 0); i++) out.push({ kind: 'output', slot: k + 1, channel: i + 1, partNumber: m.partNumber, label: `Module ${k + 1} CH${i + 1}`, ranges: ['4-20mA', '0-10V'], terminals: [`CH${i + 1}`], address: `DF${++df}` });
+  });
+  return out;
+}
+
+/** The MP I / O register of a neutral physical point (X101 → IB00000 on a first LIO at IW0000); null when the rack has no such point. */
+export function yaskawaIo(address: string, c: CpuModel, modules: ModuleSlot[]): { register: string; assumed: boolean } | null {
+  const a = address.trim().toUpperCase();
+  const io = /^([XY])(\d)(\d\d)$/.exec(a);
+  if (io) {
+    const input = io[1] === 'X', slot = Number(io[2]), n = Number(io[3]) - 1;
+    if (slot === 0) {
+      if (n >= (input ? c.builtInInputs : c.builtInOutputs)) return null;
+      return { register: mpRegister(input ? 'I' : 'O', 'B', (input ? BUILT_IN.input : BUILT_IN.output) + (n >> 4), n & 15), assumed: false };
+    }
+    const m = modules[slot - 1];
+    if (!m || n >= (input ? m.inputs : m.outputs)) return null;
+    const lead = ioLeads(c, modules)[slot - 1];
+    return { register: mpRegister(input ? 'I' : 'O', 'B', (input ? lead.input : lead.output) + (n >> 4), n & 15), assumed: lead.assumed };
+  }
+  const ch = yaskawaAnalogChannels(c, modules).find((x) => x.address === a);
+  if (!ch) return null;
+  const m = modules[ch.slot - 1];
+  const lead = ioLeads(c, modules)[ch.slot - 1];
+  const word = ch.kind === 'input' ? lead.input + Math.ceil(m.inputs / 16) + ch.channel - 1 : lead.output + Math.ceil(m.outputs / 16) + ch.channel - 1;
+  return { register: mpRegister(ch.kind === 'input' ? 'I' : 'O', 'W', word), assumed: lead.assumed };
+}
+
+// ── Memory layout ──
+
+export type MemoryArea = 'C' | 'DS' | 'DD' | 'DH' | 'DF' | 'T' | 'CT' | 'TD' | 'CTD';
+
+/** MW word base of each neutral memory area in this project, and the words an area holds when more than the default. */
+export type MemoryLayout = Record<MemoryArea, number> & { size?: Partial<Record<MemoryArea, number>> };
+
+/**
+ * Words each area holds by default: CLICK's neutral ranges (C1–C2000 = 125 words of 16 bits, DD = 2 words each …).
+ * On Yaskawa these are not limits: a program with more (an MPE720 import with C2001 …) gets bigger areas.
+ */
+const AREA_WORDS: Record<MemoryArea, number> = { C: 125, DS: 4500, DD: 2000, DH: 500, DF: 1000, T: 32, CT: 16, TD: 500, CTD: 500 };
+const AREAS = Object.keys(AREA_WORDS) as MemoryArea[];
+/** M registers of an MP3000: MW0000000–MW1048575 (MP3000 Ladder Programming Manual §3); MP2000 has the first 65535. */
+const M_WORDS = 1048576;
+
+const sizeOf = (layout: MemoryLayout, k: MemoryArea) => Math.max(layout.size?.[k] ?? 0, AREA_WORDS[k]);
+
+/** Words of its area one neutral operand needs (C17 → 2 words of C, DD3 → 6 of DD); null when it is not neutral memory. */
+function wordsNeeded(a: string): { area: MemoryArea; words: number } | null {
+  const m = /^(CTD|CT|TD|DS|DD|DH|DF|C|T)(\d+)$/.exec(a.trim().toUpperCase());
+  if (!m || Number(m[2]) < 1) return null;
+  const k = m[1] as MemoryArea, n = Number(m[2]) - 1;
+  return { area: k, words: k === 'C' || k === 'T' || k === 'CT' ? (n >> 4) + 1 : k === 'DD' || k === 'DF' || k === 'CTD' ? 2 * n + 2 : n + 1 };
+}
+
+/** A new project's layout. */
+export const DEFAULT_MEMORY: MemoryLayout = { C: 0, DS: 1000, DD: 6000, DH: 8000, DF: 8500, T: 9500, CT: 9600, TD: 9700, CTD: 10200 };
+
+const MEMORY_KIND: Record<string, AddressInfo> = {
+  C: { kind: 'bit', isBit: true }, T: { kind: 'timer', isBit: true }, CT: { kind: 'counter', isBit: true },
+  DS: { kind: 'register', isBit: false }, DD: { kind: 'register', isBit: false }, DH: { kind: 'register', isBit: false }, DF: { kind: 'register', isBit: false },
+  TD: { kind: 'timerValue', isBit: false }, CTD: { kind: 'counterValue', isBit: false },
+};
+
+/**
+ * The app's operands, with no CLICK caps on the memory (C2001, DS5000 … of a big MPE720 program are fine), and the
+ * MP I / O registers an imported program keeps (IB00000, OW0010).
+ */
+export function parseAddress(raw: string): AddressInfo | null {
+  const a = raw.trim().toUpperCase();
+  const bit = IO_BIT.exec(a);
+  if (bit) return { kind: bit[1] === 'I' ? 'input' : 'output', isBit: true };
+  const word = IO_WORD.exec(a);
+  if (word) return { kind: word[1] === 'I' ? 'input' : 'output', isBit: false };
+  const n = neutralParse(a);
+  if (n) return n;
+  const m = /^(CTD|CT|TD|DS|DD|DH|DF|C|T)([1-9]\d*)$/.exec(a);
+  return m ? MEMORY_KIND[m[1]] : null;
+}
+
+function dataTypeOf(address: string): IecDataType | null {
+  const a = address.trim().toUpperCase();
+  if (IO_BIT.test(a)) return 'BOOL';
+  const w = IO_WORD.exec(a);
+  if (w) return w[2] === 'L' ? 'DINT' : w[2] === 'F' ? 'REAL' : 'INT';
+  return parseAddress(a) ? neutralType(a) ?? MEMORY_TYPE[/^[A-Z]+/.exec(a)?.[0] ?? ''] ?? null : null;
+}
+const MEMORY_TYPE: Record<string, IecDataType> = { C: 'BOOL', T: 'BOOL', CT: 'BOOL', DS: 'INT', DH: 'WORD', DD: 'DINT', DF: 'REAL', TD: 'INT', CTD: 'DINT' };
+
+/**
+ * Points an imported program did not place get the next free MP register (bits IB00000, IB00001 … 16 per word,
+ * words from IW0010), so a project on its own registers is never given the app's X / Y terminals.
+ */
+function nextFreeRegisters(io: IOPoint[]): Map<string, string> {
+  const taken = new Set(io.map((p) => p.plcAddress?.trim().toUpperCase()).filter(Boolean));
+  const next = { IB: 0, OB: 0, IW: 0x10, OW: 0x10 };
+  const out = new Map<string, string>();
+  for (const p of io) {
+    if (p.plcAddress?.trim()) continue;
+    const key = `${p.type === 'input' ? 'I' : 'O'}${p.signal === 'analog' ? 'W' : 'B'}` as keyof typeof next;
+    let a: string;
+    do a = key.endsWith('B') ? `${key}${ioHex(next[key] >> 4)}${hex(next[key]++ & 15, 1)}` : `${key}${ioHex(next[key]++)}`;
+    while (taken.has(a));
+    taken.add(a);
+    out.set(p.id, a);
+  }
+  return out;
+}
+
+/** Addresses: on the program's own MP registers when its points have them (an import), else the app's X / Y by module. */
+function autoAddresses(io: IOPoint[], c: CpuModel, modules: ModuleSlot[]): Map<string, string> {
+  if (io.some((p) => p.plcAddress && isMpIo(p.plcAddress.trim().toUpperCase()))) return nextFreeRegisters(io);
+  return neutralAutoAddresses(io, c, modules, yaskawaAnalogChannels(c, modules));
+}
+
+/** The MW words an imported program's own registers use (tags with an M register as `native`). */
+export function nativeWords(tags: TagDefinition[]): Set<number> {
+  const out = new Set<number>();
+  for (const t of tags) for (const w of (t.native ? mWords(t.native) : null) ?? []) out.add(w);
+  return out;
+}
+
+/**
+ * The layout for a program with registers of its own: each area keeps its default range when that is free, else
+ * goes to the first free range (from MW10000, in steps of 1000 words) that no imported register and no other area uses.
+ */
+export function allocateMemory(used: Set<number>, need: Partial<Record<MemoryArea, number>> = {}): MemoryLayout {
+  const taken = new Set(used);
+  const free = (base: number, size: number) => { if (base + size > M_WORDS) return false; for (let w = base; w < base + size; w++) if (taken.has(w)) return false; return true; };
+  const out: MemoryLayout = { ...DEFAULT_MEMORY };
+  const size: Partial<Record<MemoryArea, number>> = {};
+  // Areas bigger than their default first (they move anyway), then the rest in order.
+  for (const k of [...AREAS].sort((a, b) => Number((need[b] ?? 0) > AREA_WORDS[b]) - Number((need[a] ?? 0) > AREA_WORDS[a]))) {
+    const words = Math.max(need[k] ?? 0, AREA_WORDS[k]);
+    if (words > AREA_WORDS[k]) size[k] = words;
+    let base = DEFAULT_MEMORY[k];
+    if (!free(base, words)) { base = 10000; while (base < M_WORDS && !free(base, words)) base += 1000; }
+    out[k] = base;
+    for (let w = base; w < base + words; w++) taken.add(w);
+  }
+  return Object.keys(size).length ? { ...out, size } : out;
+}
+
+/** The words each area needs for the program's own operands (its imported registers aside). */
+export function memoryNeed(program: LadderProgram): Partial<Record<MemoryArea, number>> {
+  const natives = new Set(program.tags.filter((t) => t.native).map((t) => t.address.toUpperCase()));
+  const need: Partial<Record<MemoryArea, number>> = {};
+  for (const a of operandsOf(program)) {
+    if (natives.has(a)) continue;
+    const w = wordsNeeded(a);
+    if (w && w.words > (need[w.area] ?? 0)) need[w.area] = w.words;
+  }
+  return need;
+}
+
+/**
+ * The layout a project uses: the one stored with it (set once, e.g. when an MPE720 program is imported), else the
+ * one that fits this program (the defaults for a program within CLICK's ranges and no registers of its own).
+ */
+export function layoutFor(program: LadderProgram, stored?: MemoryLayout): MemoryLayout {
+  return stored ?? allocateMemory(nativeWords(program.tags), memoryNeed(program));
+}
+
+/** SC1 always ON, SC2 first scan, SC7 1 s clock → the MP system registers of an H drawing. */
+const SYSTEM_BITS: Record<number, string> = { 1: 'SB000004', 2: 'SB000001', 7: 'SB000012' };
+
+/** The MP register of a neutral memory operand (C1 → MB000000, DS1 → MW01000, TD3 → MW09702 …); null for what MP has no register for. */
+export function yaskawaMemory(address: string, layout: MemoryLayout = DEFAULT_MEMORY): string | null {
+  const m = /^(CTD|CT|TD|DS|DD|DH|DF|SC|C|T)(\d+)$/.exec(address.trim().toUpperCase());
+  if (!m) return null;
+  const n = Number(m[2]) - 1;
+  if (n < 0) return null;
+  const k = m[1];
+  switch (k) {
+    case 'C': case 'T': case 'CT': return mpRegister('M', 'B', layout[k] + (n >> 4), n & 15);
+    case 'DS': case 'DH': case 'TD': return mpRegister('M', 'W', layout[k] + n);
+    case 'DD': case 'CTD': return mpRegister('M', 'L', layout[k] + 2 * n);
+    case 'DF': return mpRegister('M', 'F', layout.DF + 2 * n);
+    // MP3000 Ladder Programming Manual SIEP C880725 13 App. A, for H (high-speed) drawings, where the app's
+    // program goes: always ON, first high-speed scan, 1.0 s flicker (L drawings: SB000003 / SB000032).
+    case 'SC': return SYSTEM_BITS[n + 1] ?? null;
+  }
+  return null;
+}
+
+/** The MP register of any app operand: an imported register as it was, I / O by module, memory by the layout. */
+export function yaskawaName(address: string, ctx: { cpuId?: string; modules?: ModuleSlot[]; tags?: TagDefinition[]; layout?: MemoryLayout }): string | null {
+  const a = address.trim().toUpperCase();
+  if (/^-?\d+(\.\d+)?$/.test(a)) return `#${a}`;
+  const native = ctx.tags?.find((t) => t.address.toUpperCase() === a)?.native;
+  if (native) return native;
+  if (isMpIo(a)) return a;
+  return yaskawaIo(a, cpuOf(ctx.cpuId), ctx.modules ?? [])?.register ?? yaskawaMemory(a, ctx.layout);
+}
+
+/** The operands of one rung, a MATH expression's included. */
+function operandsOfRung(r: Rung): string[] {
+  const exprs = r.outputs.flatMap((o) => (o.type === 'MATH' ? [o.expression] : []));
+  return [...rungAddresses(r), ...exprs.flatMap((x) => x.match(/\b[A-Z]{1,3}\d+\b/gi) ?? [])].map((a) => a.trim().toUpperCase()).filter(Boolean);
+}
+
+/** Every operand the program uses (contacts, coils, boxes, expressions). */
+function operandsOf(program: LadderProgram): Set<string> {
+  const out = new Set<string>();
+  for (const r of program.rungs) for (const a of operandsOfRung(r)) out.add(a);
+  return out;
+}
+
+/** What an M register occupies: one bit of a word (MB) or whole words (MW / ML / MF). */
+function cells(register: string): { word: number; bit: number | null }[] {
+  const ws = mWords(register) ?? [];
+  const bit = /^MB\d{5}([0-9A-F])$/i.exec(register)?.[1];
+  return ws.map((word) => ({ word, bit: bit != null ? parseInt(bit, 16) : null }));
+}
+
+/**
+ * Memory the app's operands would share with the program's own registers or with each other (an imported program
+ * keeps MB001000 … as they are): each is an error. A bit clashes with the same bit or with a word holding it; a
+ * word with any use of that word. Also an operand past its area (it would run into the next one).
+ */
+export function memoryOverlaps(program: LadderProgram, layout: MemoryLayout = layoutFor(program)): string[] {
+  const natives = new Set(program.tags.filter((t) => t.native).map((t) => t.address.toUpperCase()));
+  // word → who uses it: whole word, or bit → who
+  const byWord = new Map<number, { whole?: string; bits: Map<number, string> }>();
+  const clash = (word: number, bit: number | null, who: string): string | null => {
+    const u = byWord.get(word) ?? { bits: new Map<number, string>() };
+    byWord.set(word, u);
+    const other = u.whole ?? (bit == null ? [...u.bits.values()][0] : u.bits.get(bit));
+    if (bit == null) u.whole ??= who; else if (!u.bits.has(bit)) u.bits.set(bit, who);
+    return other && other !== who ? other : null;
+  };
+  for (const t of program.tags) if (t.native) for (const c of cells(t.native)) clash(c.word, c.bit, `the program's ${t.native}${t.nickname ? ` (${t.nickname})` : ''}`);
+  const issues: string[] = [];
+  for (const a of [...operandsOf(program)].sort()) {
+    if (natives.has(a)) continue;
+    const need = wordsNeeded(a);
+    if (!need) continue;
+    const k = need.area;
+    if (need.words > sizeOf(layout, k)) { issues.push(`${a} is past the ${k} area of this Yaskawa project (${sizeOf(layout, k)} words from MW${dec(layout[k])}).`); continue; }
+    const reg = yaskawaMemory(a, layout);
+    if (!reg) continue;
+    for (const c of cells(reg)) {
+      const other = clash(c.word, c.bit, `${a} (${reg})`);
+      if (other) issues.push(`${a} is ${reg} in this project, which ${other} already uses: move the app's memory to free registers or use the program's own register.`);
+    }
+  }
+  return [...new Set(issues)];
+}
+
+const KNOWLEDGE = (c: CpuModel) => `Target: Yaskawa ${c.label}, programmed in MPE720 Ver.7 ladder. Write the program in the app's neutral operands; the app shows and exports them as MP registers:
+- I/O is on LIO modules (X1xx / Y1xx… = module in slot order, 16 points per word): X101 = IB00000 on the first module${c.builtInInputs ? `; the built-in points are X001–X0${String(c.builtInInputs).padStart(2, '0')} / Y001–Y0${String(c.builtInOutputs).padStart(2, '0')}` : ''}.
+- Internal bits C → MB, registers DS / DH → MW, DD → ML, DF → MF; timers T (done bit) with TD (count register), counters CT with CTD.
+- Servo axes are MECHATROLINK network axes (motion registers, not pulse outputs): never use pulse / direction outputs for them.
+- SC1 = SB000004 (always ON), SC2 = SB000001 (first scan), SC7 = SB000012 (1 s clock). No other SC / SD bits.`;
+
+/**
+ * MPE720 instruction names for the app's elements, only those the MP3000 Ladder Programming Manual names
+ * (SIEP C880725 13: TON / TOFF timers, COUNTER, STORE, ON / OFF pulse); the others keep the app's names.
+ */
+export const YASKAWA_MNEMONICS: Record<string, string> = {
+  NO: '-| |-', NC: '-|/|-', RISE: 'ON-PULSE', FALL: 'OFF-PULSE', OUT: '-( )-', SET: '-(S)-', RST: '-(R)-',
+  TMR_ON_DELAY: 'TON', TMR_OFF_DELAY: 'TOFF', CNT_UP: 'COUNTER', CNT_DOWN: 'COUNTER', COPY: 'STORE',
+};
+
+export const yaskawaProfile: PlcProfile = {
+  id: YASKAWA_PROFILE_ID,
+  vendor: 'Yaskawa',
+  name: 'MP3000 / MP2000 (MPE720)',
+  language: 'ladder',
+  // Not offered until the MPE720 export exists; a program read from MPE720 stays on it (getProfile returns it).
+  available: false,
+  readOnly: true,
+  autoChoose: false,
+  cpuModels: YASKAWA_CPUS,
+  defaultCpuId: 'MP-CPU',
+  autoAddresses,
+  parseAddress,
+  promptKnowledge: KNOWLEDGE,
+  checkRung: (rung) => {
+    const issues: { severity: 'error' | 'warning'; message: string }[] = [];
+    for (const a of operandsOfRung(rung)) {
+      if (/^SC\d+$/.test(a) && !['SC1', 'SC2', 'SC7'].includes(a)) issues.push({ severity: 'error', message: `${a}: the MP system registers the app uses are SC1 (SB000004, always ON), SC2 (SB000001, first scan) and SC7 (SB000012, 1 s clock) only.` });
+      if (/^(SD|TXT)\d+$/.test(a)) issues.push({ severity: 'error', message: `${a}: the Yaskawa profile has no register for it.` });
+    }
+    return issues;
+  },
+  dataTypeOf,
+  simSemantics: { alwaysOn: 'SC1', firstScan: 'SC2', clock1s: 'SC7', retentive: clickRetentive },
+  analogChannels: yaskawaAnalogChannels,
+  mnemonics: YASKAWA_MNEMONICS,
+  // I / O only (memory needs the project's layout: see yaskawaName and the PLC names lookup).
+  ioTag: (a, modules, cpuId) => (isMpIo(a.trim().toUpperCase()) ? a.trim().toUpperCase() : yaskawaIo(a, cpuOf(cpuId), modules)?.register ?? null),
+  exporters: [],
+};

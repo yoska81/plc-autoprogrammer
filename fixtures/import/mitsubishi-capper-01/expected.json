@@ -1,0 +1,439 @@
+{
+  "fixture": "mitsubishi-capper-01",
+  "sourceFiles": [
+    "CAPPER_MAIN.csv",
+    "CAPPER_DeviceComment.csv"
+  ],
+  "format": "Mitsubishi GX Works3 program export to CSV (instruction list, UTF-16 LE, tab-delimited) + device comment CSV",
+  "machine": "Single-head inline bottle capper. Bottles arrive on a conveyor and are held at the capping station by a stop gate. When a bottle has settled (0.5 s) and a cap is in the chuck with the head up, the bottle is clamped, the pneumatic head lowers and the spindle motor screws the cap on until the torque clutch switch makes. After a 0.3 s dwell the head rises, the clamp opens, good bottles are counted against the batch size in D0 (500) and the gate releases the bottle while the escapement feeds the next cap. If torque is not reached within 3 s the bottle is marked as a reject and pushed off on release; 5 rejects stop the machine. A maintenance pushbutton jogs the spindle when the machine is not running.",
+  "plc": {
+    "brand": "Mitsubishi Electric",
+    "family": "MELSEC iQ-F",
+    "cpu": "FX5U-32MT/ES",
+    "software": "GX Works3",
+    "modules": [
+      {
+        "slot": 0,
+        "name": "CPU",
+        "catalog": "FX5U-32MT/ES",
+        "description": "FX5U CPU, 16 DI (X0-X17) 24 V DC, 16 DO (Y0-Y17) transistor sink"
+      }
+    ],
+    "programs": [
+      {
+        "name": "MAIN",
+        "type": "scan",
+        "language": "ladder",
+        "steps": 173
+      }
+    ]
+  },
+  "io": [
+    {
+      "address": "X0",
+      "tag": "Start_PB",
+      "description": "Start pushbutton (NO)",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X1",
+      "tag": "Stop_PB",
+      "description": "Stop pushbutton (NC, ON = not pressed)",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X2",
+      "tag": "EStop_OK",
+      "description": "E-stop safety relay OK",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X3",
+      "tag": "Reset_PB",
+      "description": "Fault reset pushbutton (NO)",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X4",
+      "tag": "Bottle_At_Station_PE",
+      "description": "Bottle in capping position photo eye",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X5",
+      "tag": "Cap_In_Chuck_PE",
+      "description": "Cap present in capping chuck sensor",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X6",
+      "tag": "Head_Up_LS",
+      "description": "Capping head up limit switch",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X7",
+      "tag": "Head_Down_LS",
+      "description": "Capping head down limit switch",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X10",
+      "tag": "Clamp_Closed_LS",
+      "description": "Bottle clamp closed limit switch",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X11",
+      "tag": "Torque_Reached",
+      "description": "Spindle torque clutch reached switch",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X12",
+      "tag": "Cap_Chute_Full_PE",
+      "description": "Cap chute level photo eye (ON = caps in chute)",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X13",
+      "tag": "Guard_Closed",
+      "description": "Guard door closed safety switch",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X14",
+      "tag": "Air_OK",
+      "description": "Air pressure switch OK",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "X15",
+      "tag": "Jog_Spindle_PB",
+      "description": "Manual jog spindle pushbutton (maintenance)",
+      "type": "input",
+      "signal": "digital"
+    },
+    {
+      "address": "Y0",
+      "tag": "Conveyor_Run",
+      "description": "Bottle conveyor motor",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Y1",
+      "tag": "Bottle_Gate_Sol",
+      "description": "Bottle stop gate solenoid (ON = gate closed, holds bottle)",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Y2",
+      "tag": "Clamp_Close_Sol",
+      "description": "Bottle clamp close solenoid",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Y3",
+      "tag": "Head_Down_Sol",
+      "description": "Capping head down solenoid (spring return up)",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Y4",
+      "tag": "Spindle_Run",
+      "description": "Capping spindle motor",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Y5",
+      "tag": "Cap_Feed_Sol",
+      "description": "Cap escapement / feed solenoid",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Y6",
+      "tag": "Reject_Sol",
+      "description": "Reject pusher solenoid (bad cap)",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Y7",
+      "tag": "Lamp_Green",
+      "description": "Running lamp",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Y10",
+      "tag": "Lamp_Red",
+      "description": "Fault lamp",
+      "type": "output",
+      "signal": "digital"
+    },
+    {
+      "address": "Y11",
+      "tag": "Buzzer",
+      "description": "Fault buzzer",
+      "type": "output",
+      "signal": "digital"
+    }
+  ],
+  "sequence": {
+    "style": "Step bits M100-M106 with SET/RST",
+    "steps": [
+      {
+        "step": "M100",
+        "description": "Wait for a bottle at the station (X4) for 0.5 s (T0); with a cap in the chuck (X5) and head up (X6) go to clamp."
+      },
+      {
+        "step": "M101",
+        "description": "Close the bottle clamp (Y2); when clamp closed (X10) go to capping. 2 s timeout T1 -> alarm M57."
+      },
+      {
+        "step": "M102",
+        "description": "Head down (Y3) and spindle on (Y4) until torque switch X11 -> dwell. No torque within 3 s of the head reaching down (X7, T2) -> mark reject (M60), count C1, go to head up."
+      },
+      {
+        "step": "M103",
+        "description": "Torque dwell 0.3 s (T3), head stays down, spindle off; then head up."
+      },
+      {
+        "step": "M104",
+        "description": "Head up (Y3 off); when head up (X6) go to unclamp. 3 s timeout T5 -> alarm M55."
+      },
+      {
+        "step": "M105",
+        "description": "Clamp opens (Y2 off); when clamp no longer closed, count good bottle in C0 (unless reject) and go to release."
+      },
+      {
+        "step": "M106",
+        "description": "Gate opens (Y1 off) for 1 s (T4), cap feed (Y5) until a cap is in the chuck, reject pusher (Y6) if M60; then clear M60 and back to step 1."
+      }
+    ],
+    "batchEnd": "When C0 reaches D0 (500) and the sequence is back in step 1, M0 is reset (machine stops) and C0 is reset."
+  },
+  "timers": [
+    {
+      "name": "T6",
+      "type": "OUT T (100 ms on-delay)",
+      "preset": "K50",
+      "presetMs": 5000,
+      "purpose": "Cap chute low delay 5 s",
+      "where": "MAIN, step 23 (rung: Warning: cap chute low for 5 s)"
+    },
+    {
+      "name": "T0",
+      "type": "OUT T (100 ms on-delay)",
+      "preset": "K5",
+      "presetMs": 500,
+      "purpose": "Bottle settle delay 0.5 s",
+      "where": "MAIN, step 46 (rung: Step 1: bottle settle)"
+    },
+    {
+      "name": "T1",
+      "type": "OUT T (100 ms on-delay)",
+      "preset": "K20",
+      "presetMs": 2000,
+      "purpose": "Clamp close timeout 2 s",
+      "where": "MAIN, step 58 (rung: Step 2: clamp timeout)"
+    },
+    {
+      "name": "T2",
+      "type": "OUT T (100 ms on-delay)",
+      "preset": "K30",
+      "presetMs": 3000,
+      "purpose": "Torque timeout 3 s after head down",
+      "where": "MAIN, step 67 (rung: Step 3: torque timeout once head is down)"
+    },
+    {
+      "name": "T3",
+      "type": "OUT T (100 ms on-delay)",
+      "preset": "K3",
+      "presetMs": 300,
+      "purpose": "Torque dwell 0.3 s",
+      "where": "MAIN, step 87 (rung: Step 4: torque dwell)"
+    },
+    {
+      "name": "T5",
+      "type": "OUT T (100 ms on-delay)",
+      "preset": "K30",
+      "presetMs": 3000,
+      "purpose": "Head up timeout 3 s",
+      "where": "MAIN, step 95 (rung: Step 5: head up timeout)"
+    },
+    {
+      "name": "T4",
+      "type": "OUT T (100 ms on-delay)",
+      "preset": "K10",
+      "presetMs": 1000,
+      "purpose": "Bottle release time 1 s",
+      "where": "MAIN, step 115 (rung: Step 7: release time)"
+    }
+  ],
+  "counters": [
+    {
+      "name": "C0",
+      "type": "OUT C (16-bit up counter)",
+      "preset": "D0",
+      "presetValue": 500,
+      "purpose": "Good bottles in the batch; at count-up the machine stops at the end of the cycle and C0 is reset",
+      "reset": "RST C0 when C0 is up and back in step 1",
+      "where": "MAIN, step 104 (rung: Step 6: count good bottle when clamp open)"
+    },
+    {
+      "name": "C1",
+      "type": "OUT C (16-bit up counter)",
+      "preset": "K5",
+      "presetValue": 5,
+      "purpose": "Rejected bottles (no torque); at 5 raises alarm M54",
+      "reset": "RST C1 with Reset_PB (X3)",
+      "where": "MAIN, step 82 (rung: Count rejects)"
+    }
+  ],
+  "alarms": [
+    {
+      "address": "M51",
+      "text": "emergency stop",
+      "condition": "LDI X2",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "X3 Reset_PB",
+      "where": "MAIN, step 11 (rung: Alarm: E-stop)"
+    },
+    {
+      "address": "M52",
+      "text": "guard door open",
+      "condition": "LDI X13",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "X3 Reset_PB",
+      "where": "MAIN, step 13 (rung: Alarm: guard door)"
+    },
+    {
+      "address": "M53",
+      "text": "low air pressure",
+      "condition": "LDI X14",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "X3 Reset_PB",
+      "where": "MAIN, step 15 (rung: Alarm: air pressure)"
+    },
+    {
+      "address": "M54",
+      "text": "5 rejects - check caps / torque",
+      "condition": "LD C1",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "X3 Reset_PB",
+      "where": "MAIN, step 17 (rung: Alarm: 5 rejects)"
+    },
+    {
+      "address": "M55",
+      "text": "capping head not up (timeout)",
+      "condition": "LD T5 (head not up in 3 s)",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "X3 Reset_PB",
+      "where": "MAIN, step 19 (rung: Alarm: head up timeout)"
+    },
+    {
+      "address": "M57",
+      "text": "bottle clamp not closed (timeout)",
+      "condition": "LD T1 (clamp not closed in 2 s)",
+      "stopsMachine": true,
+      "latched": true,
+      "reset": "X3 Reset_PB",
+      "where": "MAIN, step 21 (rung: Alarm: clamp timeout)"
+    },
+    {
+      "address": "M56",
+      "text": "cap chute low",
+      "condition": "X12 OFF for 5 s (T6)",
+      "stopsMachine": false,
+      "latched": false,
+      "reset": "self-clearing",
+      "where": "MAIN, step 28 (rung: Warning: cap chute low for 5 s)"
+    }
+  ],
+  "interlocks": [
+    {
+      "output": "M0 (run)",
+      "requires": [
+        "X1 Stop_PB",
+        "X2 EStop_OK",
+        "NOT M50 fault"
+      ],
+      "where": "MAIN, step 5 (rung: Machine run latch)"
+    },
+    {
+      "output": "Y3 Head_Down_Sol",
+      "requires": [
+        "M102 or M103",
+        "X10 Clamp_Closed_LS",
+        "M0"
+      ],
+      "where": "MAIN, step 133 (rung: Head down: steps 3 and 4 with clamp closed)"
+    },
+    {
+      "output": "Y4 Spindle_Run",
+      "requires": [
+        "M102",
+        "NOT X11 Torque_Reached",
+        "M0"
+      ],
+      "where": "MAIN, step 138 (rung: Spindle: step 3 until torque)"
+    },
+    {
+      "output": "Step 1 -> 2",
+      "requires": [
+        "T0 (bottle settled)",
+        "X5 Cap_In_Chuck_PE",
+        "X6 Head_Up_LS"
+      ],
+      "where": "MAIN, step 53 (rung: Step 1 -> 2: bottle settled, cap in chuck, head up)"
+    },
+    {
+      "output": "Y5 Cap_Feed_Sol",
+      "requires": [
+        "M106",
+        "NOT X5"
+      ],
+      "where": "MAIN, step 142 (rung: Cap feed in step 7 until cap in chuck)"
+    }
+  ],
+  "devices": {
+    "D": {
+      "D0": "Batch size (500)",
+      "D10": "HMI good count = C0",
+      "D11": "HMI reject count = C1"
+    }
+  },
+  "knownIssues": [
+    {
+      "id": "MEL-1",
+      "where": "MAIN, step 169 (OUT Y4 in 'Maintenance: jog spindle') and step 138 (OUT Y4 in 'Spindle')",
+      "what": "Double coil: Y4 Spindle_Run is driven by two OUT instructions. The later maintenance jog rung (LDI M0 / AND X15 / OUT Y4) is evaluated last in the scan and overwrites the automatic result, so in AUTO (M0 ON) the spindle never runs, torque is never reached, every bottle times out as a reject and the machine stops on alarm M54 after 5 bottles.",
+      "fix": "Drive Y4 from one rung only, e.g. replace the auto rung's OUT Y4 with OUT M70, the jog rung's OUT Y4 with OUT M71, and add: LD M70 / OR M71 / OUT Y4."
+    }
+  ]
+}

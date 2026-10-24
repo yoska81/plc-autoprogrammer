@@ -1,0 +1,178 @@
+{
+  "name": "plc-autoprogrammer",
+  "productName": "ISA Auto Programmer",
+  "private": true,
+  "version": "0.7.0",
+  "type": "module",
+  "description": "ISA Auto Programmer: control panel, HMI and PLC program design for AutomationDirect equipment",
+  "author": "ISA",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "build:desktop": "tsc -b && vite build --outDir dist-desktop --emptyOutDir && node scripts/desktop-prepare.cjs",
+    "desktop": "npm run build:desktop && electron .",
+    "dist:win": "npm run build:desktop && node scripts/fetch-libredwg.cjs && node scripts/build-tia-bridge.cjs && node scripts/build-click-bridge.cjs && node scripts/build-codesys-bridge.cjs && node scripts/build-studio5000-bridge.cjs && electron-builder --win nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@heroicons/react": "^2.2.0",
+    "@huggingface/transformers": "^4.2.0",
+    "@monaco-editor/react": "^4.7.0",
+    "@tarikjabiri/dxf": "^2.9.0",
+    "exceljs": "^4.4.0",
+    "jspdf": "^4.2.1",
+    "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
+    "pdf-lib": "^1.17.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-router-dom": "^7.17.0",
+    "svg2pdf.js": "^2.8.1",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.12.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "autoprefixer": "^10.5.0",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
+    "electron-updater": "6.8.9",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "pdfjs-dist": "6.3.289",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.19",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vite": "^8.0.12",
+    "vite-plugin-singlefile": "^2.3.3"
+  },
+  "build": {
+    "appId": "com.isa.autoprogrammer",
+    "productName": "ISA Auto Programmer",
+    "copyright": "ISA",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist-desktop/**/*",
+      "electron/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "resources/libredwg",
+        "to": "libredwg",
+        "filter": [
+          "dwg2dxf.exe",
+          "libredwg-0.dll",
+          "libiconv-2.dll",
+          "COPYING",
+          "SOURCE.txt"
+        ]
+      },
+      {
+        "from": "resources/tia-bridge",
+        "to": "tia-bridge",
+        "filter": [
+          "TiaBridge.exe",
+          "TiaBridge.exe.config",
+          "README.md"
+        ]
+      },
+      {
+        "from": "resources/click-bridge",
+        "to": "click-bridge",
+        "filter": [
+          "ClickBridge.exe",
+          "ClickBridge.exe.config",
+          "README.md"
+        ]
+      },
+      {
+        "from": "resources/codesys-bridge",
+        "to": "codesys-bridge",
+        "filter": [
+          "CodesysBridge.exe",
+          "CodesysBridge.exe.config",
+          "isa_job.py",
+          "README.md"
+        ]
+      },
+      {
+        "from": "resources/studio5000-bridge",
+        "to": "studio5000-bridge",
+        "filter": [
+          "Studio5000Bridge.exe",
+          "Studio5000Bridge.exe.config",
+          "isa_logix_job.py",
+          "README.md"
+        ]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "yoska81",
+        "repo": "isa-autoprogrammer-releases",
+        "releaseType": "prerelease"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "ISA-Auto-Programmer-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ISA Auto Programmer",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "linux": {
+      "target": [
+        "dir"
+      ],
+      "icon": "build/icon.png",
+      "category": "Development"
+    },
+    "fileAssociations": [
+      {
+        "ext": "isap",
+        "name": "ISA Auto Programmer project",
+        "description": "ISA Auto Programmer project",
+        "role": "Editor"
+      }
+    ],
+    "asarUnpack": [
+      "electron/plcHelper.cjs",
+      "electron/tiaBridge.cjs",
+      "electron/clickBridge.cjs",
+      "electron/codesysBridge.cjs",
+      "electron/studio5000Bridge.cjs"
+    ]
+  }
+}
