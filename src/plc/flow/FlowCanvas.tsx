@@ -22,7 +22,7 @@ const STROKE: Record<NodeState | 'none', string> = { active: '#16a34a', true: '#
 const DETAIL_K = 0.32;
 
 /** The tag above a box: what it is doing now. */
-const TAG: Partial<Record<NodeState, [string, string]>> = { active: ['● NOW', '#16a34a'], waiting: ['… WAITING', '#d97706'], broken: ['✖ STUCK', '#dc2626'] };
+const TAG: Partial<Record<NodeState | 'none', [string, string]>> = { active: ['● NOW', '#16a34a'], waiting: ['… WAITING', '#d97706'], broken: ['✖ STUCK', '#dc2626'] };
 
 function NodeShape({ n, st, why, selected, hit, onPick }: { n: FlowNode; st: NodeState | undefined; why?: string; selected: boolean; hit: boolean; onPick: () => void }) {
   const s = st ?? 'none';
