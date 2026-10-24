@@ -118,19 +118,21 @@ export default forwardRef<FlowCanvasHandle, {
     setView({ x: (w - map.w * k) / 2, y: 20, k });
   }, [map]);
   const fit = useCallback(() => fitTo(size.w, size.h), [fitTo, size]);
-  // the size of the canvas; the whole program fitted in it when it first has a size, and when the program changes
-  const fitted = useRef<FlowMap | null>(null);
+  // the size of the canvas; the whole program fitted in it when it first has a size and when another program comes
+  // (its functions differ): an edit of this one keeps the view where it is
+  const fitted = useRef<string | null>(null);
+  const programKey = map.diagrams.map((d) => d.id).join('|');
   useEffect(() => {
     const el = box.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
       const w = el.clientWidth, h = el.clientHeight;
       setSize({ w, h });
-      if (fitted.current !== map && w > 0) { fitted.current = map; fitTo(w, h); }
+      if (fitted.current !== programKey && w > 0) { fitted.current = programKey; fitTo(w, h); }
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [map, fitTo]);
+  }, [programKey, fitTo]);
 
   useImperativeHandle(ref, () => ({
     fit,

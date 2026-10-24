@@ -41,6 +41,24 @@ export function ChangeList({ changes, testId }: { changes: FlowChange[]; testId:
   );
 }
 
+/** A step's own tools; its name box starts from the step's name (a new one for each step). */
+function StepTools({ step, title, rename, add, remove }: { step: number; title: string; rename: (name: string) => void; add: () => void; remove: () => void }) {
+  const [name, setName] = useState(title.replace(/^\d+\s*·\s*/, ''));
+  return (
+    <div className="space-y-1" data-testid="flow-step-tools">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-steel-400">Step {step}</p>
+      <div className="flex gap-1">
+        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Step name" data-testid="flow-step-name" className="min-w-0 flex-1 rounded border border-steel-300 px-2 py-1 text-xs" />
+        <button type="button" className={btn} disabled={!name.trim()} onClick={() => rename(name)}>Rename</button>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        <button type="button" className={btn} data-testid="flow-add-step" onClick={add}>Add a step after</button>
+        <button type="button" className={btn} data-testid="flow-delete-step" onClick={remove}>Delete this step</button>
+      </div>
+    </div>
+  );
+}
+
 export default function FlowEditPanel({ d, n, nameOf, onFocus }: {
   d: FlowDiagram; n: FlowNode | null; nameOf: NameOf;
   /** After an edit: the rung to show (a new step, a new rung). */
@@ -54,7 +72,6 @@ export default function FlowEditPanel({ d, n, nameOf, onFocus }: {
   const [baseline] = useState(ladder);
   const saved = useRef(false);
   const [note, setNote] = useState<string | null>(null);
-  const [name, setName] = useState(n?.kind === 'step' ? n.title.replace(/^\d+\s*·\s*/, '') : '');
   const [ask, setAsk] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -127,17 +144,10 @@ export default function FlowEditPanel({ d, n, nameOf, onFocus }: {
   return (
     <div className="space-y-3" data-testid="flow-edit">
       {n?.kind === 'step' && reg && n.step !== undefined && (
-        <div className="space-y-1" data-testid="flow-step-tools">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-steel-400">Step {n.step}</p>
-          <div className="flex gap-1">
-            <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Step name" data-testid="flow-step-name" className="min-w-0 flex-1 rounded border border-steel-300 px-2 py-1 text-xs" />
-            <button type="button" className={btn} disabled={!name.trim()} onClick={() => result(renameStep(ladder, reg, n.step!, name))}>Rename</button>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            <button type="button" className={btn} data-testid="flow-add-step" onClick={() => result(addStepAfter(ladder, reg, n.step!, 'New step'))}>Add a step after</button>
-            <button type="button" className={btn} data-testid="flow-delete-step" onClick={() => { if (confirm(`Delete step ${n.step}? The steps that go to it go on to where it went.`)) result(deleteStep(ladder, reg, n.step!)); }}>Delete this step</button>
-          </div>
-        </div>
+        <StepTools key={n.id} step={n.step} title={n.title}
+          rename={(name) => result(renameStep(ladder, reg, n.step!, name))}
+          add={() => result(addStepAfter(ladder, reg, n.step!, 'New step'))}
+          remove={() => { if (confirm(`Delete step ${n.step}? The steps that go to it go on to where it went.`)) result(deleteStep(ladder, reg, n.step!)); }} />
       )}
       {(!n || n.kind !== 'step') && (
         <div className="flex flex-wrap gap-1" data-testid="flow-rung-tools">

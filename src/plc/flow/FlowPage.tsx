@@ -15,11 +15,12 @@ import { rungAllAddresses } from '../sim/blocks';
 import LiveLadder from '../sim/LiveLadder';
 import { connectPlc, disconnectPlc, modbusBridge, useOnlineStore } from '../../online/useOnline';
 import { rungPowerFromValues } from '../../online/power';
-import { flowMap, type FlowDiagram, type FlowNode } from './flowModel';
+import { flowMap, nodesOfRung, type FlowDiagram, type FlowNode } from './flowModel';
+import FlowEditPanel from './FlowEditPanel';
 import { flowState, sequenceTimeouts, type FlowState, type StepClock } from './flowState';
 import FlowCanvas, { type FlowCanvasHandle } from './FlowCanvas';
 
-type Mode = 'diagram' | 'test' | 'watch';
+type Mode = 'diagram' | 'edit' | 'test' | 'watch';
 
 interface Values {
   power: Map<string, RungPower>;
@@ -59,8 +60,20 @@ export default function FlowPage() {
   }, [labels, ladder.tags]);
   const map = useMemo(() => flowMap(ladder, nameOf), [ladder, nameOf]);
   const timeouts = useMemo(() => sequenceTimeouts(ladder, map), [ladder, map]);
+  // the diagram now (an edit's new box is found in it a moment after the edit)
+  const mapRef = useRef(map);
+  useEffect(() => { mapRef.current = map; }, [map]);
   const canvas = useRef<FlowCanvasHandle>(null);
-  const [sel, setSel] = useState<{ d: FlowDiagram; n: FlowNode | null } | null>(null);
+  // the selection by ids (a box, or a rung to show), found again in the diagram after each edit
+  const [selIds, setSelIds] = useState<{ d: string; n: string | null; rung?: string } | null>(null);
+  const sel = useMemo(() => {
+    if (!selIds) return null;
+    if (selIds.rung) { const hit = nodesOfRung(map, selIds.rung)[0]; if (hit) return { d: hit.diagram, n: hit.node }; }
+    const d = map.diagrams.find((x) => x.id === selIds.d);
+    if (!d) return null;
+    return { d, n: (selIds.n && d.nodes.find((x) => x.id === selIds.n)) || null };
+  }, [selIds, map]);
+  const setSel = (x: { d: FlowDiagram; n: FlowNode | null } | null) => setSelIds(x ? { d: x.d.id, n: x.n?.id ?? null } : null);
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<Mode>('diagram');
   // window options: full screen, the functions list and the ladder panel shown or hidden, the ladder maximized
@@ -93,7 +106,7 @@ export default function FlowPage() {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const online = useOnlineStore();
   // only what this mode made (a simulator snapshot is never shown as the machine's)
-  const shown = snap?.mode === mode ? snap : null;
+  const shown = snap?.mode === mode && mode !== 'edit' ? snap : null;
   const values = shown?.values ?? null;
   const state = shown?.state ?? null;
 
@@ -198,6 +211,7 @@ export default function FlowPage() {
         </div>
         <div className="flex gap-1">
           {modeBtn('diagram', 'Diagram', 'The diagram only')}
+          {modeBtn('edit', 'Edit', 'Change the program from the diagram: steps, rungs, the ladder, or ask the AI')}
           {modeBtn('test', 'Test (simulator)', 'Run the program in the simulator and click its inputs: no machine needed')}
           {modeBtn('watch', 'Watch the real PLC', 'Read the machine and show where it is: read only, nothing is changed in the PLC')}
         </div>
@@ -313,7 +327,11 @@ export default function FlowPage() {
                   )}
                 </div>
               )}
-              <div>
+              {mode === 'edit' && (
+                <FlowEditPanel key={sel.d.id} d={sel.d} n={sel.n} nameOf={nameOf}
+                  onFocus={(rung) => { if (rung) { setSelIds({ d: sel.d.id, n: null, rung }); setTimeout(() => { const hit = nodesOfRung(mapRef.current, rung)[0]; if (hit) canvas.current?.show(hit.diagram.id, hit.node.id); }, 50); } }} />
+              )}
+              {mode !== 'edit' && <div>
                 <div className="flex items-center gap-1">
                   <p className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-steel-400">The same in ladder</p>
                   <button type="button" onClick={() => setLadderZoom((z) => Math.max(0.6, +(z - 0.15).toFixed(2)))} title="Smaller" data-testid="flow-ladder-smaller" className="h-6 w-6 rounded border border-steel-300 text-xs font-bold">A−</button>
@@ -324,7 +342,7 @@ export default function FlowPage() {
                   <LiveLadder program={{ ...ladder, rungs: selRungs }} numberOf={numberOf} power={values?.power ?? new Map<string, RungPower>()}
                     bits={values?.bits ?? new Map()} words={values?.words ?? new Map()} timers={values?.timers ?? new Map()} counters={values?.counters ?? new Map()} labelOf={nameOf} />
                 </div>
-              </div>
+              </div>}
               {symbols.length > 0 && (
                 <div className="rounded border border-steel-200 bg-steel-50 p-2 text-xs text-steel-700" data-testid="flow-learn">
                   <p className="mb-1 font-semibold text-steel-800">What these symbols mean</p>
