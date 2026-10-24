@@ -25,6 +25,19 @@ namespace ClickBridge
             string name = Path.GetFileNameWithoutExtension(exePath);
             return Process.GetProcessesByName(name).Select(p => new KeyValuePair<int, string>(p.Id, p.MainWindowTitle)).ToList();
         }
+
+        public IList<KeyValuePair<int, string>> Matching(string pattern)
+        {
+            var rx = new System.Text.RegularExpressions.Regex(pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var found = new List<KeyValuePair<int, string>>();
+            foreach (var p in Process.GetProcesses())
+            {
+                try { if (rx.IsMatch(p.ProcessName) || rx.IsMatch(p.MainWindowTitle ?? "")) found.Add(new KeyValuePair<int, string>(p.Id, p.MainWindowTitle)); }
+                catch (InvalidOperationException) { /* ended while read */ }
+                catch (System.ComponentModel.Win32Exception) { /* a system process */ }
+            }
+            return found;
+        }
     }
 
     /// <summary>The Pause key, for the whole desktop, while a run goes: pressing it stops the run.</summary>

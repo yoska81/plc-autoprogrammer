@@ -10,6 +10,7 @@ import SendToTia from './SendToTia';
 import SendToClick from './SendToClick';
 import SendToCodesys from './SendToCodesys';
 import SendToStudio5000 from './SendToStudio5000';
+import LearnSoftware from './LearnSoftware';
 
 const ROUTES: SendRoute[] = ['tia', 'click', 'codesys', 'studio5000'];
 
@@ -75,7 +76,7 @@ export default function SendToPlc({ profile }: { profile: PlcProfile }) {
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/40 p-6" onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
-          <div role="dialog" aria-label="Send to PLC software" className="w-full max-w-lg rounded bg-white shadow-xl">
+          <div role="dialog" aria-label="Send to PLC software" className="w-full max-w-xl rounded bg-white shadow-xl">
             <div className="flex items-start gap-3 border-b border-steel-200 px-5 py-3">
               <h2 className="flex-1 text-base font-semibold text-steel-900">Send to PLC software — {profile.vendor} {profile.name}</h2>
               <button onClick={() => setOpen(false)} aria-label="Close" className="rounded p-1 text-steel-400 hover:bg-steel-100 hover:text-steel-700"><XMarkIcon className="h-5 w-5" /></button>
@@ -89,6 +90,7 @@ export default function SendToPlc({ profile }: { profile: PlcProfile }) {
                   {handover && <p className="text-steel-800" data-testid="send-to-plc-handover">{handover}</p>}
                 </div>
               )}
+              {profile.id === 'yaskawa-mp' && plc?.click && <LearnSoftware />}
               <p className="text-xs text-steel-500">What to install and which clicks to try, brand by brand: <Link to="/test-card" onClick={() => setOpen(false)} className="underline">Test card</Link>.</p>
             </div>
           </div>

@@ -3,7 +3,8 @@
 //   or start it) · run (a step plan, while the user watches) · stop (urgent: ends a run before its next step)
 //   · resume (urgent: the user finished their turn, the run goes on)
 //   · dump (the controls of CLICK's windows, for the log) · writeFile (a file the plan imports, e.g. nicknames)
-//   · folder (the bridge's folder) · readFile (a file the user saved there from CLICK: nicknames, the printed ladder).
+//   · folder (the bridge's folder) · readFile (a file the user saved there from CLICK: nicknames, the printed ladder)
+//   · learn (read only: another maker's software, e.g. MPE720, its windows recorded for the app to learn).
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -111,6 +112,8 @@ namespace ClickBridge
                 Log.Write($"controls of CLICK's windows → {file}\n{text}");
                 return new Dictionary<string, object> { ["file"] = file, ["lines"] = text.Split('\n').Length };
             });
+            // read only: another maker's software (MPE720) recorded while the user works in it, for the app to learn
+            p.On("learn", (a, pr) => Learn.Record(pc, ui, folder, Str(a, "target"), Str(a, "label")));
             p.On("writeFile", (a, pr) =>
             {
                 // the file name only (no folder of the app's choosing: it stays in the bridge's own folder)

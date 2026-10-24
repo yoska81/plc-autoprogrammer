@@ -27,6 +27,8 @@ static class Tests
         public string Value(string path, string name, bool wow) => Values.TryGetValue($"{wow}|{path}|{name}", out var v) ? v : null;
         public string[] Programs(string folder) => Folders.TryGetValue(folder, out var f) ? f : new string[0];
         public IList<KeyValuePair<int, string>> Running(string exe) => Procs;
+        public List<KeyValuePair<int, string>> Others = new List<KeyValuePair<int, string>>();
+        public IList<KeyValuePair<int, string>> Matching(string pattern) => Others.Where(o => System.Text.RegularExpressions.Regex.IsMatch(o.Value, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase)).ToList();
         public FakePc With(bool wow, string key, string name, string version, string folder, params string[] exes)
         {
             string k = $"{wow}|{ClickDetect.Uninstall}";
@@ -47,6 +49,7 @@ static class Tests
         public string Value(string path, string name, bool wow) => _pc.Value(path, name, wow);
         public string[] Programs(string folder) => _pc.Programs(folder);
         public IList<KeyValuePair<int, string>> Running(string exe) => _running();
+        public IList<KeyValuePair<int, string>> Matching(string pattern) => _pc.Matching(pattern);
     }
 
     /// <summary>A CLICK in memory: its windows and controls, what was done to it, who is in front.</summary>
@@ -265,6 +268,30 @@ static class Tests
             var m = output.ToString().Split('\n').Where(l => l.Trim().Length > 0).Select(l => (Dictionary<string, object>)Json.Parse(l)).Where(x => x.ContainsKey("ok")).ToList();
             Eq("X001,Start", System.Text.Encoding.UTF8.GetString(Convert.FromBase64String((string)((Dictionary<string, object>)m[0]["result"])["base64"])));
             True(((string)m[1]["error"]).Contains("There is no other.csv"), (string)m[1]["error"]);
+            Directory.Delete(folder, true);
+        });
+
+        Test("learn: MPE720's windows recorded (installed, running, controls, a screenshot); nothing clicked; only known software", () =>
+        {
+            var ui = new FakeUi();
+            ui.Controls["MPE720 Ver.7 - demo"] = new List<(string, string, string)> { ("", "Ladder", "TreeItem"), ("100", "OK", "Button") };
+            var pc = new FakePc().With(true, "{MPE}", "MPE720 Ver.7", "7.95", @"C:\Yaskawa\MPE720", @"C:\Yaskawa\MPE720\MPE720.exe");
+            pc.Others.Add(new KeyValuePair<int, string>(7, "MPE720 Ver.7 - demo"));
+            pc.Others.Add(new KeyValuePair<int, string>(8, "Notepad"));
+            string folder = Path.Combine(Path.GetTempPath(), "learn-" + Guid.NewGuid().ToString("N"));
+            var output = new StringWriter();
+            var p = Commands.Register(new Protocol(output), pc, ui, null, folder);
+            p.Handle("{\"id\":1,\"cmd\":\"learn\",\"args\":{\"target\":\"mpe720\",\"label\":\"1 project open\"}}");
+            p.Handle("{\"id\":2,\"cmd\":\"learn\",\"args\":{\"target\":\"notepad\"}}");
+            var m = output.ToString().Split('\n').Where(l => l.Trim().Length > 0).Select(l => (Dictionary<string, object>)Json.Parse(l)).Where(x => x.ContainsKey("ok")).ToList();
+            var r = (Dictionary<string, object>)m[0]["result"];
+            Eq(1, ((List<object>)r["running"]).Count, "running");
+            Eq("7.95", ((Dictionary<string, object>)((List<object>)r["installed"])[0])["version"], "installed");
+            string text = File.ReadAllText((string)r["file"]);
+            True(text.Contains("=== process 7, window \"MPE720 Ver.7 - demo\"") && text.Contains("TreeItem \"Ladder\"") && !text.Contains("Notepad\"\n==="), text);
+            True(Path.GetFileName((string)r["file"]).StartsWith("learn-mpe720-1_project_open-"), (string)r["file"]);
+            True(ui.Did.All(d => d.StartsWith("shot ")), "nothing but a screenshot: " + string.Join(", ", ui.Did));
+            True(((string)m[1]["error"]).Contains("cannot learn"), (string)m[1]["error"]);
             Directory.Delete(folder, true);
         });
 

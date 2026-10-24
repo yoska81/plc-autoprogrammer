@@ -18,6 +18,8 @@ namespace ClickBridge
         string[] Programs(string folder);
         /// <summary>Running processes of a program file: (process id, main window title).</summary>
         IList<KeyValuePair<int, string>> Running(string exePath);
+        /// <summary>Running processes whose name or main window title matches: (process id, main window title).</summary>
+        IList<KeyValuePair<int, string>> Matching(string pattern);
     }
 
     public sealed class ClickInstall
