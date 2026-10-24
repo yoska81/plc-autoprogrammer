@@ -5,7 +5,7 @@ import { hmiFit, platformOf, type Need } from '../../plc/core/fit';
 import { allPanelRows } from '../../hmi/panelRows';
 import type { HmiModel } from '../../hmi/hmiCatalog';
 import { specToText, type SpecSections } from '../../spec/types';
-import { choosableProfiles, plcPreference, unsupportedBrands } from '../../spec/brand';
+import { choosableProfiles, namesSlio, plcPreference, unsupportedBrands } from '../../spec/brand';
 import { callClaude } from './anthropic';
 import { specForAI } from './specForAI';
 
@@ -25,7 +25,10 @@ const NO_NEED: Need = { digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, an
 
 export function equipmentChoices(specText: string, preferredPlcVendors: string[]) {
   const profiles = choosableProfiles(specText, preferredPlcVendors);
-  const cpus = profiles.flatMap((p) => p.cpuModels.map((c) => ({ profile: p, cpu: c })));
+  // a Yaskawa SLIO CPU sits in the Siemens profile (TIA Portal programs it as an S7-300): offered only when named,
+  // and then alone (a description naming Siemens S7 is not answered with a Yaskawa CPU)
+  const slio = namesSlio(specText);
+  const cpus = profiles.flatMap((p) => p.cpuModels.filter((c) => (platformOf(c.id)?.id === 'yaskawa-slio') === (slio && p.id === 'siemens-s7') || p.id !== 'siemens-s7').map((c) => ({ profile: p, cpu: c })));
   // Expansion modules of the chosen brands' platforms; CLICK's own modules for CLICK.
   const pns = new Set(cpus.flatMap(({ cpu }) => platformOf(cpu.id)?.modules ?? []));
   const modules = [

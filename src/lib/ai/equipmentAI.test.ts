@@ -13,6 +13,11 @@ assert.deepEqual(ids('Pick and place cell with two conveyors.'), ['click']);
   const c = equipmentChoices('Bottle capper. Controller: Siemens S7-1200, TIA Portal. 12 inputs, 8 outputs.', ['automationdirect']);
   assert.deepEqual(c.profiles.map((p) => p.id), ['siemens-s7']);
   assert.ok(c.cpus.length && c.cpus.every(({ cpu }) => /^6ES7/.test(cpu.id)), 'only 6ES7 CPUs');
+  // a Yaskawa SLIO CPU named: the only CPU offered (TIA Portal programs it as an S7-300), its SLIO modules
+  const y = equipmentChoices('Packer. PLC: Yaskawa System SLIO CPU 015PN, programmed in TIA Portal.', ['automationdirect']);
+  assert.deepEqual(y.profiles.map((p) => p.id), ['siemens-s7']);
+  assert.deepEqual(y.cpus.map(({ cpu }) => cpu.id), ['015-CEFPR01']);
+  assert.ok(y.modules.some((m) => m.partNumber === '021-1BH00'), 'SLIO modules offered');
   assert.ok(c.modules.length && c.modules.every((m) => /^6ES7/.test(m.partNumber)), `only Siemens modules (${c.modules.filter((m) => !/^6ES7/.test(m.partNumber)).map((m) => m.partNumber).join(', ')})`);
   assert.ok(!c.modules.some((m) => /^C0-/.test(m.partNumber)), 'no CLICK modules');
   assert.ok(c.hmis.length > 0, 'panels for an S7');

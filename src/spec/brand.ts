@@ -49,9 +49,16 @@ const SUPPORTED_MAKERS: [RegExp, string][] = [
 ];
 const HAS_PLC_WORD = new RegExp(String.raw`\b(?:${PLC_WORD}|controllers?)\b`, 'i');
 
+/** Yaskawa (VIPA) System SLIO / SPEED7, named: TIA Portal programs it as an S7-300 (the Siemens profile's SLIO CPU). */
+const SLIO = /\b(?:system|yaskawa|vipa)[\s-]+slio\b|\bslio[\s-]+(?:cpu|plc)\b|\bvipa\b|\bspeed7\b|\b015-cefpr01\b/i;
+/** Does the description name a Yaskawa SLIO CPU (then it is the Siemens profile's only CPU; else that CPU is not offered)? */
+export const namesSlio = (specText: string) => SLIO.test(normalize(specText));
+
 /** Brand or family names in a machine description, by PLC profile. Family names (S7-1200, CompactLogix) are PLCs. */
 const NAMED: [RegExp, string[]][] = [
   [/\bs7[-\s]?(1[25]|[34])00\b|\b(simatic|siemens) s7\b|\btia portal\b/i, ['siemens-s7']],
+  // Yaskawa (VIPA) System SLIO / SPEED7: programmed in TIA Portal as an S7-300 (the Siemens profile's SLIO CPU)
+  [SLIO, ['siemens-s7']],
   [plcNear('siemens'), ['siemens-s7']],
   [plcNear('allen[-\\s]?bradley|rockwell'), ['logix', 'micro800']],
   [/\b(compact|control)logix\b|\bstudio 5000\b/i, ['logix']],

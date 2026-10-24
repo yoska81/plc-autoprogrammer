@@ -92,6 +92,14 @@ export const PLATFORMS: Platform[] = [
     notes: 'The CPU has no I/O of its own: the I/O is an ET 200SP station (IM 155-6 PN ST 6ES7155-6AU01-0BN0 with BusAdapter 6ES7193-6AR00-0AA0, one BaseUnit per module, server module 6ES7193-6PA00-0AA0). The CPU needs a SIMATIC Memory Card (6ES7954-8LE03-0AA0).',
   },
   {
+    id: 'yaskawa-slio', vendor: 'yaskawa', name: 'Yaskawa System SLIO (TIA Portal)',
+    cpus: ['015-CEFPR01'],
+    modules: ['021-1BF00', '021-1BH00', '022-1BF00', '022-1BH00', '031-1BD30', '031-1BD40', '032-1BD30', '032-1BD40'],
+    maxModules: 64,
+    protocols: ['PROFINET'],
+    notes: 'Programmed in TIA Portal as a Siemens CPU 315-2 PN/DP (6ES7 315-2EH14 V3.2); the I/O modules through Yaskawa\'s GSDML "SLIO System". Up to 64 SLIO modules (power and clamp modules included); the CPU feeds the modules up to 3 A on the backplane, above that a power module 007-1AB10.',
+  },
+  {
     id: 'schneider-m221', vendor: 'schneider', name: 'Schneider Modicon M221',
     cpus: ['TM221CE24T', 'TM221CE40T', 'TM221ME16T'],
     modules: ['TM3DI16', 'TM3DQ16T', 'TM3DQ16R', 'TM3AI4', 'TM3AQ2', 'TM3AM6'],

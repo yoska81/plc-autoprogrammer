@@ -5,6 +5,7 @@ import { plcBridges } from '../../desktop/plcHelper';
 import { type TiaDetect } from '../../desktop/bridge';
 import { collectProject } from '../../deliverables/collect';
 import { tiaBlocks, tiaBlockVersion, tiaPlcRequest, tiaProjectName, tiaTagRows } from '../tia/tiaSend';
+import { TIA_AS } from '../core/profiles/siemens';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useProgramStore } from '../../store/useProgramStore';
 
@@ -91,9 +92,12 @@ export default function SendToTia({ profileId }: { profileId: string }) {
     const r = await step('open', () => tia.call('open', target === 'new' ? { name: newProject } : { processId: target }) as Promise<Opened>);
     if (!r) return;
     setOpened(r);
-    const f = await step('open', () => tia.call('firmware', { orderNumber: r.plc?.orderNumber ?? p.cpu.id }) as Promise<{ versions: string[] }>);
-    setFirmware(f?.versions ?? []);
-    setFw(r.plc?.firmware ?? f?.versions[0] ?? '');
+    const req = tiaPlcRequest(p);
+    const f = await step('open', () => tia.call('firmware', { orderNumber: r.plc?.orderNumber ?? req.orderNumber }) as Promise<{ versions: string[] }>);
+    const versions = f?.versions ?? [];
+    setFirmware(req.firmware && !versions.includes(req.firmware) ? [req.firmware, ...versions] : versions);
+    // a Yaskawa SLIO CPU: the firmware its manual names (V3.2), not the newest
+    setFw(r.plc?.firmware ?? req.firmware ?? f?.versions[0] ?? '');
   };
 
   const send = async () => {
@@ -140,7 +144,7 @@ export default function SendToTia({ profileId }: { profileId: string }) {
   };
 
   const newProject = tiaProjectName(projectName);
-  const otherPlc = opened?.plc && opened.plc.orderNumber.replace(/\s/g, '') !== cpu;
+  const otherPlc = opened?.plc && opened.plc.orderNumber.replace(/\s/g, '') !== (TIA_AS[cpu]?.orderNumber ?? cpu);
 
   return (
     <>
@@ -241,14 +245,16 @@ export default function SendToTia({ profileId }: { profileId: string }) {
               {tagsDone && (
                 <section className="space-y-2" data-testid="tia-program">
                   <h3 className="font-semibold text-steel-900">4. The program</h3>
-                  <p className="text-xs text-steel-500">The ladder goes in as LAD blocks for TIA Portal {opened?.version} (a block of the same name in the project is replaced), then TIA Portal compiles it. Nothing goes to the PLC yet.</p>
+                  <p className="text-xs text-steel-500">{TIA_AS[cpu]
+                    ? <>The program goes in as one SCL source (the CPU is set up as an S7-300 in TIA Portal; TIA Portal makes the blocks from it, a block of the same name is replaced), then TIA Portal compiles it. Nothing goes to the PLC yet.</>
+                    : <>The ladder goes in as LAD blocks for TIA Portal {opened?.version} (a block of the same name in the project is replaced), then TIA Portal compiles it. Nothing goes to the PLC yet.</>}</p>
                   <button onClick={() => void sendProgram()} disabled={Boolean(busy)} data-testid="tia-program-button"
                     className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-40">Put the program in and compile</button>
                   {programDone && (
                     <div className="space-y-1 text-steel-700" data-testid="tia-program-done">
                       <p>{programDone.failed.length
                         ? <><ExclamationTriangleIcon className="mr-1 inline h-4 w-4 text-amber-600" />{programDone.imported} of {programDone.files} block files imported.</>
-                        : <><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />All {programDone.files} block files imported: {programDone.lad} of {programDone.rungs} rungs as ladder networks{programDone.viaScl ? `, ${programDone.viaScl} as small SCL functions (LAD has no form for them)` : ''}.</>}</p>
+                        : <><CheckCircleIcon className="mr-1 inline h-4 w-4 text-green-600" />{programDone.lad ? <>All {programDone.files} block files imported: {programDone.lad} of {programDone.rungs} rungs as ladder networks{programDone.viaScl ? `, ${programDone.viaScl} as small SCL functions (LAD has no form for them)` : ''}.</> : <>The program imported as SCL: all {programDone.rungs} rungs.</>}</>}</p>
                       {programDone.failed.length > 0 && <ul className="ml-5 list-disc text-amber-900">{programDone.failed.map((x) => <li key={x.name}>{x.name}: {x.error}</li>)}</ul>}
                       {programDone.compile && (
                         <div data-testid="tia-compiled">

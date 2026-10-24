@@ -176,7 +176,7 @@ assert.ok(!ok('omron-nx1p2', 'G07C0000') && ok('ab-compactlogix-5380', 'G07C0000
   }
 }
 // Driver ids are platform ids (agreed list; every platform that exists must be on it).
-const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'ab-compactlogix-5370', 'ab-compactlogix-5370-l1', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300', 'unitronics-unistream', 'unitronics-vision', 'unitronics-samba', 'unitronics-jazz', 'yaskawa-mp2000', 'yaskawa-mp3000']);
+const DRIVER_IDS = new Set(['click', 'ab-micro820', 'ab-micro850', 'ab-compactlogix-5380', 'ab-compactlogix-5370', 'ab-compactlogix-5370-l1', 'siemens-s7-1200', 'siemens-s7-1200-g2', 'siemens-s7-1500', 'schneider-m221', 'schneider-m241', 'omron-cp2e', 'omron-cp1e', 'omron-nx1p2', 'mitsubishi-fx5u', 'mitsubishi-fx5uc', 'delta-dvp', 'delta-as300', 'unitronics-unistream', 'unitronics-vision', 'unitronics-samba', 'unitronics-jazz', 'yaskawa-mp2000', 'yaskawa-mp3000', 'yaskawa-slio']);
 for (const pl of PLATFORMS) assert.ok(DRIVER_IDS.has(pl.id), `platform ${pl.id} is on the driver id list`);
 for (const p of ALL_HMIS()) for (const id of driversOf(p)) assert.ok(DRIVER_IDS.has(id), `${p.partNumber}: driver id ${id} is a known platform id`);
 

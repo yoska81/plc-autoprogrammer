@@ -49,6 +49,11 @@ export interface StDialect {
    * comment. Absent: the app's address is the name.
    */
   unnamed?(base: string): { name: string; comment: string } | undefined;
+  /**
+   * No R_TRIG / F_TRIG block (S7-300 in TIA Portal, a Yaskawa SLIO CPU): an edge is its bit and the signal of the last
+   * scan kept in <E>_M: rising = signal AND NOT memory, falling = NOT signal AND memory.
+   */
+  edgeEmulation?: boolean;
   /** Counter preset when it is not a constant (UniLogic CTU.PV is INT). */
   counterPv?(expr: string): string;
   /** Extra I/O statements once every variable is known (e.g. analog scaling); inputs go first, outputs last. */
@@ -151,7 +156,13 @@ export function toIecSt(program: LadderProgram, ctx: ExportContext, d: StDialect
       const a = op(e.address);
       if (e.type === 'NO') return a;
       if (e.type === 'NC') return `NOT ${a}`;
-      const inst = v(`${e.type === 'RISE' ? 'RT' : 'FT'}_${++edges}`, e.type === 'RISE' ? 'R_TRIG' : 'F_TRIG');
+      const id = `${e.type === 'RISE' ? 'RT' : 'FT'}_${++edges}`;
+      if (d.edgeEmulation) {
+        const q = v(id, 'BOOL'), m = v(`${id}_M`, 'BOOL');
+        pre.push(`${q} := ${e.type === 'RISE' ? `${a} AND NOT ${m}` : `NOT ${a} AND ${m}`};`, `${m} := ${a};`);
+        return q;
+      }
+      const inst = v(id, e.type === 'RISE' ? 'R_TRIG' : 'F_TRIG');
       pre.push(`${inst}(CLK := ${a});`);
       return `${inst}.Q`;
     };

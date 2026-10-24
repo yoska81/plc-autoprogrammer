@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { LadderProgram } from '../ladder';
 import type { ExportContext, ModuleSlot } from '../profile';
-import { siemensProfile, siemensAddress, siemensAnalogChannels, buildScl, siemensTagsSdf, SIEMENS_CPUS } from './siemens';
+import { siemensProfile, siemensAddress, siemensAnalogChannels, buildScl, siemensTagsSdf, SIEMENS_CPUS, TIA_AS, isS7300 } from './siemens';
 import { validateProgram } from '../validate';
 import type { IOPoint } from '../../../types/io';
 
@@ -165,6 +165,42 @@ assert.match(validateProgram(bad, siemensProfile, new Set()).map((i) => i.messag
   const out = buildScl(prog, { ...ctx, extraTags: [] }).scl;
   assert.match(out, /^\s+Flag_1 : Bool;\s+\/\/ .*my flag/m, out.split('\n').filter((l) => /Flag_/.test(l)).join('\n'));
   assert.match(out, /^\s+Flag_1_2 : Bool;\s+\/\/ no name in the project/m);
+}
+
+// A Yaskawa System SLIO CPU 015PN: TIA Portal configures it as an S7-300 CPU 315-2 PN/DP (Yaskawa HB300, 12.3), so
+// the program is S7-300 SCL: TON / TOF and CTU / CTD (INT presets, CTD's LOAD), no TONR, no R_TRIG, no NORM_X /
+// SCALE_X, standard (not optimized) blocks, the first scan from a memory bit outside the retentive bytes.
+{
+  const slio = SIEMENS_CPUS.find((c) => c.id === '015-CEFPR01')!;
+  assert.ok(isS7300(slio) && !isS7300(cpu));
+  assert.deepEqual(TIA_AS['015-CEFPR01'].orderNumber + ' ' + TIA_AS['015-CEFPR01'].firmware, '6ES7315-2EH14-0AB0 V3.2');
+  const sm: ModuleSlot[] = [{ partNumber: 'DI16', inputs: 16, outputs: 0 }, { partNumber: 'DO8', inputs: 0, outputs: 8 }, { partNumber: 'AI4', inputs: 0, outputs: 0, analogInputs: 4 }, { partNumber: 'AO2', inputs: 0, outputs: 0, analogOutputs: 2 }];
+  const a3 = siemensProfile.autoAddresses(io, slio, sm);
+  assert.deepEqual(io.map((p) => a3.get(p.id)), ['X101', 'X102', 'DF1', 'Y201', 'DF5']);
+  assert.deepEqual(['X101', 'Y201', 'DF1', 'DF5'].map((x) => siemensAddress(x, slio, sm)?.address), ['%I0.0', '%Q0.0', '%IW2', '%QW2'], 'packed from byte 0, analog after the digital bytes (check against Device configuration)');
+  const prog3: LadderProgram = { ...program, rungs: program.rungs.map((r) => ({ ...r, branches: r.branches.map((b) => b.map((e) => (e.type === 'NO' && e.address === 'X001' ? { ...e, address: 'X101' } : e.type === 'NC' && e.address === 'X002' ? { ...e, address: 'X102' } : e.type === 'RISE' && e.address === 'Y001' ? { ...e, address: 'Y201' } : e))), outputs: r.outputs.map((o) => (o.type === 'OUT' && o.address === 'Y001' ? { ...o, address: 'Y201' } : o.type === 'MATH' && o.dest === 'DF3' ? { ...o, dest: 'DF5' } : o.type === 'TMR' ? { ...o, resetAddress: 'X102' } : o)) })) };
+  const labels3 = new Map<string, string>(io.map((p) => [a3.get(p.id)!, p.description]));
+  const x = buildScl(prog3, { ...ctx, addresses: a3, labels: labels3, cpuId: slio.id, modules: sm });
+  const in3 = (t: string) => assert.ok(x.scl.includes(t), `missing: ${t}\n${x.scl}`);
+  const out3 = (t: string) => assert.ok(!x.scl.includes(t), `should not have: ${t}`);
+  out3('S7_Optimized_Access'); out3('VAR RETAIN'); out3('TONR'); out3('R_TRIG'); out3('NORM_X'); out3('SCALE_X'); out3('CTU_DINT'); out3('#Initialized');
+  in3('#FirstScan := NOT "ISA_Initialized";');
+  in3('"ISA_Initialized" := TRUE;');
+  in3('#RT_1 := #Pump_run AND NOT #RT_1_M;');
+  in3('#RT_1_M := #Pump_run;');
+  in3('#Cycles(CU := #RT_1, R := FALSE, PV := 1000);');
+  in3('      Cycles : CTU;');
+  in3('      T1_TON : TON;');
+  in3('#Fill_Timer := #T1_ET >= 30000;');
+  in3('#Tank_level := INT_TO_REAL("Tank_level_raw") / 27648.0 * (100.0 - 0.0) + 0.0;');
+  in3('"Valve_position_raw" := DINT_TO_INT(ROUND((#Valve_position - 0.0) / (100.0 - 0.0) * 27648.0));');
+  in3('FUNCTION_BLOCK "Machine"\nVERSION : 0.1');
+  in3('ORGANIZATION_BLOCK "Main"\nTITLE = "Main Program Sweep (Cycle)"\nVERSION : 0.1');
+  assert.deepEqual(x.st.warnings, []);
+  assert.ok(x.tags.some((t) => t.name === 'ISA_Initialized' && t.address === '%M100.0' && !t.inferred), 'the first-scan bit in the tag table');
+  // a down counter loads with LOAD (S7-300 CTD), its preset from a register as INT
+  const down = buildScl({ tags: [], rungs: [{ id: 'd', comment: '', branches: [[{ type: 'NO', address: 'C1' }]], outputs: [{ type: 'CNT', address: 'CT2', direction: 'DOWN', preset: 'DS5', resetAddress: 'C2' }] }] }, { ...ctx, cpuId: slio.id, modules: sm });
+  assert.match(down.scl, /\(CD := #\w+, LOAD := #\w+, PV := DINT_TO_INT\(#\w+\)\);/, down.scl);
 }
 
 console.log('siemens tests passed');

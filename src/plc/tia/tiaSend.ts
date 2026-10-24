@@ -6,11 +6,13 @@
  */
 import type { ProjectSnapshot } from '../../deliverables/collect';
 import { exportContext } from '../../deliverables/exportContext';
-import { buildScl, unusedIoTags } from '../core/profiles/siemens';
+import { buildScl, isS7300, TIA_AS, unusedIoTags } from '../core/profiles/siemens';
 import { buildTiaLad, TIA_VERSIONS, type TiaLadExport, type TiaVersion } from '../core/profiles/siemensLad';
 
 export interface TiaPlcRequest {
   orderNumber: string;
+  /** The firmware TIA Portal must use (a CPU of another maker set up as a Siemens one: its manual's); none: the newest. */
+  firmware?: string;
   name: string;
   /** Signal modules on the CPU's own rack, slot 2 onwards (S7-1200). */
   modules: { orderNumber: string; slot: number }[];
@@ -25,6 +27,9 @@ const SM_1200 = /^6ES72[23]\d-/;
 
 export function tiaPlcRequest(p: ProjectSnapshot): TiaPlcRequest {
   const notes: string[] = [];
+  // a Yaskawa SLIO CPU: the Siemens CPU TIA Portal sets it up as; its I/O modules come with Yaskawa's GSDML (by hand)
+  const as = TIA_AS[p.cpu.id];
+  if (as) return { orderNumber: as.orderNumber, firmware: as.firmware, name: 'PLC_1', modules: [], notes: [as.note, ...p.modules.map((m) => `${m}: on the SLIO System station (see above).`)] };
   const modules: TiaPlcRequest['modules'] = [];
   const rackOfCpu = p.cpu.platformId !== 'siemens-s7-1500';
   for (const part of p.modules) {
@@ -69,6 +74,12 @@ export interface TiaBlocks {
 }
 
 export function tiaBlocks(p: ProjectSnapshot, version: TiaVersion): TiaBlocks {
+  // S7-300 (a Yaskawa SLIO CPU): the program as one SCL source (TIA Portal generates FB "Machine", its DB and OB 1 from
+  // it); the LAD blocks are written for S7-1200 / S7-1500
+  if (isS7300(p.cpu)) {
+    const scl = buildScl(p.ladder, exportContext(p)).scl.replace(/^\uFEFF/, '');
+    return { files: [{ name: 'Machine.scl', kind: 'scl', text: scl }], lad: 0, viaScl: [], rungs: p.ladder.rungs.length, rungOf: () => null };
+  }
   const x = buildTiaLad(p.ladder, exportContext(p), 'Machine', version);
   const rank = (name: string) => (/_DB\.xml$/.test(name) ? 0 : name.endsWith('.scl') ? 1 : name === 'Main.xml' ? 3 : 2);
   const files = x.files

@@ -29,7 +29,7 @@ import { getPart } from '../../../electrical/catalog';
 import { outsideUserText } from '../userText';
 import { tiaLadFiles } from './siemensLad';
 
-type Family = 'S7-1200' | 'S7-1500';
+type Family = 'S7-1200' | 'S7-1500' | 'S7-300';
 
 const cpu = (id: string, platformId: string, inputs: number, outputs: number, label: string): CpuModel => ({ id, label, builtInInputs: inputs, builtInOutputs: outputs, platformId });
 
@@ -41,9 +41,25 @@ export const SIEMENS_CPUS: CpuModel[] = [
   cpu('6ES7214-1AH50-0XB0', 'siemens-s7-1200-g2', 14, 10, '6ES7214-1AH50-0XB0 — S7-1200 G2 CPU 1214C DC/DC/DC, 14 DI / 10 DQ'),
   cpu('6ES7511-1AL03-0AB0', 'siemens-s7-1500', 0, 0, '6ES7511-1AL03-0AB0 — S7-1500 CPU 1511-1 PN (I/O on ET 200SP)'),
   cpu('6ES7513-1AM03-0AB0', 'siemens-s7-1500', 0, 0, '6ES7513-1AM03-0AB0 — S7-1500 CPU 1513-1 PN (I/O on ET 200SP)'),
+  // Yaskawa (VIPA) System SLIO: programmed in TIA Portal as a Siemens S7-300 CPU (Yaskawa manual HB300, CPU 015PN, ch. 12)
+  cpu('015-CEFPR01', 'yaskawa-slio', 0, 0, '015-CEFPR01 — Yaskawa System SLIO CPU 015PN (TIA Portal: as CPU 315-2 PN/DP; I/O on SLIO modules)'),
 ];
 
-const familyOf = (c: CpuModel | undefined): Family => (c?.platformId === 'siemens-s7-1500' ? 'S7-1500' : 'S7-1200');
+/**
+ * The Siemens CPU TIA Portal configures for a CPU of another maker: Yaskawa's CPU 015PN is set up "as CPU 315-2 PN/DP
+ * (6ES7 315-2EH14 V3.2) from Siemens", its modules through the GSDML "... SLIO System" PROFINET IO device
+ * (Yaskawa HB300 | CPU | 015-CEFPR01 | en | 25-10, 12.3 "TIA Portal - Hardware configuration - CPU").
+ */
+export const TIA_AS: Record<string, { orderNumber: string; firmware: string; note: string }> = {
+  '015-CEFPR01': {
+    orderNumber: '6ES7315-2EH14-0AB0', firmware: 'V3.2',
+    note: 'The SLIO I/O modules: install Yaskawa\'s GSDML "SLIO System" (Yaskawa download center, GSDML SLIO; in TIA Portal: Options › Install general station description file), drag "... SLIO System" (Other field devices › PROFINET › IO › VIPA) into the Network view, connect it to the CPU\'s PROFINET and put the modules on it from slot 1 (Yaskawa manual HB300, 12.3).',
+  },
+};
+
+const familyOf = (c: CpuModel | undefined): Family => (c?.platformId === 'siemens-s7-1500' ? 'S7-1500' : c?.platformId === 'yaskawa-slio' ? 'S7-300' : 'S7-1200');
+/** A CPU programmed as an S7-300 in TIA Portal (a Yaskawa SLIO CPU): S7-300 instructions, standard (not optimized) blocks. */
+export const isS7300 = (c: CpuModel | undefined) => familyOf(c) === 'S7-300';
 const cpuAnalog = (c: CpuModel) => { const r = getPart(c.id)?.ratings ?? {}; return { ai: Number(r.analogInputs ?? 0), ao: Number(r.analogOutputs ?? 0) }; };
 
 /** Analog channels: CPU onboard first, then modules in slot order (inputs before outputs). */
@@ -109,9 +125,30 @@ export const SCL_BLOCKS: Pick<StDialect, 'types' | 'params' | 'msToTime' | 'time
   timeToMs: (e) => `TIME_TO_DINT(${e})`,
 };
 
+/**
+ * S7-300 SCL (a Yaskawa SLIO CPU, configured in TIA Portal as a CPU 315-2 PN/DP): the IEC timers and counters of the
+ * S7-300 (TON / TOF, CTU / CTD with INT presets; CTD loads with LOAD), no TONR (an accumulating timer is a TON with an
+ * accumulator) and no R_TRIG / F_TRIG (an edge is the signal and its last scan, edgeEmulation).
+ */
+export const SCL_300_BLOCKS: Pick<StDialect, 'types' | 'params' | 'msToTime' | 'timeToMs' | 'rtoEmulation' | 'edgeEmulation' | 'counterPv'> = {
+  ...SCL_BLOCKS,
+  types: { TON: 'TON', TOF: 'TOF', RTO: 'TON', CTU: 'CTU', CTD: 'CTD', R_TRIG: 'Bool', F_TRIG: 'Bool', BOOL: 'Bool', DINT: 'DInt', REAL: 'Real' },
+  params: { rtoReset: 'R', ctuReset: 'R', ctdLoad: 'LOAD' },
+  rtoEmulation: true,
+  edgeEmulation: true,
+  counterPv: (e) => `DINT_TO_INT(${e})`,
+};
+
+/**
+ * The first-scan memory of an S7-300: its instance DB keeps its values through a power cycle, so "Initialized" is a
+ * memory bit outside the S7-300's default retentive range (MB0 to MB15), cleared at every start.
+ */
+export const S7300_INITIALIZED = { name: 'ISA_Initialized', address: '%M100.0' };
+
 /** SCL dialect: FB statics referenced as #Name, PLC tags "Name", analog raw words scaled with NORM_X / SCALE_X. */
 function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDialect {
   const modules = ctx.modules ?? [];
+  const s300 = isS7300(c);
   const analog = new Map(ctx.io.filter((p) => p.signal === 'analog' && p.analog).map((p) => [ctx.addresses.get(p.id)?.toUpperCase() ?? '', p]));
   return {
     vendor: 'siemens-s7',
@@ -133,8 +170,10 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
     rawWord: (base, ref) => (analog.has(base) ? `"${ref.replace(/^#/, '')}_raw"` : null),
     ref: (n) => `#${n}`,
     firstScan: '#FirstScan',
-    ...SCL_BLOCKS,
-    prologue: ['(* First scan after every start (non-retentive statics restart at FALSE) *)', '#FirstScan := NOT #Initialized;', '#Initialized := TRUE;'],
+    ...(s300 ? SCL_300_BLOCKS : SCL_BLOCKS),
+    prologue: s300
+      ? ['(* First scan after every start: a memory bit outside the retentive range (the instance DB keeps its values) *)', `#FirstScan := NOT "${S7300_INITIALIZED.name}";`, `"${S7300_INITIALIZED.name}" := TRUE;`]
+      : ['(* First scan after every start (non-retentive statics restart at FALSE) *)', '#FirstScan := NOT #Initialized;', '#Initialized := TRUE;'],
     ioExtra: (vars: Map<string, StVariable>) => {
       const inputs: string[] = [], outputs: string[] = [];
       for (const [base, v] of vars) {
@@ -145,7 +184,11 @@ function sclDialect(ctx: ExportContext, c: CpuModel, tags: SiemensTag[]): StDial
         const raw = `${v.name}_raw`;
         tags.push({ name: raw, address: s.address, type: 'Int', comment: `${p.description} (${p.analog.range}, raw 0…27648 = ${p.analog.min}…${p.analog.max} ${p.analog.units})`, inferred: s.inferred, base });
         const lo = p.analog.min.toFixed(1), hi = p.analog.max.toFixed(1);
-        if (p.type === 'input') inputs.push(`#${v.name} := SCALE_X(MIN := ${lo}, VALUE := NORM_X(MIN := 0, VALUE := "${raw}", MAX := 27648), MAX := ${hi});`);
+        // S7-300: no NORM_X / SCALE_X; the same line in arithmetic (raw 0…27648 = the range)
+        if (s300) {
+          if (p.type === 'input') inputs.push(`#${v.name} := INT_TO_REAL("${raw}") / 27648.0 * (${hi} - ${lo}) + ${lo};`);
+          else outputs.push(`"${raw}" := DINT_TO_INT(ROUND((#${v.name} - ${lo}) / (${hi} - ${lo}) * 27648.0));`);
+        } else if (p.type === 'input') inputs.push(`#${v.name} := SCALE_X(MIN := ${lo}, VALUE := NORM_X(MIN := 0, VALUE := "${raw}", MAX := 27648), MAX := ${hi});`);
         else outputs.push(`"${raw}" := REAL_TO_INT(SCALE_X(MIN := 0.0, VALUE := NORM_X(MIN := ${lo}, VALUE := #${v.name}, MAX := ${hi}), MAX := 27648.0));`);
       }
       return { inputs, outputs };
@@ -184,6 +227,8 @@ export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport 
   for (const r of program.rungs) for (const o of r.outputs) if (own(o) && o.type === 'RAW') blocks.push(o.text.trim());
   const rest: LadderProgram = { ...program, rungs: program.rungs.map((r) => ({ ...r, outputs: r.outputs.filter((o) => !own(o)) })).filter((r) => r.outputs.length) };
   const st = toIecSt(rest, ctx, sclDialect(ctx, c, tags));
+  const s300 = isS7300(c);
+  if (s300) tags.push({ name: S7300_INITIALIZED.name, address: S7300_INITIALIZED.address, type: 'Bool', comment: 'Set after the first scan (outside the retentive memory bytes MB0 to MB15: cleared at every start)', inferred: false });
   // Setpoints, counters and run hours survive a power cycle (CLICK keeps DS / DD / DH / DF registers and
   // counters retentive): those statics are RETAIN in the optimized instance DB, the rest are not.
   const RETAIN_RE = /^(DS|DD|DH|DF|CT|CTD)\d+$/i;
@@ -195,18 +240,19 @@ export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport 
   // A program contact on a terminal the CPU does not have (a stale X001 on an S7-1500): a plain static, said.
   const stray = (v: StVariable) => (/^[XY]\d+$/.test(v.base) && !v.io ? ' (no I/O point: not wired)' : '');
   const line = (v: StVariable) => `      ${v.name} : ${v.type};   // ${(v.comment === v.base ? v.comment : sclComment(v.comment, st.variables, users)).replace(/[\r\n]+/g, ' ')}${stray(v)}`;
+  // S7-300: a standard (not optimized) instance DB keeps every value through a power cycle: no RETAIN section
   const decl = [
-    '      Initialized : Bool;   // set after the first scan',
+    ...(s300 ? [] : ['      Initialized : Bool;   // set after the first scan']),
     '      FirstScan : Bool;   // TRUE on the first scan after a start',
-    ...st.variables.filter((v) => !RETAIN_RE.test(v.base)).map(line),
+    ...st.variables.filter((v) => s300 || !RETAIN_RE.test(v.base)).map(line),
   ];
-  const retain = st.variables.filter((v) => RETAIN_RE.test(v.base)).map(line);
+  const retain = s300 ? [] : st.variables.filter((v) => RETAIN_RE.test(v.base)).map(line);
+  const optimized = s300 ? '' : "{ S7_Optimized_Access := 'TRUE' }\n";
   const indent = (s: string) => (s ? `   ${s}` : s);
   // Rung comments in the program's own names too ("preset is the HMI setpoint #SP_Push_Time", not DS1001).
   const body = st.body.replace(/\(\* ([\s\S]*?) \*\)/g, (_m, t: string) => `(* ${sclComment(t, st.variables, users)} *)`).split('\n').map(indent).join('\n');
   const scl = `${BOM}${blocks.map((b) => `${b}\n\n`).join('')}FUNCTION_BLOCK "Machine"
-{ S7_Optimized_Access := 'TRUE' }
-VERSION : 0.1
+${optimized}VERSION : 0.1
    VAR
 ${decl.join('\n')}
    END_VAR
@@ -216,8 +262,7 @@ ${body}
 END_FUNCTION_BLOCK
 
 DATA_BLOCK "Machine_DB"
-{ S7_Optimized_Access := 'TRUE' }
-VERSION : 0.1
+${optimized}VERSION : 0.1
 "Machine"
 
 BEGIN
@@ -225,8 +270,7 @@ END_DATA_BLOCK
 
 ORGANIZATION_BLOCK "Main"
 TITLE = "Main Program Sweep (Cycle)"
-{ S7_Optimized_Access := 'TRUE' }
-VERSION : 0.1
+${optimized}VERSION : 0.1
 BEGIN
    "Machine_DB"();
 END_ORGANIZATION_BLOCK
@@ -264,15 +308,19 @@ export function siemensTagsSdf(program: LadderProgram, ctx: ExportContext): stri
   return tags.map((t) => [t.name, t.address, t.type, 'True', 'True', 'False', t.inferred ? `${t.comment} — check against Device configuration` : t.comment, '', 'True'].map(q).join(',')).join('\r\n') + '\r\n';
 }
 
-const KNOWLEDGE = (c: CpuModel) => `Target: Siemens ${c.label}, programmed in TIA Portal. Write the program in the app's neutral operands; the app exports an SCL source (FB "Machine", its instance DB, OB "Main") and the PLC tag table:
+const KNOWLEDGE = (c: CpuModel) => `Target: ${isS7300(c) ? '' : 'Siemens '}${c.label}, programmed in TIA Portal${isS7300(c) ? ' as an S7-300 CPU' : ''}. Write the program in the app's neutral operands; the app exports an SCL source (FB "Machine", its instance DB, OB "Main") and the PLC tag table:
 - ${c.builtInInputs ? `Onboard inputs X001–X0${String(c.builtInInputs).padStart(2, '0')} (%I0.0…) and outputs Y001–Y0${String(c.builtInOutputs).padStart(2, '0')} (%Q0.0…)` : 'No onboard I/O'}; module points X1xx / Y1xx… (first digit = module in order). They become PLC tags named from the I/O description.
-- Internal bits C → Bool statics, T → TON_TIME / TOF_TIME / TONR_TIME instances (T1 = .Q, TD1 = elapsed time), CT → CTU_DINT / CTD_DINT (CTD1 = .CV), DS / DD → DInt, DF → Real. Name every operand in "tags" with a nickname (letters, digits, single underscores) — it becomes the variable name.
-- Analog channels are DF registers in engineering units: the export scales the raw word (0…27648) with NORM_X / SCALE_X, so the program never sees raw counts.
+- Internal bits C → Bool statics, T → ${isS7300(c) ? 'TON / TOF instances (an accumulating timer is a TON with an accumulator)' : 'TON_TIME / TOF_TIME / TONR_TIME instances'} (T1 = .Q, TD1 = elapsed time), CT → ${isS7300(c) ? 'CTU / CTD (INT presets up to 32767)' : 'CTU_DINT / CTD_DINT'} (CTD1 = .CV), DS / DD → DInt, DF → Real. Name every operand in "tags" with a nickname (letters, digits, single underscores) — it becomes the variable name.
+- Analog channels are DF registers in engineering units: the export scales the raw word (0…27648)${isS7300(c) ? '' : ' with NORM_X / SCALE_X'}, so the program never sees raw counts.
 - First scan SC2 → #FirstScan (generated); SC1 → TRUE; SC7 → generated 1-second clock. No other SC bits or SD registers.`;
 
 const EXPORTERS: ProgramExporter[] = [
   // Ladder first: what the technician works with in TIA Portal (a SimaticML block per file, siemensLad.ts).
-  { id: 'siemens-lad', label: 'Ladder (LAD) blocks for TIA Portal (Version control interface)', fileName: (b) => `${b}_TIA_LAD/`, build: () => '', files: (p, c, b) => tiaLadFiles(p, c, b) },
+  // (an S7-300, a Yaskawa SLIO CPU: the LAD blocks are written for S7-1200 / S7-1500; its program is the SCL source)
+  { id: 'siemens-lad', label: 'Ladder (LAD) blocks for TIA Portal (Version control interface)', fileName: (b) => `${b}_TIA_LAD/`, build: () => '',
+    files: (p, c, b) => (isS7300(SIEMENS_CPUS.find((x) => x.id === c.cpuId))
+      ? [{ name: `${b}_TIA_LAD/README.txt`, content: `${c.header}\r\n\r\nThis CPU is set up in TIA Portal as an S7-300 (CPU 315-2 PN/DP). The ladder (LAD) block files are written for S7-1200 / S7-1500 and are not made for it: use the SCL source (${b}_s7.scl: External source files > Add new external file, then Generate blocks from source) and the PLC tag table (${b}_PLCTags.sdf).\r\n` }]
+      : tiaLadFiles(p, c, b)) },
   { id: 'siemens-scl', label: 'SCL source (text) for TIA Portal (Generate blocks from source)', fileName: (b) => `${b}_s7.scl`, build: (p, c) => buildScl(p, c).scl },
   { id: 'siemens-tags', label: 'PLC tag table (TIA Portal PLC tags › Import, .sdf)', fileName: (b) => `${b}_PLCTags.sdf`, build: (p, c) => siemensTagsSdf(p, c) },
 ];
