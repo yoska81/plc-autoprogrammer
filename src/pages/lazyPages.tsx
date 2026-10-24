@@ -32,6 +32,7 @@ export const SpecPage = page(() => import('../pages/SpecPage.tsx'));
 export const HmiPage = page(() => import('../pages/HmiPage.tsx'));
 export const ReviewPage = page(() => import('../review/ReviewPage.tsx'));
 export const SimulatePage = page(() => import('../plc/pages/SimulatePage.tsx'));
+export const FlowPage = page(() => import('../plc/flow/FlowPage.tsx'));
 export const OnlinePage = page(() => import('../online/OnlinePage.tsx'));
 export const EquipmentPage = page(() => import('../pages/EquipmentPage.tsx'));
 export const NewProjectPage = page(() => import('../pages/NewProjectPage.tsx'));
@@ -42,7 +43,7 @@ export const RedlinesPage = page(() => import('../redlines/RedlinesPage.tsx'));
 export const TestCardPage = page(() => import('../pages/TestCardPage.tsx'));
 
 /** The page of a route path ('/io', '/electrical?tab=cabinet', '#/hmi'). */
-const BY_PATH: Record<string, Page> = { '': SpecPage, 'io': IOPage, 'program': ProgramPage, 'export': ExportPage, 'settings': SettingsPage, 'project': ProjectDataPage, 'plc': PlcSetupPage, 'print': PrintPage, 'import': ImportPage, 'electrical': ElectricalPage, 'print-electrical': PrintElectricalPage, 'spec': SpecPage, 'hmi': HmiPage, 'review': ReviewPage, 'simulate': SimulatePage, 'online': OnlinePage, 'equipment': EquipmentPage, 'new': NewProjectPage, 'sourcing': SourcingPage, 'engineer': EngineerPage, 'commissioning': CommissioningPage, 'redlines': RedlinesPage, 'upgrade': ImportPage, 'test-card': TestCardPage };
+const BY_PATH: Record<string, Page> = { '': SpecPage, 'io': IOPage, 'program': ProgramPage, 'export': ExportPage, 'settings': SettingsPage, 'project': ProjectDataPage, 'plc': PlcSetupPage, 'print': PrintPage, 'import': ImportPage, 'electrical': ElectricalPage, 'print-electrical': PrintElectricalPage, 'spec': SpecPage, 'hmi': HmiPage, 'review': ReviewPage, 'simulate': SimulatePage, 'flow': FlowPage, 'online': OnlinePage, 'equipment': EquipmentPage, 'new': NewProjectPage, 'sourcing': SourcingPage, 'engineer': EngineerPage, 'commissioning': CommissioningPage, 'redlines': RedlinesPage, 'upgrade': ImportPage, 'test-card': TestCardPage };
 export const preloadRoute = (path: string): Promise<unknown> => BY_PATH[path.replace(/^#?\/?/, '').split(/[/?#]/)[0]]?.preload() ?? Promise.resolve();
 
 /**

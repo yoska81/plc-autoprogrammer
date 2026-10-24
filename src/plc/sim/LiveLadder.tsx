@@ -25,9 +25,11 @@ interface Props {
   onBypassRung?: (rungId: string, bypassed: boolean) => void;
   /** Rung groups to show (blocks). Omitted = every rung, ungrouped. */
   groups?: { id: string; name: string; description?: string; rungIds: string[] }[];
+  /** A rung's number in the whole program (when `program` holds only some of its rungs). */
+  numberOf?: (rungId: string) => number;
 }
 
-type RungProps = Omit<Props, 'program' | 'power' | 'rungBypass' | 'skipped' | 'onBypassRung' | 'groups'> & {
+type RungProps = Omit<Props, 'program' | 'power' | 'rungBypass' | 'skipped' | 'onBypassRung' | 'groups' | 'numberOf'> & {
   rung: Rung; index: number; p: RungPower | undefined;
   bypassed: boolean; skippedByBlock: boolean; onBypass?: (on: boolean) => void;
   /** Everything this rung shows from the last scan, as one string: the rung redraws only when it changes. */
@@ -272,7 +274,7 @@ function LiveRung({ rung, index, p, bypassed, skippedByBlock, onBypass, ...rest 
 // Redrawn only when what the rung shows changed (a scan every few ms would otherwise redraw every rung).
 const LiveRungMemo = memo(LiveRung, (a, b) => a.sig === b.sig && a.rung === b.rung && a.index === b.index && a.labelOf === b.labelOf && !a.onBypass === !b.onBypass);
 
-export default function LiveLadder({ program, power, rungBypass, skipped, onBypassRung, groups, ...rest }: Props) {
+export default function LiveLadder({ program, power, rungBypass, skipped, onBypassRung, groups, numberOf, ...rest }: Props) {
   // long programs: the first rungs at once, the rest while the browser is idle
   const shown = useProgressiveCount(program.rungs.length, 30);
   if (!program.rungs.length) {
@@ -282,7 +284,7 @@ export default function LiveLadder({ program, power, rungBypass, skipped, onBypa
   const one = (r: Rung) => {
     const bypassed = rungBypass?.has(r.id) ?? false, skippedByBlock = skipped?.has(r.id) ?? false, p = power.get(r.id);
     return (
-      <LiveRungMemo key={r.id} rung={r} index={index.get(r.id)!} p={p} {...rest}
+      <LiveRungMemo key={r.id} rung={r} index={numberOf ? numberOf(r.id) - 1 : index.get(r.id)!} p={p} {...rest}
         bypassed={bypassed} skippedByBlock={skippedByBlock} sig={rungSignature(r, p, rest, bypassed, skippedByBlock)}
         onBypass={onBypassRung ? (on) => onBypassRung(r.id, on) : undefined} />
     );

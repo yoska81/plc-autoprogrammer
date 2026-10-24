@@ -185,6 +185,7 @@ export default function App() {
       {
         label: 'PLC program', to: '/program', stage: 'program',
         children: [
+          { label: 'Program flow (diagram)', to: '/flow' },
           { label: 'I/O addressing', to: '/plc' },
           { label: 'Simulation', to: '/simulate' },
           { label: 'Online (real PLC)', to: '/online' },
