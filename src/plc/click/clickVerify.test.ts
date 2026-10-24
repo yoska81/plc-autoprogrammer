@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import type { LadderProgram } from '../core/ladder';
 import { saveSteps } from './clickPlan';
-import { addressesIn, compareNicknames, compareRungs, exportNicknamesPlan, nicknamesOf, printLadderPlan, rungAddressesInOrder } from './clickVerify';
+import { addressesIn, compareNicknames, compareRungs, crossReference, exportNicknamesPlan, nicknamesOf, printLadderPlan, rungAddressesInOrder } from './clickVerify';
 import { seedSampleProject } from '../../preview/sampleProject';
 import { collectProject } from '../../deliverables/collect';
 import { clickNicknameCsv } from '../core/clickExport';
@@ -54,6 +54,19 @@ const printed = rungAddressesInOrder(p.ladder).map((x) => `${x.rung}  ${x.addres
 const all = compareRungs(p.ladder, `Page 1\n${printed}\nEND`);
 assert.equal(all.ok, all.rungs);
 assert.equal(all.rungs, p.ladder.rungs.length);
+// CLICK 4.00's printed Cross Reference (text; its ladder prints as a picture): each rung's addresses in that rung
+const xrefOf = (rows: { rung: number; addresses: string[] }[]) => ['NewProject1', 'Cross Reference(Page 1 of 1)', 'Address Nickname DataType ProgramName Rung Row Column Instruction',
+  ...rows.flatMap((r, i) => r.addresses.map((a) => `${a} Some_Name ${/^(DS|CTD)/.test(a) ? 'Integer' : 'Bit'} Main Program ${i + 1} 1 A Contact (NO)`))].join('\n');
+const inOrder = rungAddressesInOrder(p.ladder);
+assert.equal(crossReference(xrefOf(inOrder)).length, inOrder.flatMap((r) => r.addresses).length, 'every use read');
+const xok = compareRungs(p.ladder, xrefOf(inOrder));
+assert.equal(xok.ok, xok.rungs, 'the Cross Reference of the project itself fits');
+assert.deepEqual(xok.extra, []);
+const wrong = inOrder.map((r, i) => (i === 3 ? { ...r, addresses: ['X009', ...r.addresses.slice(1)] } : r));
+const xbad = compareRungs(p.ladder, xrefOf(wrong));
+assert.deepEqual(xbad.differences, [{ rung: 4, missing: [inOrder[3].addresses[0]] }], 'a wrong address in rung 4 is named');
+assert.deepEqual(xbad.extra, ['X009 (rung 4)']);
+
 // our nickname CSV against itself
 const csv = clickNicknameCsv(p.ladder, p.io, p.addresses);
 const self = compareNicknames(csv, csv);

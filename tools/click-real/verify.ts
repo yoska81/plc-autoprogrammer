@@ -1,6 +1,6 @@
 /**
- * The real-CLICK test's proof: CLICK's own printout of the ladder (a PDF printed from CLICK on the build server)
- * against the example project, rung by rung, with the app's check (clickVerify.compareRungs: each rung's addresses
+ * The real-CLICK test's proof: CLICK's own printout (a PDF printed from CLICK on the build server; its Cross Reference,
+ * text, gives each address's rung) against the example project, rung by rung (clickVerify.compareRungs: each rung's addresses
  * where they belong, in order). Passes when every rung the app enters is there and nothing extra is.
  *   npx tsx tools/click-real/verify.ts <printout.pdf> <plans.json>
  */

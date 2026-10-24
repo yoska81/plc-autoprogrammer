@@ -141,6 +141,8 @@ export interface RungCheck {
  * for each rung, which of its addresses the printout has where they belong; the printout's leftovers are extra.
  */
 export function compareRungs(program: LadderProgram, printedText: string): RungCheck {
+  const xref = crossReference(printedText);
+  if (xref.length) return compareCrossReference(program, xref);
   const ours = rungAddressesInOrder(program);
   const seq = ours.flatMap((r) => r.addresses.map((a) => ({ a, rung: r.rung })));
   const got = addressesIn(printedText);
@@ -158,4 +160,38 @@ export function compareRungs(program: LadderProgram, printedText: string): RungC
   seq.forEach((s, i) => { if (!found[i]) missingBy.set(s.rung, [...(missingBy.get(s.rung) ?? []), s.a]); });
   const differences = [...missingBy].map(([rung, missing]) => ({ rung, missing }));
   return { rungs: ours.length, ok: ours.length - differences.length, differences, extra: got.filter((_, j) => !used[j]) };
+}
+
+/** A line of CLICK's printed Cross Reference: an address, the rung, row and column that use it. */
+export interface CrossReferenceUse { address: string; rung: number; row: number; column: string }
+
+/**
+ * CLICK's printed Cross Reference ("Address Nickname DataType ProgramName Rung Row Column Instruction", one use per
+ * line; CLICK 4.00 prints it as text, its ladder as a picture), from the printout's text. The Main Program's uses.
+ */
+export function crossReference(text: string): CrossReferenceUse[] {
+  if (!/Cross Reference/.test(text)) return [];
+  const rx = /\b((?:XD|YD|CTD|CT|TD|SC|SD|DS|DD|DH|DF|TXT|X|Y|C|T)\d{1,4})\s+(?:\S+\s+)??(?:Bit|Integer2|Integer|Float|Hex|Text)\s+Main Program\s+(\d+)\s+(\d+)\s+([A-Z]{1,2})\b/g;
+  return [...text.matchAll(rx)].map((m) => ({ address: addressesIn(m[1])[0] ?? m[1], rung: Number(m[2]), row: Number(m[3]), column: m[4] }));
+}
+
+/** Our rungs against CLICK's Cross Reference: each rung's addresses (as many times as it uses them) in that rung. */
+export function compareCrossReference(program: LadderProgram, uses: CrossReferenceUse[]): RungCheck {
+  const ours = rungAddressesInOrder(program);
+  const theirs = new Map<number, string[]>();
+  for (const u of uses) theirs.set(u.rung, [...(theirs.get(u.rung) ?? []), u.address]);
+  const differences: RungCheck['differences'] = [];
+  const extra: string[] = [];
+  ours.forEach((r, i) => {
+    const left = [...(theirs.get(i + 1) ?? [])];
+    const missing: string[] = [];
+    for (const a of r.addresses) {
+      const k = left.indexOf(a);
+      if (k < 0) missing.push(a); else left.splice(k, 1);
+    }
+    if (missing.length) differences.push({ rung: r.rung, missing });
+    extra.push(...left.map((a) => `${a} (rung ${i + 1})`));
+  });
+  for (const [rung, list] of theirs) if (rung > ours.length) extra.push(...list.map((a) => `${a} (rung ${rung})`));
+  return { rungs: ours.length, ok: ours.length - differences.length, differences, extra };
 }
