@@ -63,6 +63,9 @@ export function printLadderPlan(folder: string, name: string): ClickStep[] {
     { do: 'setText', find: { type: 'Edit', name: '^File name' }, text: inFolder(folder, name) },
     { do: 'waitGone', title: 'Save Print Output As', say: 'Your turn: press Save in the dialog (the file name is filled in)' },
     { do: 'wait', ms: 2000 },
+    // CLICK keeps its Print dialog open after printing: closed (its Close button), so CLICK takes the next step
+    { do: 'window', title: '^Print \\[TfrmPrintDlg\\]$', timeoutMs: 3000, optional: true },
+    { do: 'click', find: { type: 'Button', name: '^Close$' }, optional: true },
   ];
 }
 

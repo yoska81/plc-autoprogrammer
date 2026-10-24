@@ -100,7 +100,8 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
     // and shot; nothing is written, a failure here does not fail the run
     for (const [name, steps] of [
       ['plc-tab', [{ do: 'window', title: '^CLICK Programming Software' }, { do: 'click', find: { type: 'TabItem', name: '^PLC$' }, timeoutMs: 3000 }, { do: 'wait', ms: 1000 }]],
-      ['connect', [{ do: 'window', title: '^CLICK Programming Software' }, { do: 'doubleClick', find: { type: 'TreeItem', name: '^Connect' }, timeoutMs: 3000 }, { do: 'wait', ms: 4000 }]],
+      ['connect', [{ do: 'window', title: '^CLICK Programming Software' }, { do: 'doubleClick', find: { type: 'TreeItem', name: '^Connect$' }, timeoutMs: 3000 }, { do: 'wait', ms: 6000 }]],
+      ['write', [{ do: 'keys', keys: '{ESC}' }, { do: 'wait', ms: 1000 }, { do: 'window', title: '^CLICK Programming Software' }, { do: 'doubleClick', find: { type: 'TreeItem', name: '^Write Project into PLC$' }, timeoutMs: 3000 }, { do: 'wait', ms: 6000 }]],
     ]) {
       await step(`look: ${name}`, () => b.call('run', { steps })).catch(() => undefined);
       await b.call('dump', { show: false }).catch(() => undefined);
