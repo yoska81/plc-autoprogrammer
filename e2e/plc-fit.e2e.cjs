@@ -19,15 +19,17 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.goto(BASE + '/spec');
   await page.locator('select[aria-label="Open project"]').selectOption('p_example');
   await page.goto(BASE + '/plc');
+  await page.getByTestId('plc-change').locator('summary').click(); // the PLC is chosen in Equipment; changed here behind this
   await page.getByRole('button', { name: /CompactLogix 5380/ }).click();
   await page.locator('#cpu').selectOption('5069-L310ER');
   await page.waitForTimeout(300);
   const mods = await page.evaluate(async () => (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().modules);
   check(mods.length > 0, `choosing the CPU adds modules for the I/O list (${mods.join(', ')})`);
-  check(await page.getByRole('alert').count() === 0, 'the rack holds the list: no warning');
+  // (the I/O-renumbered notice is an alert too: only the shortfall warning counts here)
+  check(await page.getByRole('alert').filter({ hasText: 'cannot hold the I/O list' }).count() === 0, 'the rack holds the list: no warning');
   // Empty rack (as the old page left it): the shortfall shows here, and the Equipment stage is out of date.
   await page.evaluate(async () => (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().setModules([]));
-  const alert = page.getByRole('alert');
+  const alert = page.getByRole('alert').filter({ hasText: 'cannot hold the I/O list' });
   await alert.waitFor({ timeout: 5000 }).catch(() => {});
   check(/cannot hold the I\/O list/.test(await alert.textContent().catch(() => '') ?? ''), 'no modules: the page says the PLC cannot hold the I/O list');
   const stage = await page.evaluate(async () => (await appImport('/src/spec/useStages.ts')).stagesNow().equipment);

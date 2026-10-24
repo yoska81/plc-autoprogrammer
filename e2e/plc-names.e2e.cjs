@@ -31,6 +31,7 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   check(/X001/.test(click) && !/#Safety_OK/.test(click), 'CLICK: the app operands, as before');
 
   await page.goto(BASE + '/plc');
+  await page.getByTestId('plc-change').locator('summary').click(); // the PLC is chosen in Equipment; changed here behind this
   await page.getByRole('button', { name: /Siemens/ }).first().click();
   await page.goto(BASE + '/program');
   const s7 = await ladderText();

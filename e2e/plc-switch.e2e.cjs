@@ -60,6 +60,7 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   await seed();
   check((await state()).errors.length === 0, 'the example has 0 checker errors on CLICK');
   await page.goto(BASE + '/plc');
+  await page.getByTestId('plc-change').locator('summary').click(); // the PLC is chosen in Equipment; changed here behind this
   await page.waitForTimeout(500);
   await page.getByRole('button', { name: /CompactLogix/ }).first().click();
   await page.waitForTimeout(500);
@@ -107,6 +108,7 @@ const check = (ok, what) => { console.log(ok ? '  ✓' : '  ✗', what); if (!ok
   const c0 = await program();
   check(c0.wrong.length === 0 && /Y205/.test(c0.addr), `the 23-point CLICK project: every rung on its point (${c0.addr})`);
   await page.goto(BASE + '/plc');
+  await page.getByTestId('plc-change').locator('summary').click(); // the PLC is chosen in Equipment; changed here behind this
   await page.waitForTimeout(500);
   await page.getByRole('button', { name: /CompactLogix/ }).first().click();
   await page.waitForTimeout(500);

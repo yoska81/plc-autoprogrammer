@@ -27,8 +27,8 @@ export default function PlcSetupPage() {
   return (
     <>
       <header className="px-4 py-2.5 bg-white border-b border-gray-200">
-        <h2 className="text-base font-semibold text-gray-800">PLC Setup</h2>
-        <p className="text-xs text-gray-400 mt-0.5">Choose the controller. The AI writes the program in that PLC's own language and addresses.</p>
+        <h2 className="text-base font-semibold text-gray-800">I/O addressing</h2>
+        <p className="text-xs text-gray-400 mt-0.5">The PLC the program is written for (chosen in Equipment) and how each input and output gets its address.</p>
         {undoLabel && (
           <button onClick={() => undoIoDelete()} title="Put back the PLC, the I/O addresses, the program and the HMI as they were" className="mt-2 px-3 py-1.5 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50">
             Undo: {undoLabel}
@@ -43,7 +43,15 @@ export default function PlcSetupPage() {
               This project is on the machine's own {profile.vendor} controller ({cpu.id}), read only: the app cannot program it yet. Choose the PLC to move it to; the I/O, the program and the HMI follow it.
             </p>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* the PLC is chosen once, in Equipment: shown here; changing it here is still possible, folded away */}
+          <div className="rounded-lg border border-brand-200 bg-white p-4" data-testid="plc-chosen">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Your PLC</p>
+            <p className="mt-0.5 text-base font-semibold text-gray-800">{profile.vendor} {profile.name} · {cpu.id}</p>
+            <p className="mt-1 text-xs text-gray-500">Chosen in <Link to="/equipment" className="text-brand-700 underline">Equipment</Link>: the program, the I/O addresses and the drawings follow it. Nothing to choose again here.</p>
+          </div>
+          <details className="rounded-lg border border-gray-200 bg-white p-3" data-testid="plc-change">
+            <summary className="cursor-pointer text-sm text-gray-700">Change the PLC here instead</summary>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
             {PLC_PROFILES.map((p) => {
               const selected = p.id === profile.id;
               return (
@@ -70,6 +78,7 @@ export default function PlcSetupPage() {
               );
             })}
           </div>
+          </details>
 
           <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-4">
             <div>
