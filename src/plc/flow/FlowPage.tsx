@@ -73,8 +73,11 @@ export default function FlowPage() {
   const [stuckSec, setStuckSec] = useState(30);
   useEffect(() => {
     const on = () => setFull(document.fullscreenElement === root.current);
+    // Esc also leaves the page-filling mode (when the browser's own full screen is not available)
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.fullscreenElement) setFull(false); };
     document.addEventListener('fullscreenchange', on);
-    return () => document.removeEventListener('fullscreenchange', on);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('fullscreenchange', on); document.removeEventListener('keydown', esc); };
   }, []);
   const toggleFull = () => {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
@@ -149,8 +152,14 @@ export default function FlowPage() {
     }
     return out;
   }, [query, map, ladder]);
-  const firstHit = () => {
-    for (const d of map.diagrams) for (const n of d.nodes) if (hits.has(n.id)) { setSel({ d, n }); canvas.current?.show(d.id, n.id); return; }
+  // Enter: the next match after the one selected (round to the first)
+  const nextHit = () => {
+    const all = map.diagrams.flatMap((d) => d.nodes.filter((n) => hits.has(n.id)).map((n) => ({ d, n })));
+    if (!all.length) return;
+    const at = all.findIndex((x) => x.n.id === sel?.n?.id);
+    const next = all[(at + 1) % all.length];
+    setSel(next);
+    canvas.current?.show(next.d.id, next.n.id);
   };
 
   const numberOf = useMemo(() => { const m = new Map(ladder.rungs.map((r, i) => [r.id, i + 1])); return (id: string) => m.get(id) ?? 0; }, [ladder]);
@@ -231,8 +240,8 @@ export default function FlowPage() {
         </div>
         <div className="ml-auto flex items-center gap-1 rounded border border-steel-300 bg-white px-2">
           <MagnifyingGlassIcon className="h-4 w-4 text-steel-400" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') firstHit(); }} placeholder="Find (name or address)…" aria-label="Find" data-testid="flow-find" className="w-52 py-1 text-sm outline-none" />
-          {query.trim().length >= 2 && <span className="text-xs text-steel-500">{hits.size} found</span>}
+          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') nextHit(); }} placeholder="Find (name or address)…" aria-label="Find" data-testid="flow-find" className="w-52 py-1 text-sm outline-none" />
+          {query.trim().length >= 2 && <span className="text-xs text-steel-500" title="Enter: the next one">{hits.size} found{hits.size > 1 ? ' · Enter: next' : ''}</span>}
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
