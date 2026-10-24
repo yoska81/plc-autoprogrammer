@@ -62,6 +62,10 @@ assert.equal(crossReference(xrefOf(inOrder)).length, inOrder.flatMap((r) => r.ad
 const xok = compareRungs(p.ladder, xrefOf(inOrder));
 assert.equal(xok.ok, xok.rungs, 'the Cross Reference of the project itself fits');
 assert.deepEqual(xok.extra, []);
+// a timer's current value (T1 → TD1) is part of its box, not an extra
+const withTd = inOrder.map((r) => ({ ...r, addresses: [...r.addresses, ...r.addresses.filter((a) => /^T\d/.test(a)).map((a) => a.replace('T', 'TD'))] }));
+assert.ok(withTd.some((r) => r.addresses.some((a) => a.startsWith('TD'))));
+assert.deepEqual(compareRungs(p.ladder, xrefOf(withTd)).extra, []);
 const wrong = inOrder.map((r, i) => (i === 3 ? { ...r, addresses: ['X009', ...r.addresses.slice(1)] } : r));
 const xbad = compareRungs(p.ladder, xrefOf(wrong));
 assert.deepEqual(xbad.differences, [{ rung: 4, missing: [inOrder[3].addresses[0]] }], 'a wrong address in rung 4 is named');

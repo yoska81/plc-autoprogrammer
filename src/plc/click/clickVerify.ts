@@ -190,7 +190,9 @@ export function compareCrossReference(program: LadderProgram, uses: CrossReferen
       if (k < 0) missing.push(a); else left.splice(k, 1);
     }
     if (missing.length) differences.push({ rung: r.rung, missing });
-    extra.push(...left.map((a) => `${a} (rung ${i + 1})`));
+    // a Timer or Counter box shows its current value too (T1's TD1, CT2's CTD2): not an extra
+    const own = (a: string) => { const m = /^(TD|CTD)(\d+)$/.exec(a); return !!m && r.addresses.includes(`${m[1] === 'TD' ? 'T' : 'CT'}${m[2]}`); };
+    extra.push(...left.filter((a) => !own(a)).map((a) => `${a} (rung ${i + 1})`));
   });
   for (const [rung, list] of theirs) if (rung > ours.length) extra.push(...list.map((a) => `${a} (rung ${rung})`));
   return { rungs: ours.length, ok: ours.length - differences.length, differences, extra };
