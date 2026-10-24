@@ -59,7 +59,50 @@ namespace ClickBridge
             ShowWindow(h, 3 /* SW_MAXIMIZE */);
             ToFront(h);
             Thread.Sleep(300);
+            OnScreen(h);
         }
+
+        /// <summary>
+        /// The window wholly on a screen. A user's CLICK stayed "maximized" at -960,516 (half off the screen): Maximize
+        /// does nothing to a window already maximized, and the Instruction List's lower entries ("Copy") were under the
+        /// taskbar. Then: restored, moved onto the screen Windows puts it on, maximized there.
+        /// </summary>
+        static void OnScreen(IntPtr h)
+        {
+            if (!GetWindowRect(h, out RECT r)) return;
+            var rect = System.Drawing.Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom);
+            var area = System.Windows.Forms.Screen.FromHandle(h).WorkingArea;
+            // a maximized window's frame lies 8 px past the area's edges
+            var fits = System.Drawing.Rectangle.Inflate(area, 16, 16);
+            if (fits.Contains(rect)) return;
+            Log.Write($"ui window at {rect} is off the screen's area {area}: moved onto it and maximized");
+            ShowWindow(h, 9 /* SW_RESTORE */);
+            Thread.Sleep(150);
+            SetWindowPos(h, IntPtr.Zero, area.X, area.Y, area.Width, area.Height, 0x0004 /* SWP_NOZORDER */);
+            ShowWindow(h, 3 /* SW_MAXIMIZE */);
+            ToFront(h);
+            Thread.Sleep(400);
+            if (GetWindowRect(h, out r)) Log.Write($"ui window now at {System.Drawing.Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom)}");
+        }
+
+        /// <summary>The top-level window an element is in (a list entry has no window of its own: its nearest parent's).</summary>
+        static IntPtr TopWindow(AutomationElement e)
+        {
+            try
+            {
+                for (var x = e; x != null; x = TreeWalker.ControlViewWalker.GetParent(x))
+                {
+                    var h = new IntPtr(x.Current.NativeWindowHandle);
+                    if (h != IntPtr.Zero) return GetAncestor(h, 2 /* GA_ROOT */);
+                }
+            }
+            catch (ElementNotAvailableException) { /* gone */ }
+            return IntPtr.Zero;
+        }
+
+        /// <summary>A point a user could click: on a screen, not under its taskbar.</summary>
+        static bool Reachable(System.Windows.Point p) =>
+            System.Windows.Forms.Screen.AllScreens.Any(sc => sc.WorkingArea.Contains((int)p.X, (int)p.Y));
 
         public void Raise(string window)
         {
@@ -325,6 +368,14 @@ namespace ClickBridge
                 }
             }
             catch (ElementNotAvailableException) { /* clicked where it was */ }
+            if (!Reachable(pt))
+            {
+                // off the screen or under the taskbar: the click would land on something else. The window put on
+                // the screen, the point read again
+                var top = TopWindow(e);
+                if (top != IntPtr.Zero) { OnScreen(top); r = e.Current.BoundingRectangle; pt = e.TryGetClickablePoint(out p) ? p : new System.Windows.Point(r.X + r.Width / 2, r.Y + r.Height / 2); }
+                if (!Reachable(pt)) throw new BridgeError($"\"{e.Current.Name}\" is off the screen (at {(int)pt.X},{(int)pt.Y}): maximize CLICK on your main screen, then try again.");
+            }
             SetCursorPos((int)pt.X, (int)pt.Y);
             mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
             mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
@@ -364,6 +415,10 @@ namespace ClickBridge
         [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
         [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int cmd);
         [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
+        [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
+        [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+        [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+        [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
         [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
         [DllImport("user32.dll")] static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
     }

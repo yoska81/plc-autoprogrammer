@@ -124,12 +124,29 @@ jobs:
               Start-Sleep -Milliseconds 500
             }
           }
+          # As on a user's PC: once the ladder editor is open, CLICK left "maximized" half off the screen (-960,516;
+          # Maximize then does nothing); the run must put it back before it clicks the Instruction List
+          $mover = Start-Job -ScriptBlock {
+            Add-Type -Namespace W -Name U -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr a, int x, int y, int cx, int cy, uint f); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);'
+            for ($i = 0; $i -lt 600; $i++) {
+              $p = Get-Process | Where-Object { $_.MainWindowTitle -like 'CLICK Programming Software*Main Program*' } | Select-Object -First 1
+              if ($p) {
+                Start-Sleep -Milliseconds 300
+                [W.U]::ShowWindow($p.MainWindowHandle, 3) | Out-Null
+                [W.U]::SetWindowPos($p.MainWindowHandle, [IntPtr]::Zero, -960, 516, 1936, 1048, 0x14) | Out-Null
+                "moved CLICK's window to -960,516 (maximized)"; return
+              }
+              Start-Sleep -Milliseconds 200
+            }
+            "CLICK's ladder editor did not come: not moved"
+          }
           $env:CLICK_BRIDGE_EXE = "$PWD\resources\click-bridge\ClickBridge.exe"
           $env:STEP_SHOTS = "0"  # n: the first n rungs step by step (while the editor keys are fitted)
           $env:ONLY_RUNGS = ""  # a probe: only these rungs, every step shot (empty: the whole project, the proof)
           node tools/click-real/run.cjs plans.json $env:OUT
           $code = $LASTEXITCODE
           Stop-Job $cam; Remove-Job $cam -Force
+          Receive-Job $mover; Remove-Job $mover -Force
           exit $code
 
       # The proof: CLICK's own printout of the ladder against the project, rung by rung
