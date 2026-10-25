@@ -17,6 +17,9 @@ export function needFromIo(io: { type: string; signal?: string; analog?: { range
 
 /** Why the CPU and modules cannot hold the I/O list (cpuFit's reason), or null when they can (or nothing is known). */
 export function hardwareShortfall(cpuId: string, modules: string[], io: Parameters<typeof needFromIo>[0]): string | null {
+  // the machine's own controller, kept read only (a Yaskawa MP3000 read from its program): its I/O is its own, on its
+  // own registers; it is not a CPU chosen here to hold the list
+  if (PLC_PROFILES.some((p) => p.readOnly && p.cpuModels.some((c) => c.id === cpuId))) return null;
   const cpu = io.length ? findCpu(cpuId) : null;
   if (!cpu) return null;
   const f = cpuFit(cpu, modules, needFromIo(io, false, 0));

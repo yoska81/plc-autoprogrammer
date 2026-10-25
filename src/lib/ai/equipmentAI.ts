@@ -5,7 +5,7 @@ import { hmiFit, platformOf, type Need } from '../../plc/core/fit';
 import { allPanelRows } from '../../hmi/panelRows';
 import type { HmiModel } from '../../hmi/hmiCatalog';
 import { specToText, type SpecSections } from '../../spec/types';
-import { choosableProfiles, namesSlio, plcPreference, unsupportedBrands } from '../../spec/brand';
+import { choosableProfiles, namesSlio, plcPreference, requestedProfiles, unsupportedBrands } from '../../spec/brand';
 import { callClaude } from './anthropic';
 import { specForAI } from './specForAI';
 
@@ -24,7 +24,10 @@ const obj = (properties: Record<string, unknown>) => ({ type: 'object', properti
 const NO_NEED: Need = { digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null };
 
 export function equipmentChoices(specText: string, preferredPlcVendors: string[]) {
-  const profiles = choosableProfiles(specText, preferredPlcVendors);
+  // No brand asked for: every PLC the tool programs (the AI prefers CLICK when it fits; a machine CLICK cannot hold,
+  // hundreds of I/O or servo axes on a motion network, gets another brand instead of a CLICK that cannot do the job)
+  const asked = requestedProfiles(specText, preferredPlcVendors);
+  const profiles = asked.length ? choosableProfiles(specText, preferredPlcVendors) : PLC_PROFILES.filter((p) => p.available && p.language === 'ladder' && !p.readOnly);
   // a Yaskawa SLIO CPU sits in the Siemens profile (TIA Portal programs it as an S7-300): offered only when named,
   // and then alone (a description naming Siemens S7 is not answered with a Yaskawa CPU)
   const slio = namesSlio(specText);
@@ -41,7 +44,7 @@ export function equipmentChoices(specText: string, preferredPlcVendors: string[]
   const hmis: HmiModel[] = allPanelRows()
     .filter((r) => r.model && !r.legacy && !r.builtIn && firstCpus.some((id) => hmiFit(r.model!, NO_NEED, id).ok))
     .map((r) => r.model!);
-  return { profiles, cpus, modules, hmis };
+  return { profiles, cpus, modules, hmis, open: !asked.length };
 }
 
 function choices(spec?: SpecSections) {
@@ -82,7 +85,7 @@ export function equipmentSystemPrompt(spec: SpecSections | string): string {
 }
 
 function system(spec: SpecSections): string {
-  const { profiles, cpus, modules, hmis } = choices(spec);
+  const { profiles, cpus, modules, hmis, open } = choices(spec);
   const click = profiles.some((p) => p.id === 'click');
   const brands = [...new Set(profiles.map((p) => p.vendor))].join(' / ');
   const notHere = unsupportedBrands(specToText(spec));
@@ -100,7 +103,7 @@ ${hmis.map((h) => `- ${h.partNumber}${h.manufacturer ? ` (${h.manufacturer})` : 
 How to choose:
 1. Estimate the I/O from the specification: count every sensor, switch, pushbutton, selector position, safety relay status, motor starter/VFD command and feedback, solenoid coil, pilot light and stack light color.
 2. Add about 20% spare discrete points, rounded up to whole modules.
-3. Pick the smallest suitable CPU from the list. If the specification names a PLC brand or family, choose only from that brand. Prefer a CPU with Ethernet when there is an HMI, other machines on a network, or remote support is useful. Match output type to the loads: DC sinking/sourcing outputs for 24 VDC solenoids and pilot lights; relay outputs or modules when the spec has AC loads or mixed voltages.
+3. Pick the smallest suitable CPU from the list. If the specification names a PLC brand or family, choose only from that brand.${open ? ' No brand was asked for: prefer a CLICK (AutomationDirect) when it holds the I/O with the spare and the machine has no servo axes on a motion network; when a CLICK cannot (more I/O than a CLICK holds, servo axes, motion), choose the brand and CPU that fit best (for example a Siemens S7-1500 or an Allen-Bradley CompactLogix) and say why — never a CLICK that cannot do the job.' : ''} Prefer a CPU with Ethernet when there is an HMI, other machines on a network, or remote support is useful. Match output type to the loads: DC sinking/sourcing outputs for 24 VDC solenoids and pilot lights; relay outputs or modules when the spec has AC loads or mixed voltages.
 4. Add analog modules only if the spec needs analog signals.
 5. Recommend an HMI when the spec mentions screens, setpoints, recipes, alarms display, or manual jog; choose the size from the number of screens and how much the operator must see. Use null if the machine only needs pushbuttons and lights, or when the chosen PLC has its own touch screen.
 6. Give 1–2 alternatives (e.g. a cheaper option and one with more room for growth) with the trade-off.

@@ -39,6 +39,7 @@ export function softwareFor(profileId: string, vendor: string): string {
  */
 export function noSendAdvice(p: { profileId: string; vendor: string; readOnly?: boolean }, bridges: ReadonlySet<SendRoute> | null): string | null {
   const software = softwareFor(p.profileId, p.vendor);
+  if (p.readOnly && p.profileId === 'yaskawa-mp') return 'The app cannot put programs into MPE720 yet: it is learning MPE720\'s windows. Do the steps below on this PC and send the files they record; then the app can send your changes into MPE720 for you.';
   if (p.readOnly) return 'This program stays on the machine\'s own controller, read only: choose the PLC to move it to first (Import › PLC program).';
   const route = sendRoute(p.profileId);
   if (!route) return `${software[0].toUpperCase()}${software.slice(1)} has no way for another program to put a program into it, so the app cannot send it there. Press Load into PLC instead: it gives you the files and the steps to do it in ${software}.`;

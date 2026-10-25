@@ -11,7 +11,7 @@ import { collectProject } from '../../../deliverables/collect';
 import { programFiles, saveBlob } from '../../../deliverables/files';
 import { exportContext } from '../../../deliverables/exportContext';
 import { useIOStore } from '../../../store/useIOStore';
-import { UPGRADE_KEY } from '../upgrade';
+import { readOnlyNote, UPGRADE_KEY } from '../upgrade';
 import { exportUpgrade, upgradeChanges, type UpgradeExport } from '../exportUpgrade';
 import { gunzipText } from '../gz';
 import { programFindings } from '../findings';
@@ -143,7 +143,7 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                     <p className="text-xs text-gray-500" data-testid="upgrade-now-on">{original.report.converted} of {original.report.rungs} rungs converted · {readOnly
                       ? <>on the machine's {profile.vendor} {original.source.controller} (read only: not programmable here yet)</>
                       : <>now on {profile.vendor} {profile.name} {cpu.id}{fromReadOnly ? ` (moved from the machine's ${original.source.vendor} ${original.source.controller})` : ''}</>}</p>
-                    {original.cpuNote && (readOnly || !fromReadOnly) && <p className="mt-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1" data-testid="upgrade-cpu-note">{original.cpuNote}</p>}
+                    {original.cpuNote && (readOnly || !fromReadOnly) && <p className="mt-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1" data-testid="upgrade-cpu-note">{readOnly ? readOnlyNote(original.source, profile) : original.cpuNote}</p>}
                     {fromReadOnly && <p className="mt-1 text-xs text-gray-600" data-testid="upgrade-cpu-note">The machine's {original.source.vendor} controller and modules{original.source.modules?.length ? ` (${original.source.modules.map((m) => m.catalog).join(', ')})` : ''} stay with the original. The app picked the {profile.name} modules{modules.length ? `: ${modules.join(', ')}` : ''}; check them on the PLC page before ordering parts.</p>}
                   </div>
                   <div className="flex flex-col gap-1.5">

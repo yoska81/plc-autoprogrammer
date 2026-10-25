@@ -22,8 +22,9 @@ import { hasBuiltInPanel } from '../hmi/panels';
 import VendorPreferenceCard from './VendorPreferenceCard';
 import BrandHardwareCard from './BrandHardwareCard';
 import { Spinner, ReasoningPanel } from './common';
-import { useDraft } from '../store/useDraftStore';
+import { useDraft, useDraftStore } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
+import { upgradeOriginal } from '../plc/import/ui/applyUpgrade';
 import { plcPreferenceOf, requestedProfiles, vendorOf } from '../spec/brand';
 import { specToText } from '../spec/types';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
@@ -140,6 +141,11 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const mainProfiles = asked.length ? asked : PLC_PROFILES.filter((p) => p.cpuModels.some((c) => c.id === (choice?.cpuId ?? project.cpuId)));
   const isMain = (id: string) => !mainProfiles.length || mainProfiles.some((p) => p.cpuModels.some((c) => c.id === id));
   const [otherCpus, setOtherCpus] = useUi('equipment.otherBrandCpus', false);
+  // The machine's own controller, kept read only (a Yaskawa MP3000 read from its program): Equipment shows it, and
+  // offers a new PLC only on request (replacing it is a hardware change: its servo axes need another motion network)
+  const keptProfile = PLC_PROFILES.find((p) => p.id === project.plcId && p.readOnly);
+  const original = useDraftStore((st) => upgradeOriginal(st.drafts));
+  const [replaceKept, setReplaceKept] = useUi('equipment.replaceKept', false);
   const otherCount = cpus.filter((c) => !isMain(c.id)).length;
   const shownCpus = otherCpus ? cpus : cpus.filter((c) => isMain(c.id) || c.id === choice?.cpuId);
   // Expansion modules of the chosen CPU's platform (multi-vendor profiles); CLICK modules otherwise.
@@ -205,8 +211,26 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
     return () => usePendingEquipment.setState({ apply: null, label: null });
   }, [canApply, pendingLabel]);
 
+  const kept = keptProfile && (
+    <div className="bg-white border border-steel-200 p-4 space-y-2" data-testid="equipment-kept">
+      <h3 className="font-semibold text-steel-900">Your machine keeps its own controller</h3>
+      <p className="text-steel-800">
+        <b>{keptProfile.vendor} {original?.source.controller ?? keptProfile.cpuModels.find((c) => c.id === project.cpuId)?.label ?? keptProfile.name}</b>
+        {original ? <>, read from its program ({original.source.fileName})</> : null}
+        {original?.source.axes?.length ? <>, with {original.source.axes.length} servo axes on its motion network</> : null}.
+      </p>
+      <p className="text-steel-600">The app does not choose a new PLC for it: the program, the I/O list and the simulator work on its own registers and its own I/O. To have the app put your changes into it, open Send to PLC software on the <Link to="/program" className="underline">Program</Link> page{keptProfile.id === 'yaskawa-mp' ? ' and do the steps under "Teach the app MPE720"' : ''}.</p>
+      <button onClick={() => setReplaceKept(!replaceKept)} data-testid="equipment-replace-kept" className="px-3 py-1 text-sm rounded-sm border border-steel-300 bg-white text-steel-800 hover:bg-steel-50">
+        {replaceKept ? 'Keep the machine\'s controller (hide the new PLC choice)' : 'Choose a new PLC instead'}
+      </button>
+      {replaceKept && <p className="text-amber-800">A new PLC replaces the controller{original?.source.axes?.length ? `, and its ${original.source.axes.length} servo axes need another motion network or drives` : ''}. Moving the program to it is done under "Move it to another PLC" on the Upgrade page.</p>}
+    </div>
+  );
+  if (kept && !replaceKept) return <div className="space-y-4">{kept}</div>;
+
   return (
     <div className="space-y-4">
+      {kept}
       <VendorPreferenceCard />
       <div className="bg-white border border-steel-200 p-4 flex flex-wrap items-center gap-4">
         <div className="flex-1 min-w-64">

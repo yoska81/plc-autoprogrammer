@@ -8,6 +8,15 @@ const ids = (spec: string, pref: string[] = ['automationdirect']) => choosablePr
 // Nothing named, default preference: the PLCs the tool picks on its own.
 assert.deepEqual(ids('Pick and place cell with two conveyors.'), ['click']);
 
+// No brand asked for: every brand offered, CLICK preferred only when it can do the job (a 300-point machine with
+// servo axes gets another brand, never a CLICK that cannot hold it).
+{
+  const c = equipmentChoices('Packaging line, 125 inputs, 124 outputs, 8 servo axes.', []);
+  assert.ok(['click', 'siemens-s7', 'logix'].every((id) => c.profiles.some((p) => p.id === id)), c.profiles.map((p) => p.id).join(','));
+  assert.ok(!c.profiles.some((p) => p.readOnly), 'no read-only profile offered');
+  assert.match(equipmentSystemPrompt('Packaging line, 125 inputs, 124 outputs, 8 servo axes.'), /never a CLICK that cannot do the job/);
+}
+
 // "Siemens S7-1200 …": Siemens CPUs, Siemens modules, panels that talk to an S7 only.
 {
   const c = equipmentChoices('Bottle capper. Controller: Siemens S7-1200, TIA Portal. 12 inputs, 8 outputs.', ['automationdirect']);

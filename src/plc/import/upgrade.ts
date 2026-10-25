@@ -165,11 +165,15 @@ export function readOnlyNote(source: ImportedProgram['source'], profile: PlcProf
   const cpu = source.controller.replace(/\s*\([^)]*\)\s*$/, '');
   const axes = (source.axes ?? []).map(axisText);
   return [
-    `Your machine's controller is a ${profile.vendor} ${source.controller}. The app cannot program it yet, so the project keeps it read only: the program, the I/O list and the simulator work on its own registers, and nothing is downloaded for it.`,
+    profile.id === 'yaskawa-mp'
+      ? `Your machine's controller is a ${profile.vendor} ${source.controller}, programmed in MPE720. The app is learning to put programs into MPE720 for you (MPE720 has no way for other programs to load one, so the app will work its windows): on the Program page press Send to PLC software and do the steps under "Teach the app MPE720", then send the files it records. Until then the project keeps the program read only: the program, the I/O list and the simulator work on its own registers, and nothing is downloaded for it.`
+      : `Your machine's controller is a ${profile.vendor} ${source.controller}. The app cannot program it yet, so the project keeps it read only: the program, the I/O list and the simulator work on its own registers, and nothing is downloaded for it.`,
     builtIn.length ? `Built into the ${cpu}: ${builtIn.join(', ')}.` : '',
     mods.length ? `These are the ${profile.vendor} modules: ${mods.join(', ')}. They stay with the original. Choose the new PLC and the app picks its modules.` : '',
     axes.length ? `Servo axes (${axes.length}): ${axes.join('; ')}.` : '',
-    'To change the machine to another PLC, choose one under "Move it to another PLC" on the Upgrade page.',
+    profile.id === 'yaskawa-mp'
+      ? 'To change the machine to another PLC instead, choose one under "Move it to another PLC" on the Upgrade page (the servo axes on MECHATROLINK then need another motion network).'
+      : 'To change the machine to another PLC, choose one under "Move it to another PLC" on the Upgrade page.',
   ].filter(Boolean).join(' ');
 }
 

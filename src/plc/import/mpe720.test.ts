@@ -223,7 +223,7 @@ const fp = readYmw7(ymw, 'demo_mp.YMW7');
   assert.equal(plan.cpuId, 'MP-CPU', 'a CPU the list does not have is the generic MP CPU');
   assert.deepEqual(plan.modules, []);
   assert.deepEqual(plan.io.map((p) => p.plcAddress).sort(), ['IB00000', 'IB00001', 'IB00002', 'IB00003', 'OB00000', 'OB00001', 'OB00002', 'OB00003']);
-  assert.match(plan.original.cpuNote ?? '', /Yaskawa CPU-DEMO\(4axes\)\. The app cannot program it yet/);
+  assert.match(plan.original.cpuNote ?? '', /Yaskawa CPU-DEMO\(4axes\), programmed in MPE720\. The app is learning to put programs into MPE720 for you/);
   assert.match(plan.original.cpuNote ?? '', /These are the Yaskawa modules: DEMOIO\. They stay with the original\. Choose the new PLC and the app picks its modules\./, 'the CPU is not a module');
   // The CPU-301's built-in functions are said apart from the rack's modules.
   const note = readOnlyNote({ ...program.source, controller: 'CPU-301(16axes)', modules: ['CPU301(16)', 'CPU', '218IFD', 'SVC', 'SVR', 'M-EXECUTOR', 'LIO-01', '218IF-01'].map((catalog, slot) => ({ slot, catalog })) }, getProfile('yaskawa-mp'));

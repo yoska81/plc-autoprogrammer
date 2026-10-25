@@ -25,8 +25,9 @@ for (const [id, sw] of [['micro800', 'Connected Components Workbench'], ['unitro
 // A brand not listed: the vendor's software, in words.
 assert.match(noSendAdvice({ profileId: 'new-brand', vendor: 'Acme' }, ALL)!, /^The Acme programming software has no way/);
 
-// Yaskawa (read only): choose the PLC to move it to.
-assert.match(noSendAdvice({ profileId: 'yaskawa-mp', vendor: 'Yaskawa', readOnly: true }, ALL)!, /read only: choose the PLC to move it to first/);
+// Yaskawa MP (read only): the app is learning MPE720 (the steps below); another read-only PLC: choose the PLC to move it to.
+assert.match(noSendAdvice({ profileId: 'yaskawa-mp', vendor: 'Yaskawa', readOnly: true }, ALL)!, /learning MPE720's windows/);
+assert.match(noSendAdvice({ profileId: 'other-ro', vendor: 'Acme', readOnly: true }, ALL)!, /read only: choose the PLC to move it to first/);
 
 // The web version: the desktop app for Windows; an older desktop app without that bridge: update it.
 assert.match(noSendAdvice({ profileId: 'siemens-s7', vendor: 'Siemens' }, null)!, /^Sending to TIA Portal works in the ISA Auto Programmer desktop app for Windows/);
