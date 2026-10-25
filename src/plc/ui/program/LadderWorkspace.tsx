@@ -8,6 +8,7 @@ import { ArrowsPointingInIcon, ArrowsPointingOutIcon, ArrowsRightLeftIcon, Arrow
 import { Link, useSearchParams } from 'react-router-dom';
 import { useReviewStore } from '../../../review/useReviewStore';
 import { replaceProgramQuestion, useProgramStore } from '../../../store/useProgramStore';
+import { reviseByBlocks } from '../../ai/blockByBlock';
 import { changeScope, generateLadder, reviseLadder, type AIConfig, type PlcContext } from '../../ai/ladderAI';
 import { generateRuleBasedProgram } from '../../ai/cycleAI';
 import SequenceTable from './SequenceTable';
@@ -435,7 +436,16 @@ export default function LadderWorkspace({ ai, ctx, ioAddressSet, labels, ready, 
     // A big program: only the chosen block is sent (the AI writes back what it is sent), or the user is told what to do.
     const simBlock = activeBlock === null || specUpdate ? null : activeBlock === GENERAL ? GENERAL_BLOCK : activeBlock;
     const scope = changeScope(ladder, ctx, simBlock, blockName);
-    if ('tooBig' in scope) { store.addChat({ role: 'assistant', text: scope.tooBig, outcome: 'no-change' }); return; }
+    // Too big for one answer (the whole program, or the chosen block): the change is made part by part, then one proposal
+    if ('tooBig' in scope) {
+      return runAI('program-revise', 'PLC program change, block by block', (signal, stage) => reviseByBlocks({ ...ai, signal }, ctx, ladder, issues, history, req, { signal, stage, onlyBlock: simBlock }), (r) => {
+        const st = useProgramStore.getState();
+        if (r.program) {
+          st.addChat({ role: 'assistant', text: r.explanation });
+          st.setProposal({ program: r.program, explanation: r.explanation, reasoning: null, specUpdate });
+        } else st.addChat({ role: 'assistant', text: r.explanation, outcome: 'no-change' });
+      });
+    }
     const sentIds = scope.part ? new Set(scope.program.rungs.map((r) => r.id)) : null;
     const sentIssues = sentIds ? issues.filter((i) => !i.rungId || sentIds.has(i.rungId)) : issues;
     return runAI('program-revise', 'PLC program change', (signal) => reviseLadder({ ...ai, signal }, scope.ctx, scope.program, sentIssues, history, scoped), (r) => {

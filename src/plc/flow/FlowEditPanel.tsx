@@ -13,6 +13,7 @@ import { startAiJob } from '../../lib/ai/jobs';
 import { usePlc } from '../core/usePlc';
 import { nativeName } from '../core/addressCheck';
 import type { LadderProgram, Rung } from '../core/ladder';
+import { reviseByBlocks } from '../ai/blockByBlock';
 import { changeScope, reviseLadder, type AIConfig } from '../ai/ladderAI';
 import { GENERAL_BLOCK, scopeToBlock } from '../sim/blocks';
 import LadderView from '../ui/ladder/LadderView';
@@ -121,10 +122,26 @@ export default function FlowEditPanel({ d, n, nameOf, onFocus }: {
     const ctx = { profile, cpu, io, addresses, wiring: new Map((wiring ?? []).map((w) => [w.address, { deviceTag: w.deviceTag, deviceType: w.deviceType }])), hmi: hmi ?? undefined };
     const scopeId = d.id || GENERAL_BLOCK;
     const scope = changeScope(ladder, ctx, scopeId, d.name);
-    if ('tooBig' in scope) { setError(scope.tooBig); return; }
     const text = `[Block: ${d.name}${d.id ? ` (id "${d.id}")` : ''}] ${req}`;
     store.addChat({ role: 'user', text });
     setAsk(''); setError(null);
+    // a function too big for one answer: its parts one after the other, then one proposal
+    if ('tooBig' in scope) {
+      void startAiJob({
+        kind: 'program-revise', label: `Change ${d.name}, part by part`,
+        run: async (h) => {
+          useProgramStore.getState().setIsGenerating(true);
+          try { return await reviseByBlocks({ ...ai, signal: h.signal }, ctx, ladder, [], [], text, { signal: h.signal, stage: h.stage, onlyBlock: scopeId }); } finally { useProgramStore.getState().setIsGenerating(false); }
+        },
+        apply: (r) => {
+          const st = useProgramStore.getState();
+          if (!r.program) { st.addChat({ role: 'assistant', text: r.explanation, outcome: 'no-change' }); setError(r.explanation); return; }
+          st.addChat({ role: 'assistant', text: r.explanation });
+          st.setProposal({ program: r.program, explanation: r.explanation, reasoning: null });
+        },
+      });
+      return;
+    }
     void startAiJob({
       kind: 'program-revise', label: `Change ${d.name}`,
       run: async (h) => {
