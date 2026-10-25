@@ -139,7 +139,8 @@ export default function ProgramImport({ onApplied }: { onApplied?: (plan: Upgrad
 
           <div className="flex items-center gap-3">
             <button data-testid="program-apply" onClick={() => void apply()} disabled={Boolean(busy)} className="px-5 py-2 bg-brand-600 text-white text-sm font-medium rounded hover:bg-brand-700 disabled:opacity-60">{busy || 'Use this program'}</button>
-            <span className="text-xs text-gray-500">Replaces this project's I/O list and program (the current program is kept as a version) and fills the empty parts of the machine description.</span>
+            <span className="flex-1 text-xs text-gray-500">Replaces this project's I/O list and program (the current program is kept as a version) and fills the empty parts of the machine description.</span>
+            <button data-testid="program-remove" onClick={() => { setImp(null); setFileText(null); setError(null); }} disabled={Boolean(busy)} className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-60">Remove this file</button>
           </div>
         </div>
       )}

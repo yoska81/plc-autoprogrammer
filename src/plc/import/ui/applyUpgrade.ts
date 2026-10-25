@@ -78,6 +78,17 @@ function machineBrands(imp: ImportedProgram): void {
   setInfo({ vendors, plcChosen: false });
 }
 
+/**
+ * Delete the program read from an existing machine: the original kept for "Original vs now" and its file, the
+ * program it put in (kept in History, as every program the app replaces), and, when asked, the I/O list it filled in.
+ * The rest of the project (the PLC chosen, the machine description, drawings) stays.
+ */
+export function removeUpload(o: { io: boolean }): void {
+  useDraftStore.getState().clearDraft(UPGRADE_KEY);
+  useProgramStore.getState().clearLadder();
+  if (o.io) useIOStore.getState().importPoints([], true);
+}
+
 /** Largest compressed original kept with the project (the project is saved in the browser's storage). */
 const MAX_KEPT = 3_000_000;
 

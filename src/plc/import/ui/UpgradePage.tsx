@@ -15,7 +15,7 @@ import { UPGRADE_KEY } from '../upgrade';
 import { exportUpgrade, upgradeChanges, type UpgradeExport } from '../exportUpgrade';
 import { gunzipText } from '../gz';
 import { programFindings } from '../findings';
-import { upgradeOriginal } from './applyUpgrade';
+import { removeUpload, upgradeOriginal } from './applyUpgrade';
 import ProgramImport from './ProgramImport';
 import { getProfile, PLC_PROFILES } from '../../core/profiles';
 import { choosePlcBrand } from '../../core/choosePlc';
@@ -64,6 +64,9 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
   const [preparedFor, setPrepared] = useState<{ ex: UpgradeExport; ladder: LadderProgram; plcId: string } | null>(null);
   const prepared = preparedFor && preparedFor.ladder === ladder && preparedFor.plcId === profile.id ? preparedFor.ex : null;
   const [understood, setUnderstood] = useState(false);
+  // Delete the uploaded program (its confirm, and whether its I/O list goes too)
+  const [deleting, setDeleting] = useState(false);
+  const [deleteIo, setDeleteIo] = useState(true);
   const [busy, setBusy] = useState(false);
   const changes = useMemo(() => (original ? upgradeChanges(original, io, ladder) : null), [original, io, ladder]);
   const findings = useMemo(() => programFindings(ladder, labels), [ladder, labels]);
@@ -143,11 +146,27 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                     {original.cpuNote && (readOnly || !fromReadOnly) && <p className="mt-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1" data-testid="upgrade-cpu-note">{original.cpuNote}</p>}
                     {fromReadOnly && <p className="mt-1 text-xs text-gray-600" data-testid="upgrade-cpu-note">The machine's {original.source.vendor} controller and modules{original.source.modules?.length ? ` (${original.source.modules.map((m) => m.catalog).join(', ')})` : ''} stay with the original. The app picked the {profile.name} modules{modules.length ? `: ${modules.join(', ')}` : ''}; check them on the PLC page before ordering parts.</p>}
                   </div>
-                  <button
-                    onClick={() => { if (window.confirm('Read another program? The comparison with this original is dropped; the project keeps its current program and I/O.')) clearDraft(UPGRADE_KEY); }}
-                    className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 text-gray-700"
-                  >Read another program</button>
+                  <div className="flex flex-col gap-1.5">
+                    <button
+                      onClick={() => { if (window.confirm('Read another program? The comparison with this original is dropped; the project keeps its current program and I/O.')) clearDraft(UPGRADE_KEY); }}
+                      className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 text-gray-700"
+                    >Read another program</button>
+                    <button onClick={() => { setDeleting(true); setDeleteIo(true); }} data-testid="upload-delete"
+                      className="text-xs px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50">Delete this program</button>
+                  </div>
                 </div>
+                {deleting && (
+                  <div role="alertdialog" aria-label="Delete the uploaded program" className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900 space-y-2" data-testid="upload-delete-confirm">
+                    <p className="font-semibold">Delete {original.source.fileName} from this project?</p>
+                    <p className="text-xs">The program it put in ({ladder.rungs.length} rungs) is removed and kept in History (you can bring it back from there); the original kept for the comparison and its file are deleted. The PLC choice, the machine description and the drawings stay.</p>
+                    <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={deleteIo} onChange={(e) => setDeleteIo(e.target.checked)} data-testid="upload-delete-io" />Also clear the I/O list it filled in ({io.length} points)</label>
+                    <div className="flex gap-2">
+                      <button onClick={() => { removeUpload({ io: deleteIo }); setDeleting(false); notify(`${original.source.fileName} deleted from the project${deleteIo ? ', with its I/O list' : ''}. Its program is in History.`); }} data-testid="upload-delete-yes"
+                        className="text-xs px-3 py-1.5 rounded bg-red-600 text-white font-medium hover:bg-red-700">Delete it</button>
+                      <button onClick={() => setDeleting(false)} className="text-xs px-3 py-1.5 rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700">Cancel</button>
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2">
                   <Link to="/spec" className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 text-gray-700">Machine description and questions</Link>
                   <Link to="/io" className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 text-gray-700">I/O list</Link>
