@@ -24,10 +24,10 @@ const obj = (properties: Record<string, unknown>) => ({ type: 'object', properti
 const NO_NEED: Need = { digitalInputs: 0, digitalOutputs: 0, analogInputs: 0, analogOutputs: 0, ethernetHmi: true, minHmiSizeIn: null };
 
 export function equipmentChoices(specText: string, preferredPlcVendors: string[]) {
-  // No brand asked for: every PLC the tool programs (the AI prefers CLICK when it fits; a machine CLICK cannot hold,
-  // hundreds of I/O or servo axes on a motion network, gets another brand instead of a CLICK that cannot do the job)
+  // No brand asked for: the PLCs the tool picks on its own (CLICK; every brand's CPUs, modules and panels would make
+  // each suggestion several times the cost). A machine no CLICK can hold is said, and the page offers a bigger brand.
   const asked = requestedProfiles(specText, preferredPlcVendors);
-  const profiles = asked.length ? choosableProfiles(specText, preferredPlcVendors) : PLC_PROFILES.filter((p) => p.available && p.language === 'ladder' && !p.readOnly);
+  const profiles = choosableProfiles(specText, preferredPlcVendors);
   // a Yaskawa SLIO CPU sits in the Siemens profile (TIA Portal programs it as an S7-300): offered only when named,
   // and then alone (a description naming Siemens S7 is not answered with a Yaskawa CPU)
   const slio = namesSlio(specText);
@@ -103,7 +103,7 @@ ${hmis.map((h) => `- ${h.partNumber}${h.manufacturer ? ` (${h.manufacturer})` : 
 How to choose:
 1. Estimate the I/O from the specification: count every sensor, switch, pushbutton, selector position, safety relay status, motor starter/VFD command and feedback, solenoid coil, pilot light and stack light color.
 2. Add about 20% spare discrete points, rounded up to whole modules.
-3. Pick the smallest suitable CPU from the list. If the specification names a PLC brand or family, choose only from that brand.${open ? ' No brand was asked for: prefer a CLICK (AutomationDirect) when it holds the I/O with the spare and the machine has no servo axes on a motion network; when a CLICK cannot (more I/O than a CLICK holds, servo axes, motion), choose the brand and CPU that fit best (for example a Siemens S7-1500 or an Allen-Bradley CompactLogix) and say why — never a CLICK that cannot do the job.' : ''} Prefer a CPU with Ethernet when there is an HMI, other machines on a network, or remote support is useful. Match output type to the loads: DC sinking/sourcing outputs for 24 VDC solenoids and pilot lights; relay outputs or modules when the spec has AC loads or mixed voltages.
+3. Pick the smallest suitable CPU from the list. If the specification names a PLC brand or family, choose only from that brand.${open ? ' No brand was asked for, so only CLICK is offered here. If no CLICK can do the job (more I/O than a fully expanded CLICK holds, servo axes on a motion network), still give the closest CLICK, but start the summary with "Needs a bigger PLC than a CLICK:" and say why in one sentence (the customer then chooses a bigger brand).' : ''} Prefer a CPU with Ethernet when there is an HMI, other machines on a network, or remote support is useful. Match output type to the loads: DC sinking/sourcing outputs for 24 VDC solenoids and pilot lights; relay outputs or modules when the spec has AC loads or mixed voltages.
 4. Add analog modules only if the spec needs analog signals.
 5. Recommend an HMI when the spec mentions screens, setpoints, recipes, alarms display, or manual jog; choose the size from the number of screens and how much the operator must see. Use null if the machine only needs pushbuttons and lights, or when the chosen PLC has its own touch screen.
 6. Give 1–2 alternatives (e.g. a cheaper option and one with more room for growth) with the trade-off.

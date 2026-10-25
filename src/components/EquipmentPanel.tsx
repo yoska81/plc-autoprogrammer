@@ -24,12 +24,15 @@ import BrandHardwareCard from './BrandHardwareCard';
 import { Spinner, ReasoningPanel } from './common';
 import { useDraft, useDraftStore } from '../store/useDraftStore';
 import { useUi } from '../store/useUiStore';
+import type { VendorId } from '../electrical/types';
 import { upgradeOriginal } from '../plc/import/ui/applyUpgrade';
 import { plcPreferenceOf, requestedProfiles, vendorOf } from '../spec/brand';
 import { specToText } from '../spec/types';
 import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
 
 const MAX_MODULES = 8;
+/** Bigger brands offered when no CLICK can hold the machine: catalog vendor and button text. */
+const BIGGER: [VendorId, string][] = [['siemens', 'Siemens (S7-1500 / S7-1200)'], ['allen-bradley', 'Allen-Bradley (CompactLogix)']];
 
 function CapacityBar({ label, need, have }: { label: string; need: number; have: number }) {
   const spare = have - need;
@@ -160,6 +163,10 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   const hmiMakers = project.info.vendors?.hmi?.length || !plcVendor ? normalizePreference(project.info.vendors).hmi : [plcVendor];
   const cpu = choice ? findCpu(choice.cpuId) : null;
   const fit = cpu && choice ? cpuFit(cpu, choice.modules, need) : null;
+  // No CLICK can hold this machine (the AI said so, or no CLICK fits the I/O even fully expanded): offer a bigger brand
+  const clickCpus = PLC_PROFILES.find((p) => p.id === 'click')?.cpuModels ?? [];
+  const onClick = Boolean(choice && clickCpus.some((c) => c.id === choice.cpuId));
+  const needsBigger = !keptProfile && (Boolean(rec?.summary.startsWith('Needs a bigger PLC than a CLICK')) || (onClick && ioPoints.length > 0 && !clickCpus.some((c) => modulesToFit(c.id, [], need) !== null)));
   const cap = cpu && choice ? ioCapacity(cpu, moduleSlots(choice.modules)) : null;
   // something to apply: the user's own pick, or the AI's suggestion (not the default a fresh project starts from)
   const chosen = Boolean(pending && pending.basis === basis) || Boolean(project.recommendation);
@@ -250,6 +257,19 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
         <div role="status" className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border border-amber-300 bg-amber-50 px-4 py-2 text-amber-900 shadow-sm">
           <span className="flex-1 min-w-48">Your equipment selection ({choice.cpuId}{choice.modules.length ? ` + ${choice.modules.length} module(s)` : ''}{choice.hmiPartNumber ? `, ${choice.hmiPartNumber}` : ''}) is not applied to the project yet.</span>
           <button onClick={apply} disabled={!fit?.ok} className="px-3 py-1 font-medium bg-brand-600 text-white rounded-sm hover:bg-brand-700 disabled:opacity-40">Use this selection</button>
+        </div>
+      )}
+
+      {needsBigger && (
+        <div className="bg-amber-50 border border-amber-300 p-3 text-amber-900 space-y-2" data-testid="equipment-bigger">
+          <p><b>This machine needs a bigger PLC than a CLICK</b> ({need.digitalInputs} inputs, {need.digitalOutputs} outputs{rec && /servo|motion/i.test(rec.summary) ? ', servo axes' : ''}): no CLICK can hold it. Choose the brand for it, and the AI suggests the CPU, modules and panel of that brand:</p>
+          <div className="flex flex-wrap gap-2">
+            {BIGGER.map(([vendor, label]) => (
+              <button key={vendor} onClick={() => { useProjectStore.getState().setInfo({ vendors: { ...(project.info.vendors ?? {}), plc: [vendor] }, plcChosen: true }); setTimeout(recommend, 0); }}
+                disabled={busy || !apiKey} data-testid={`equipment-bigger-${vendor}`} className="px-3 py-1 text-sm rounded-sm bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50">{label}</button>
+            ))}
+          </div>
+          {!apiKey && <p className="text-xs">Without an AI key: choose the brand in Brand preference above, then pick its CPU in the list below.</p>}
         </div>
       )}
 

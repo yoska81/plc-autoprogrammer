@@ -126,7 +126,8 @@ await test('Update all on a program read from the machine: the equipment is kept
   await runUpdateAll(['equipment'], (r) => rs.push(r));
   setClaudeInterceptor(null);
   assert.equal(asked, 0);
-  assert.match(rs.at(-1)?.message ?? '', /Kept the machine's own (CPU-301|JAPMC-CP3301-1-E).*the AI was not asked/);
+  // the step is done already (the machine's own controller is its equipment), or kept when run: never the AI
+  assert.match(rs.at(-1)?.message ?? '', /Kept the machine's own (CPU-301|JAPMC-CP3301-1-E).*the AI was not asked|^Up to date/);
 });
 
 console.log(`tokens.test: all passed (${passed})`);
