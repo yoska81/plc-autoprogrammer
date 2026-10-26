@@ -1,0 +1,672 @@
+/**
+ * Convert an existing machine (read from IEC / Chinese drawings) to a target standard, by default North
+ * America: supply (380/400 V 50 Hz → 480 V 60 Hz), motor power (kW → standard HP), NFPA device tags
+ * (QF1 → CB1, KM1 → K1, SB2 → PB2…), and every part cross-matched to a catalog part with the old → new
+ * table and what differs. A part with no catalog match is "to select", never guessed; operator devices,
+ * PLC and terminals are chosen by the design engine from the I/O and the equipment choice.
+ */
+import { ALL_PARTS } from '../electrical/catalogs';
+import type { CatalogCategory, CatalogPart, MotorSpec, StarterType, SupplyVoltage } from '../electrical/types';
+import type { Region } from '../standards/regions';
+import type { SyncItem } from '../components/questions/useQuestionStore';
+import type { SpecSectionId } from '../spec/types';
+import { foreignRatings } from './foreignParts';
+import { similarity } from './functionKept';
+import type { ImportedIO } from '../lib/ai/importAI';
+import type { DriveStop, DrawnCircuit, DrawnComponent, DrawnIO, DrawnRatings, ExistingMachine } from './types';
+
+export interface ConvertTarget {
+  region: Region;
+  supply: SupplyVoltage;
+  /** Control voltage of the new panel (coils, operator devices). */
+  controlVolts: '24VDC' | '120VAC';
+  /** A machine without a PLC: keep its relay logic (with parts for the target) or move it into a new PLC (default). */
+  logic?: LogicChoice;
+}
+
+export type LogicChoice = 'keep-relays' | 'plc';
+
+export const NA_TARGET: ConvertTarget = { region: 'US', supply: '480VAC-3PH', controlVolts: '24VDC' };
+
+/** NEMA standard motor powers, HP. */
+const HP = [0.25, 0.33, 0.5, 0.75, 1, 1.5, 2, 3, 5, 7.5, 10, 15, 20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200];
+
+/** The standard HP motor for a kW rating: the smallest that gives the same power (3 kW → 5 HP, 4 kW → 5 HP, 0.75 kW → 1 HP). */
+export function kwToHp(kw: number): number {
+  const hp = kw / 0.746;
+  // 8 % margin: a 4 kW motor is a 5 HP motor (5.36 HP exact), not 7.5 HP
+  return HP.find((h) => h >= hp * 0.92) ?? Math.ceil(hp);
+}
+
+/** AWG for a metric conductor (next equal or larger copper size). */
+export function mm2ToAwg(mm2: number): string {
+  const table: [number, string][] = [[0.82, '18'], [1.31, '16'], [2.08, '14'], [3.31, '12'], [5.26, '10'], [8.37, '8'], [13.3, '6'], [21.2, '4'], [33.6, '2'], [53.5, '1/0'], [67.4, '2/0'], [85, '3/0'], [107, '4/0']];
+  return `${(table.find(([a]) => a >= mm2 * 0.98) ?? table[table.length - 1])[1]} AWG`;
+}
+
+/** The target supply for what is drawn, and what the change means. */
+export function targetSupply(drawn: ExistingMachine['supplyDrawn'], target: ConvertTarget): { supply: SupplyVoltage; note: string; question?: SyncItem } {
+  const v = drawn.volts ?? 0;
+  const phases = drawn.phases ?? (v >= 300 ? 3 : null);
+  const from = drawn.text || [drawn.volts && `${drawn.volts} V`, drawn.hz && `${drawn.hz} Hz`, phases && `${phases}-phase`].filter(Boolean).join(' ') || 'not shown';
+  if (target.region !== 'US' && target.region !== 'Canada') return { supply: target.supply, note: `Supply as drawn: ${from}; kept for the target region.` };
+  if (phases === 1) return { supply: '120VAC-1PH', note: `Single-phase supply as drawn (${from}) becomes 120 VAC 1-phase.`, question: { text: `The drawings show a single-phase supply (${from}). Is the new supply 120 VAC single-phase or 208/240 V?`, section: 'utilities', assumption: '120 VAC single-phase' } };
+  const supply = target.region === 'Canada' ? '600VAC-3PH' : target.supply;
+  const hz = drawn.hz === 50 ? ' The motors were drawn for 50 Hz: at 60 Hz a motor turns 20 % faster, so speeds are kept by the new motor selection, gearing or the drive settings.' : '';
+  return {
+    supply,
+    note: `Supply ${from} → ${supply.replace('VAC-3PH', ' VAC 3-phase 60 Hz')}.${hz}`,
+    ...(!drawn.volts ? { question: { text: 'The drawings don\'t show the supply voltage. What supply is available at the new site?', section: 'utilities' as const, assumption: supply.replace('VAC-3PH', ' VAC 3-phase') } } : {}),
+  };
+}
+
+/** NFPA-style tag prefix for a device category. */
+const PREFIX: Partial<Record<CatalogCategory, string>> = {
+  breaker: 'CB', disconnect: 'DISC', fuse: 'FU', contactor: 'K', overload: 'OL', motorProtector: 'MP', vfd: 'VFD', relay: 'CR',
+  safetyRelay: 'MSR', powerSupply: 'PS', terminal: 'TB', pushbutton: 'PB', estop: 'ESTOP', pilotLight: 'LT', selector: 'SS',
+  stackLight: 'SL', plc: 'PLC', plcModule: 'PLC', hmi: 'HMI', solenoidValve: 'SOL', fan: 'FAN', enclosure: 'ENCL',
+};
+
+/** A sensor's prefix from what it is: guard switch, photo-eye, proximity, pressure switch, else a limit switch. */
+function sensorPrefix(c: DrawnComponent): string {
+  const d = `${c.tag} ${c.description}`.toLowerCase();
+  if (/guard|door|gate|防护/.test(d)) return 'LS-GD';
+  if (/press|sp\d/.test(d)) return 'PSW';
+  if (/photo|光电|eye|beam/.test(d)) return 'PE';
+  if (/prox|接近|inductive|capacitive/.test(d)) return 'PRS';
+  return 'LS';
+}
+
+/** The prefix of a device the catalog calls "relay" or "other": timers, counters, drives' parts. */
+function otherPrefix(c: DrawnComponent, axisDrives: Set<string>): string | undefined {
+  const d = `${c.tag} ${c.description}`;
+  if (c.category === 'relay') return /^KT\d|timer|time relay|时间继电器/i.test(d) ? 'TR' : 'CR';
+  if (c.category !== 'other') return undefined;
+  if (axisDrives.has(c.tag) || /servo drive|伺服驱动/i.test(d)) return 'SD';
+  if (/counter|计数|H7CX/i.test(d)) return 'CTR';
+  if (/braking resistor|制动电阻/i.test(d)) return 'BR';
+  if (/encoder|编码器/i.test(d)) return 'ENC';
+  if (/transformer|变压器|^TC\d/i.test(d)) return 'XFMR';
+  return undefined;
+}
+
+/**
+ * Old → new tag for every component, NFPA 79 / JIC style (QF1 → CB1, KA0 safety relay → MSR1, KT1 → TR1,
+ * HL → LT, SB → PB / ESTOP, SQ → LS / PE / PRS / LS-GD, U servo drive → SD, encoder → ENC). A group keeps
+ * the drawing's numbers when it has several devices numbered from 1 (QF1, QF2, QF3, QF5 → CB1, CB2, CB3, CB5),
+ * else it is numbered in drawing order; an overload takes its motor's number (FR1 of the pump M2 → OL2).
+ */
+export function naTags(components: DrawnComponent[], m?: Pick<ExistingMachine, 'motors' | 'axes'> & Partial<Pick<ExistingMachine, 'circuits'>>): Map<string, string> {
+  const out = new Map<string, string>();
+  const num = (t: string) => Number(t.match(/\d+/)?.[0] ?? 0);
+  const axisDrives = new Set((m?.axes ?? []).map((a) => a.driveTag));
+  const panelMotors = (m?.motors ?? []).filter((x) => x.kind !== 'servo');
+  const groups = new Map<string, DrawnComponent[]>();
+  const sorted = [...components].sort((a, b) => a.tag.localeCompare(b.tag, undefined, { numeric: true }) || num(a.tag) - num(b.tag));
+  for (const c of sorted) {
+    if (out.has(c.tag) || [...groups.values()].some((g) => g.some((x) => x.tag === c.tag))) continue;
+    const prefix = c.category === 'sensor' ? sensorPrefix(c) : otherPrefix(c, axisDrives) ?? PREFIX[c.category];
+    if (!prefix) { out.set(c.tag, c.tag); continue; }
+    groups.set(prefix, [...(groups.get(prefix) ?? []), c]);
+  }
+  for (const [prefix, list] of groups) {
+    if (prefix === 'PLC' || prefix === 'HMI') { list.forEach((c, i) => out.set(c.tag, i ? `${prefix}${i + 1}` : prefix)); continue; }
+    // an overload is named after its motor (the motor number), when each finds its own
+    if (prefix === 'OL' && panelMotors.length) {
+      // its motor: named with it, or the motor of the contactor in its coil circuit ("Hydraulic pump, DOL on KM1"), or the same words
+      const withContactor = (ol: string) => (m?.circuits ?? []).filter((k) => k.devices.includes(ol)).flatMap((k) => k.devices);
+      const motorOf = list.map((c) => panelMotors.findIndex((x) => x.description.includes(c.tag) || withContactor(c.tag).some((k) => k !== c.tag && new RegExp(`\\b${k}\\b`).test(x.description)))).map((i, k) => (i >= 0 ? i : panelMotors.findIndex((x) => similarity(x.description, list[k].description) >= 0.5)));
+      if (motorOf.every((i) => i >= 0) && new Set(motorOf).size === motorOf.length) {
+        list.forEach((c, k) => out.set(c.tag, `OL${num(panelMotors[motorOf[k]].tag) || motorOf[k] + 1}`));
+        continue;
+      }
+    }
+    // the two solenoids of one valve ("Shear down valve", "Shear up valve") are SOL1A and SOL1B
+    if (prefix === 'SOL') {
+      const OPPOSITE = /\b(down|up|extend|retract|open|close|forward|reverse|in|out|on|off|a|b|下|上|伸|缩|开|关)\b|[下上伸缩开关]/gi;
+      const key = (c: DrawnComponent) => c.description.toLowerCase().replace(/\(.*?\)/g, '').replace(OPPOSITE, '').replace(/\s+/g, ' ').trim();
+      let n = 0;
+      const done = new Set<string>();
+      for (const c of list) {
+        if (done.has(c.tag)) continue;
+        const pair = list.filter((x) => !done.has(x.tag) && key(x) === key(c));
+        n++;
+        pair.forEach((x, i) => { out.set(x.tag, pair.length === 2 ? `SOL${n}${'AB'[i]}` : pair.length > 2 ? `SOL${n + i}` : `SOL${n}`); done.add(x.tag); });
+        if (pair.length > 2) n += pair.length - 1;
+      }
+      continue;
+    }
+    const nums = list.map((c) => num(c.tag));
+    const keep = list.length > 1 && nums.every((n) => n >= 1) && new Set(nums).size === nums.length;
+    list.forEach((c, i) => out.set(c.tag, `${prefix}${keep ? nums[i] : i + 1}`));
+  }
+  return out;
+}
+
+const IO_CATEGORY: Partial<Record<ImportedIO['deviceType'], DrawnComponent['category']>> = {
+  'pushbutton-no': 'pushbutton', 'pushbutton-nc': 'pushbutton', selector: 'selector', 'estop-contact': 'estop', 'sensor-pnp': 'sensor', 'sensor-npn': 'sensor',
+  'limit-switch': 'sensor', 'pressure-switch': 'sensor', 'contactor-coil': 'contactor', 'relay-coil': 'relay', solenoid: 'solenoidValve', 'pilot-light': 'pilotLight', 'stack-light': 'stackLight',
+};
+
+/** Field devices the drawings show only in the I/O list (buttons, switches, lamps without a parts-list row), so they are renamed too. */
+export function ioOnlyDevices(m: ExistingMachine): DrawnComponent[] {
+  const known = new Set(m.components.map((c) => c.tag));
+  const out = new Map<string, DrawnComponent>();
+  for (const p of m.io) {
+    const category = IO_CATEGORY[p.deviceType];
+    if (!p.deviceTag || known.has(p.deviceTag) || out.has(p.deviceTag) || !category || !/^[A-Z]{1,3}\d+$/.test(p.deviceTag)) continue;
+    out.set(p.deviceTag, { tag: p.deviceTag, partNumber: null, manufacturer: null, description: p.description, category, ratings: { amps: null, poles: null, coilVoltage: null, kA: null, curve: null, minAmps: null, maxAmps: null, kw: null, outputVolts: null, outputAmps: null }, confidence: p.confidence, source: p.source });
+  }
+  return [...out.values()];
+}
+
+/** Safety parts: kept by function, never certified by the conversion. */
+export const REVALIDATE = 'Safety function: re-validate after the conversion';
+
+/** Parts the engine chooses itself (from the I/O, the equipment choice and the motors). */
+const ENGINE_PICKS = new Set<CatalogCategory>(['pushbutton', 'estop', 'pilotLight', 'selector', 'stackLight', 'plc', 'plcModule', 'hmi', 'terminal', 'terminalAccessory', 'sensor', 'solenoidValve', 'enclosure', 'dinRail', 'wireDuct', 'groundBar']);
+
+export interface PartMatch {
+  oldTag: string;
+  newTag: string;
+  from: { partNumber: string | null; manufacturer: string | null; description: string; category: CatalogCategory; ratings: DrawnRatings };
+  to: CatalogPart | null;
+  /** Other catalog parts that fit (best first). */
+  alternatives: CatalogPart[];
+  /** What changes: ratings, coil voltage, listing. */
+  differences: string[];
+  /** matched: a catalog equivalent; engine: chosen by the design engine; to-select: no match, the user picks. */
+  status: 'matched' | 'engine' | 'to-select';
+  reason: string;
+}
+
+const n = (v: unknown) => { const x = parseFloat(String(v)); return Number.isFinite(x) ? x : NaN; };
+const coilOf = (p: CatalogPart) => String(p.ratings.coilVoltage ?? p.ratings.coil ?? '').toUpperCase().replace(/\s/g, '');
+const coilFits = (p: CatalogPart, want: string) => { const c = coilOf(p); return c.includes(want) || (want === '24VDC' && c.includes('24VAC/VDC')) || (want === '120VAC' && /^1(10|15|20)VAC/.test(c)); };
+const naListed = (p: CatalogPart) => p.ratings.ul !== undefined || p.vendor === undefined || ['automationdirect', 'allen-bradley', 'eaton', 'hoffman'].includes(p.vendor);
+
+/** The drawn ratings with what a known part number tells (Dev 1's foreign-part data, then the part number's own pattern). */
+export function ratingsOf(c: DrawnComponent): DrawnRatings {
+  const known = c.partNumber ? foreignRatings(c.partNumber) : null;
+  const out = { ...c.ratings };
+  for (const [k, v] of Object.entries(known ?? {})) if (out[k as keyof DrawnRatings] === null && v !== undefined) (out as Record<string, unknown>)[k] = v;
+  return out;
+}
+
+/** Catalog parts that do this part's job in the target standard, best first. */
+export function candidates(c: DrawnComponent, r: DrawnRatings, target: ConvertTarget, hp?: number): CatalogPart[] {
+  const pool = ALL_PARTS.filter((p) => p.category === c.category && (target.region === 'US' || target.region === 'Canada' ? naListed(p) : true));
+  const fits = (p: CatalogPart): boolean => {
+    const q = p.ratings;
+    switch (c.category) {
+      case 'contactor':
+        return (r.poles === null || n(q.poles) === r.poles) && (r.amps === null || n(q.amps) >= r.amps) && coilFits(p, target.controlVolts);
+      case 'breaker':
+        return (r.poles === null || n(q.poles) === r.poles) && (r.amps === null || n(q.amps) === r.amps) && (!r.curve || String(q.curve ?? '').toUpperCase() === r.curve.toUpperCase())
+          && (r.kA === null || n(q.interruptingKA) >= Math.min(r.kA, 10)) && (target.region !== 'US' || /489/.test(String(q.ul ?? '')) || q.branchRated === 'yes');
+      case 'overload': case 'motorProtector': {
+        if (r.minAmps === null || r.maxAmps === null) return false;
+        const mid = (r.minAmps + r.maxAmps) / 2;
+        return n(q.minAmps) <= mid && mid <= n(q.maxAmps);
+      }
+      case 'powerSupply':
+        return (r.outputVolts === null || n(q.outputVolts) === r.outputVolts) && (r.outputAmps === null || n(q.outputAmps) >= r.outputAmps);
+      case 'fuse':
+        return r.amps !== null && n(q.amps) === r.amps;
+      case 'relay':
+        return coilFits(p, target.controlVolts) && (r.amps === null || n(q.contactAmps ?? q.amps) >= r.amps);
+      case 'safetyRelay':
+        return coilFits(p, target.controlVolts);
+      case 'vfd': {
+        const want = hp ?? (r.kw !== null ? kwToHp(r.kw) : null);
+        const have = n(q.hp480 ?? q.hp460);
+        return want !== null && have >= want && String(q.inputPhases ?? '3').includes('3');
+      }
+      case 'disconnect':
+        return r.amps === null || n(q.amps) >= r.amps;
+      default:
+        return false;
+    }
+  };
+  const size = (p: CatalogPart) => n(p.ratings.amps ?? p.ratings.outputAmps ?? p.ratings.hp480 ?? p.ratings.maxAmps ?? 0);
+  return pool.filter(fits).sort((a, b) => Number(Boolean(b.verified)) - Number(Boolean(a.verified)) || size(a) - size(b));
+}
+
+/** What changes between the drawn part and its replacement. */
+function differences(c: DrawnComponent, r: DrawnRatings, to: CatalogPart, target: ConvertTarget): string[] {
+  const out: string[] = [];
+  const q = to.ratings;
+  if (r.coilVoltage && coilOf(to) && !coilOf(to).includes(r.coilVoltage.toUpperCase().replace(/\s/g, ''))) out.push(`Coil ${r.coilVoltage} → ${q.coilVoltage ?? q.coil}`);
+  if (r.amps !== null && q.amps !== undefined && n(q.amps) !== r.amps) out.push(`Rating ${r.amps} A → ${q.amps} A`);
+  if (r.kA !== null && q.interruptingKA !== undefined && n(q.interruptingKA) !== r.kA) out.push(`Breaking capacity ${r.kA} kA → ${q.interruptingKA} kA${target.region === 'US' ? ' (UL 489)' : ''}`);
+  if (r.minAmps !== null && q.minAmps !== undefined && (n(q.minAmps) !== r.minAmps || n(q.maxAmps) !== r.maxAmps)) out.push(`Setting range ${r.minAmps}-${r.maxAmps} A → ${q.minAmps}-${q.maxAmps} A`);
+  if (c.category === 'breaker' && (target.region === 'US' || target.region === 'Canada')) out.push('IEC 60898 MCB → UL 489 branch-circuit breaker');
+  if (q.forUse) out.push(`Mounts on ${q.forUse}`);
+  if (!to.verified) out.push(`ratings not fully verified${to.verify ? `: ${to.verify}` : ''}`);
+  return out;
+}
+
+/** One component: its new tag and catalog equivalent. */
+/** A safety relay's safety outputs: ratings.safetyOutputCount, else from the text ("(3) N.O.", "2 N.O. relay"); 0 when not given. */
+export const safetyOutputCount = (p: CatalogPart): number => Number(p.ratings.safetyOutputCount ?? String(p.ratings.safetyOutputs ?? '').match(/\d+/)?.[0] ?? 0) || 0;
+const isExpansion = (p: CatalogPart) => /expansion|extension|erweiterung|contact expan/i.test(`${p.description} ${p.ratings.application ?? ''}`);
+/** The names a base unit goes by: family, series, type name without the voltage ("PNOZ s3"), part-number stem ("LG5925"). */
+const baseNames = (p: CatalogPart) => [p.family, p.ratings.family, p.ratings.series, String(p.ratings.typeName ?? '').replace(/\s+\d+\s*V.*$/i, ''), p.partNumber.split(/[-\s.]/)[0]]
+  .map((s) => String(s ?? '').trim()).filter((s) => s.length >= 4);
+/** An expansion module goes with a base unit only when its maker says so (ratings.forUse names the base). */
+export const expands = (exp: CatalogPart, base: CatalogPart): boolean => {
+  const forUse = String(exp.ratings.forUse ?? '');
+  return exp.manufacturer === base.manufacturer && baseNames(base).some((n) => new RegExp(`(^|[^\\w])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w])`, 'i').test(forUse));
+};
+
+/**
+ * The safety relay for the outputs needed: a single unit that has them all first (the smallest such), else
+ * the base with the most outputs and an expansion module its maker lists for it (forUse), else a note.
+ */
+export function sizeSafetyRelay(list: CatalogPart[], safety: { need: number; why: string }, pool: CatalogPart[] = ALL_PARTS): { list: CatalogPart[]; note: string; ok: boolean; unverified?: CatalogPart } {
+  // a safety function is never given a part whose ratings are not verified: such a part is only offered
+  const verified = (p: CatalogPart) => p.verified === true;
+  const sure = sizeFrom(list.filter(verified), safety, pool.filter(verified));
+  if (sure.ok) return { ...sure, list: [...sure.list, ...list.filter((p) => !verified(p))] };
+  const any = sizeFrom(list, safety, pool);
+  const loose = any.ok ? [any.list[0], ...(any.expansion ? [any.expansion] : [])].find((p) => !verified(p)) : undefined;
+  if (!loose) return { ...sure, list: sure.list.length ? [...sure.list, ...list.filter((p) => !verified(p))] : any.list };
+  return {
+    list: [any.list[0], ...list.filter((p) => p !== any.list[0])], ok: false, unverified: loose,
+    note: `Needs ${safety.need} safety outputs (${safety.why}); ${loose.manufacturer} ${loose.partNumber} has them, but its ratings are not verified${loose.verify ? ` (${loose.verify})` : ''}: not chosen for a safety function`,
+  };
+}
+
+function sizeFrom(list: CatalogPart[], safety: { need: number; why: string }, pool: CatalogPart[]): { list: CatalogPart[]; note: string; ok: boolean; expansion?: CatalogPart } {
+  const n = safetyOutputCount;
+  const enough = (p: CatalogPart) => n(p) >= safety.need;
+  const base = list.filter((p) => !isExpansion(p)).sort((a, b) => Number(enough(b)) - Number(enough(a)) || (enough(a) ? n(a) - n(b) : n(b) - n(a)));
+  const sorted = [...base, ...list.filter(isExpansion)];
+  const have = sorted.length ? n(sorted[0]) : 0;
+  if (sorted.length && have >= safety.need) return { list: sorted, note: `${have} safety outputs for the ${safety.need} needed (${safety.why})`, ok: true };
+  // the bases that take an expansion, most outputs first; the first that reaches the count with the smallest module
+  for (const b of base.filter((p) => n(p) === have).concat(base.filter((p) => n(p) !== have))) {
+    const exp = pool.filter((p) => p.category === 'safetyRelay' && isExpansion(p) && n(p) > 0 && expands(p, b) && n(b) + n(p) >= safety.need).sort((x, y) => n(x) - n(y))[0];
+    if (exp) return { list: [b, ...sorted.filter((p) => p !== b)], note: `Needs ${safety.need} safety outputs (${safety.why}): ${n(b)} here + expansion ${exp.manufacturer} ${exp.partNumber} (${n(exp)})`, ok: true, expansion: exp };
+  }
+  return { list: sorted, note: `Needs ${safety.need} safety outputs (${safety.why}); the closest has ${have}, and the catalog has no expansion its maker lists for it`, ok: false };
+}
+
+/**
+ * How many safety outputs the converted machine's safety relay needs: the ones the drawings use (its
+ * contacts in the circuits and in the safety description, e.g. 13-14 for the pump coil, 23-24 for 24VS) and
+ * two for every drive whose Safe Torque Off the conversion wires to it.
+ */
+export function safetyOutputsNeeded(m: ExistingMachine, stoDrives: string[]): { need: number; drawn: string[]; why: string } {
+  const sr = m.safety.safetyRelay?.match(/[A-Z]{1,3}\d+/)?.[0] ?? m.components.find((c) => c.category === 'safetyRelay')?.tag ?? null;
+  const drawn = new Set<string>();
+  if (sr) {
+    for (const c of m.circuits) for (const e of (c.path ?? []).flatMap((x) => (x.t === 'branch' ? x.paths.flat() : x.t === 'contact' ? [x] : [])))
+      if ((e.kind === 'safety' || e.tag === sr) && e.terms) drawn.add(e.terms);
+    for (const x of `${m.safety.description} ${m.circuits.flatMap((c) => c.conditions).join(' ')}`.matchAll(new RegExp(`\\b${sr}\\s+(\\d{2}-\\d{2})`, 'g'))) drawn.add(x[1]);
+  }
+  const need = drawn.size + 2 * stoDrives.length;
+  const why = [drawn.size ? `${drawn.size} as drawn (${[...drawn].join(', ')})` : '', stoDrives.length ? `2 for the STO of each of ${stoDrives.join(', ')}` : ''].filter(Boolean).join(' + ');
+  return { need, drawn: [...drawn], why };
+}
+
+/** Categories that are always part of a safety function. */
+const SAFETY_PARTS = new Set<CatalogCategory>(['safetyRelay', 'estop']);
+const SAFETY_WORDS = /\bSTO\b|safe torque|light curtain|light grid|safety (?:switch|interlock|mat|laser|scanner|edge|gate|door|limit)|interlock switch|guard (?:switch|locking)|安全|光幕|急停/i;
+/**
+ * A safety-rated part: a safety relay or E-stop, or a part with a performance level / SIL or a safety
+ * function in its data (drives with Safe Torque Off, light curtains, safety switches).
+ */
+export const isSafetyRated = (p: CatalogPart): boolean => SAFETY_PARTS.has(p.category) || p.ratings.PL !== undefined || p.ratings.SIL !== undefined
+  || SAFETY_WORDS.test(`${p.description} ${p.ratings.application ?? ''} ${p.ratings.safety ?? ''}`);
+/** A drawn device that is part of a safety function: by its category or description, or marked so by the conversion (a drive stopped through STO, a guard switch). */
+const inSafetyFunction = (c: DrawnComponent, safetyFn: boolean) => safetyFn || SAFETY_PARTS.has(c.category) || SAFETY_WORDS.test(c.description);
+
+export function crossMatch(c: DrawnComponent, newTag: string, target: ConvertTarget, hp?: number, safety?: { need: number; why: string }, safetyFn = false): PartMatch {
+  const r = ratingsOf(c);
+  const from = { partNumber: c.partNumber, manufacturer: c.manufacturer, description: c.description, category: c.category, ratings: r };
+  // operator devices drawn as 'other' (speed pots, pendants) are chosen by the design too
+  if (ENGINE_PICKS.has(c.category) || (c.category === 'other' && /potentiometer|\bpot\b|调速|电位器|pendant|遥控/i.test(c.description))) {
+    return { oldTag: c.tag, newTag, from, to: null, alternatives: [], differences: c.category === 'estop' ? [REVALIDATE] : [], status: 'engine', reason: 'Chosen by the design from the I/O list and the equipment choice.' };
+  }
+  // an overload is set to the motor's current, which changes with the voltage: the design sizes it for the new motor
+  if ((c.category === 'overload' || c.category === 'motorProtector') && (target.region === 'US' || target.region === 'Canada')) {
+    return { oldTag: c.tag, newTag, from, to: null, alternatives: [], differences: [`Set for the motor's full-load current at ${target.supply.replace('VAC-3PH', ' V')} (was ${r.minAmps ?? '?'}-${r.maxAmps ?? '?'} A at the old voltage)`], status: 'engine',
+      reason: 'Sized by the design from the motor\'s new full-load current (NEC 430.32).' };
+  }
+  const list = candidates(c, r, target, hp);
+  if (!list.length) {
+    const missing = c.category === 'overload' || c.category === 'motorProtector' ? 'the setting range is' : c.category === 'vfd' ? 'the motor power is' : 'the rating is';
+    return { oldTag: c.tag, newTag, from, to: null, alternatives: [], differences: [], status: 'to-select',
+      reason: `No catalog part matches${r.amps !== null || r.kw !== null || r.minAmps !== null ? '' : `: ${missing} not on the drawing`}. Pick one, or let the design size it from the motors.` };
+  }
+  // a safety relay with enough safety outputs, or with an expansion module listed for it
+  const extra: string[] = [];
+  if (c.category === 'safetyRelay' && safety?.need) {
+    const sized = sizeSafetyRelay(list, safety);
+    // too few outputs, and no listed expansion: not an equivalent, the user picks (the closest ones offered)
+    if (!sized.ok) {
+      return { oldTag: c.tag, newTag, from, to: null, alternatives: sized.list.slice(0, 5), differences: [sized.note, REVALIDATE], status: 'to-select',
+        reason: sized.unverified
+          ? `${sized.unverified.manufacturer} ${sized.unverified.partNumber} would have the ${safety.need} safety outputs needed, but its ratings are not verified, and a safety function needs a verified part. Check it against the maker's datasheet, or pick another.`
+          : `No catalog safety relay has the ${safety.need} safety outputs needed (${safety.why}), alone or with an expansion module its maker lists for it. Pick one with ${safety.need} outputs, or a base unit and its expansion.` };
+    }
+    list.splice(0, list.length, ...sized.list);
+    extra.push(sized.note);
+  }
+  // a safety function never gets a part whose ratings are not verified, nor does a safety-rated part replace
+  // anything unverified (the candidates come verified first, so none is): offered, the user picks
+  if ((inSafetyFunction(c, safetyFn) || isSafetyRated(list[0])) && list[0].verified !== true) {
+    return { oldTag: c.tag, newTag, from, to: null, alternatives: list.slice(0, 5), differences: [...extra, `${list[0].manufacturer} ${list[0].partNumber}: ratings not verified${list[0].verify ? ` (${list[0].verify})` : ''}`, REVALIDATE], status: 'to-select',
+      reason: `The closest, ${list[0].manufacturer} ${list[0].partNumber}, has ratings that are not verified, and a safety function needs a verified part. Check it against the maker's datasheet, or pick another.` };
+  }
+  const [to, ...alternatives] = list;
+  const listing = to.ratings.ul ? `maker's listing: UL ${String(to.ratings.ul).replace(/^UL\s*/i, '')}` : 'listing: see the maker\'s data';
+  return { oldTag: c.tag, newTag, from, to, alternatives: alternatives.slice(0, 4), differences: [...differences(c, r, to, target), ...extra, ...(c.category === 'safetyRelay' ? [REVALIDATE] : [])], status: 'matched', reason: `${to.manufacturer} ${to.partNumber}: same function and ratings (${listing}).` };
+}
+
+export interface Conversion {
+  target: ConvertTarget;
+  supply: SupplyVoltage;
+  supplyNote: string;
+  /** Motors for the new design (power in HP, target voltage). */
+  motors: MotorSpec[];
+  /** Original motor tag → new tag (M1 stays M1). */
+  motorKw: { tag: string; kw: number | null; hp: number }[];
+  tags: Map<string, string>;
+  parts: PartMatch[];
+  /** Questions for the Machine description page (what the conversion can't decide). */
+  questions: SyncItem[];
+  /** What the new design must add to be right for the target standard (safety relay + STO…). */
+  recommendations: { text: string; section: SpecSectionId }[];
+  /** No PLC on the old machine: the chosen way to keep its logic (null: it had a PLC). */
+  logic: LogicChoice | null;
+  /** Each control circuit, where its function goes and how it reads with the new tags. */
+  circuits: ConvertedCircuit[];
+  /** The I/O list for the new design: the original points plus the field devices of the relay circuits moved into the PLC. */
+  io: ImportedIO[];
+}
+
+export interface ConvertedCircuit {
+  /** C1, C2… in the order read: the key of the circuit's rung on the new drawings. */
+  id: string;
+  circuit: DrawnCircuit;
+  /** Safety relay contacts that stay hardwired in the coil circuit when the rest becomes PLC logic, e.g. "SR1 13-14". */
+  hardwired: string[];
+  /** relays: kept as a hardwired circuit; program: becomes PLC logic; drive: stays in the drive's / controller's own logic. */
+  becomes: 'relays' | 'program' | 'drive';
+  /** The circuit with the new tags, e.g. "K2: SS4 cutting on (NO), K1 aux (NO), K2 seal-in (NO)". */
+  text: string;
+}
+
+/** The way a machine's logic is kept: its own PLC, or (no PLC) the user's choice, by default a new PLC. */
+export const logicChoice = (m: ExistingMachine, target: ConvertTarget): LogicChoice | null => (m.controller === 'plc' ? null : target.logic ?? 'plc');
+
+/** Replace the old device tags in a text with the new ones (whole tags only: KM1 never touches KM10). */
+export function retag(text: string, tags: Map<string, string>): string {
+  const olds = [...tags.keys()].filter((t) => t && tags.get(t) !== t).sort((a, b) => b.length - a.length);
+  if (!olds.length) return text;
+  const re = new RegExp(`(?<![A-Za-z0-9])(${olds.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(?![A-Za-z0-9])`, 'g');
+  return text.replace(re, (t) => tags.get(t) ?? t);
+}
+
+/** Where each circuit's function goes. A drive's or controller's built-in logic stays there (a servo keeps positioning); relay logic follows the choice. */
+export function convertCircuits(m: ExistingMachine, tags: Map<string, string>, logic: LogicChoice | null): ConvertedCircuit[] {
+  const sr = m.safety.safetyRelay?.match(/[A-Z]{1,3}\d+/)?.[0] ?? m.components.find((c) => c.category === 'safetyRelay')?.tag ?? null;
+  return m.circuits.map((c, i) => {
+    const becomes = c.logicIn === 'drive' ? 'drive' as const : logic === 'keep-relays' ? 'relays' as const : 'program' as const;
+    // a safety relay's contact stays in the coil circuit, hardwired: the safety function never depends on the PLC (NFPA 79 9.4.1)
+    const hardwired = becomes === 'program' ? safetyContacts(c, sr).map((x) => retag(x, tags)) : [];
+    const text = `${c.output}: ${c.function}${c.conditions.length ? ` (${c.conditions.join(', ')})` : ''}${c.setting && !c.function.includes(c.setting) ? `; setting: ${c.setting}` : ''}`;
+    return { id: c.id ?? `C${i + 1}`, circuit: c, becomes, hardwired, text: `${retag(text, tags)}${hardwired.length ? `; stays hardwired in the coil circuit, not through the PLC: ${hardwired.join(', ')}` : ''}` };
+  });
+}
+
+/** The safety relay contacts in a circuit's path ("KA0 13-14"), from its structured path or its contact list. */
+function safetyContacts(c: DrawnCircuit, sr: string | null): string[] {
+  const fromPath = (c.path ?? []).flatMap((e) => (e.t === 'branch' ? e.paths.flat() : e.t === 'contact' ? [e] : []))
+    .filter((e) => e.kind === 'safety' || e.tag === sr).map((e) => `${e.tag}${e.terms ? ` ${e.terms}` : ''}`);
+  if (fromPath.length) return [...new Set(fromPath)];
+  return sr ? c.conditions.filter((t) => new RegExp(`^${sr}\\b`).test(t)).map((t) => t.replace(/\s*\(N[OC]\)\s*$/, '')) : [];
+}
+
+const INPUT_DEVICE: Partial<Record<DrawnComponent['category'], ImportedIO['deviceType']>> = { pushbutton: 'pushbutton-no', selector: 'selector', sensor: 'sensor-pnp' };
+const OUTPUT_DEVICE: Partial<Record<DrawnComponent['category'], ImportedIO['deviceType']>> = { solenoidValve: 'solenoid', pilotLight: 'pilot-light', stackLight: 'stack-light', contactor: 'contactor-coil' };
+
+/**
+ * The I/O list for the new design. With the relay logic moved into a PLC, every field device of a relay
+ * circuit becomes I/O (buttons, switches, sensors in; motor contactors, valves, lamps out) unless the
+ * drawings' I/O list already has it; relays and timers become program logic, not I/O. A main contactor
+ * goes to the safety circuit, not to an output.
+ */
+export function newIo(m: ExistingMachine, logic: LogicChoice | null): ImportedIO[] {
+  if (logic !== 'plc') return m.io;
+  const io = m.io.flatMap(splitSignals);
+  const named = new Set(io.map((p) => p.deviceTag).filter(Boolean));
+  const extra: ImportedIO[] = [];
+  for (const c of m.circuits.filter((x) => x.logicIn !== 'drive')) {
+    for (const tag of c.devices) {
+      const comp = m.components.find((x) => x.tag === tag);
+      if (!comp || named.has(tag)) continue;
+      const input = INPUT_DEVICE[comp.category];
+      const output = OUTPUT_DEVICE[comp.category];
+      if (!input && !output) continue;
+      // a contactor is an output only when it is the circuit's own coil, and not the main contactor
+      if (comp.category === 'contactor' && (c.output !== tag || /main|总|主接触/i.test(comp.description))) continue;
+      named.add(tag);
+      extra.push({
+        address: `${tag} (was relay logic)`, description: comp.description, type: input ? 'input' : 'output',
+        category: comp.category === 'sensor' ? 'Product Detection' : comp.category === 'contactor' ? 'Conveyor' : comp.category === 'solenoidValve' ? 'Pneumatic' : 'Operator/HMI',
+        deviceTag: tag, deviceType: (input ?? output)!, confidence: comp.confidence, source: `${comp.source} (circuit of ${c.output})`,
+      });
+    }
+  }
+  // the relays that switched drive inputs are gone: the PLC drives them itself (VFD forward / reverse / jog, servo ON, CAM)
+  const outputs = driveCommands(m).filter((d) => !io.some((p) => p.type === 'output' && p.address === d.address));
+  return [...io, ...extra, ...outputs];
+}
+
+/**
+ * An encoder wired into a drive (the measuring wheel on the servo's CN5, a motor encoder on a VFD's PG card) is
+ * the drive's own feedback, used by its E-CAM or speed loop: it stays with the drive, not a PLC input or a
+ * high-speed counter. The drive's own outputs into the PLC (ready, alarm, cut) stay PLC inputs.
+ */
+export function withoutDriveFeedback(m: ExistingMachine, io: ImportedIO[]): ImportedIO[] {
+  const drives = [...m.axes.map((a) => a.driveTag), ...m.components.filter((c) => c.category === 'vfd').map((c) => c.tag)];
+  const encoderOf = (tag: string | null | undefined) => Boolean(tag) && m.axes.some((a) => new RegExp(`\\b${tag}\\b`).test(a.encoder ?? ''));
+  return io.filter((p) => {
+    if (p.type !== 'input') return true;
+    const drive = drives.find((d) => p.address.startsWith(`${d} `));
+    const onPort = drive && /^\S+\s+(CN\d+|PG\d*|ENC\d*|X\d+)\b/i.test(p.address);
+    return !(encoderOf(p.deviceTag) || (onPort && /encoder|resolver|measuring[- ]wheel|编码器/i.test(p.description)));
+  });
+}
+
+/**
+ * A watchdog timer on a valve (KT1 "shear down longer than 2 s opens the line run"): the same function in the
+ * PLC, at the drawn time. The timer's circuit has the valve's own conditions; the valve's output gets
+ * "(watchdog 2 s)", which the program uses as its timeout instead of the default.
+ */
+export function withWatchdogs(m: ExistingMachine, io: ImportedIO[]): ImportedIO[] {
+  const bare = (c: DrawnCircuit) => JSON.stringify((c.path ?? []).filter((e) => e.t !== 'coil'));
+  const watch = new Map<string, string>();
+  for (const t of m.circuits.filter((c) => c.kind === 'timer' && /watchdog|time-?out|超时|监视|longer than/i.test(`${c.function} ${c.setting ?? ''}`))) {
+    const s = `${t.setting ?? ''} ${t.function}`.match(/(\d+(?:\.\d+)?)\s*(ms|s|sec|秒)\b/i);
+    if (!s) continue;
+    const sec = /^ms$/i.test(s[2]) ? Number(s[1]) / 1000 : Number(s[1]);
+    const valve = m.circuits.find((c) => c !== t && m.components.find((x) => x.tag === c.output)?.category === 'solenoidValve'
+      && ((t.path?.length && bare(c) === bare(t)) || (t.conditions.length > 0 && c.conditions.join('|') === t.conditions.join('|'))));
+    if (valve) watch.set(valve.output, `${sec} s`);
+  }
+  if (!watch.size) return io;
+  return io.map((p) => (p.type === 'output' && p.deviceTag && watch.has(p.deviceTag) && !/watchdog|timeout/i.test(p.description) ? { ...p, description: `${p.description} (watchdog ${watch.get(p.deviceTag)})` } : p));
+}
+
+/** An E-stop, guard or light-curtain contact: in the safety relay's input circuit, not a PLC input. */
+const isSafetyContact = (p: ImportedIO) => p.type === 'input' && p.deviceType !== 'safety-relay-output' && !/\breset\b|复位/i.test(p.description)
+  && (p.deviceType === 'estop-contact' || (p.category === 'Safety' && /e-?stop|emergency|急停|guard|door|gate|light curtain|ossd|interlock|防护|安全门|光幕/i.test(p.description)));
+
+/**
+ * The PLC side of the safety circuit: the converted machine stops through a monitored safety relay (kept, or
+ * added for an E-stop that was not a safety circuit). Its E-stop and guard contacts go to the relay's inputs, not
+ * to the PLC, and the PLC gets one Safety OK input from the relay's output contact, which gates every motion
+ * output. The relay's reset button stays (it also resets faults).
+ */
+export function withSafetyOk(m: ExistingMachine, io: ImportedIO[], tags: Map<string, string>): ImportedIO[] {
+  if (!m.safety.estops.length && !m.safety.safetyRelay) return io;
+  if (!io.some((p) => p.type === 'output')) return io;
+  const kept = io.filter((p) => !isSafetyContact(p));
+  if (kept.some((p) => p.type === 'input' && p.deviceType === 'safety-relay-output')) return kept;
+  const old = m.safety.safetyRelay?.match(/[A-Z]{1,3}\d+/)?.[0] ?? m.components.find((c) => c.category === 'safetyRelay')?.tag;
+  const tag = old ? tags.get(old) ?? old : 'MSR1';
+  return [...kept, {
+    address: `${tag} (Safety OK)`, description: `Safety OK (safety relay ${tag} output)`, type: 'input', category: 'Safety', deviceTag: tag, deviceType: 'safety-relay-output',
+    confidence: 'high', source: old ? `safety relay ${old} on the drawings: its monitoring contact into the PLC` : 'added by the conversion: the E-stop stops through a monitored safety relay',
+  }];
+}
+
+const TERMINAL = /^(?:[A-Z]{1,4}\d*(?:-[A-Z0-9]+)?|CN\d+-\d+)$/;
+
+/**
+ * One point per signal: a reading that holds several ("U2 DO1 / DO3 / DO5" described as "ready (DO1), cut
+ * (DO3), alarm (DO5)") becomes "U2 DO1 ready", "U2 DO3 cut", "U2 DO5 alarm". Anything else stays as read.
+ */
+export function splitSignals(p: DrawnIO): DrawnIO[] {
+  const codes = [...p.description.matchAll(/([^,;:/()]+?)\s*\(([^()]+)\)/g)].filter((x) => TERMINAL.test(x[2]) && !/^N[OC]$/.test(x[2]));
+  if (codes.length < 2) return [p];
+  const tag = p.deviceTag ?? p.address.split(/\s/)[0];
+  return codes.map((x) => ({ ...p, ...(p.id ? { id: `${p.id}-${x[2]}` } : {}), address: `${tag} ${x[2]}`, description: `${tag} ${x[1].trim()} (${x[2]})` }));
+}
+
+/** The drive inputs a relay switched ("KA4 → DI1 SON", a path ending in drive input MI1): with the relays in a PLC, each is a PLC output. */
+export function driveCommands(m: ExistingMachine): ImportedIO[] {
+  const comp = (t: string) => m.components.find((c) => c.tag === t);
+  const isDrive = (t: string) => comp(t)?.category === 'vfd' || m.axes.some((a) => a.driveTag === t);
+  const out = new Map<string, ImportedIO>();
+  const add = (drive: string, terminal: string, what: string, source: string) => {
+    const address = `${drive} ${terminal}`;
+    if (out.has(address)) return;
+    const servo = m.axes.some((a) => a.driveTag === drive);
+    out.set(address, { address, description: `${drive} ${terminal} ${what}`.trim(), type: 'output', category: servo ? 'Servo/Axis' : 'Conveyor', deviceTag: drive, deviceType: 'vfd-input', confidence: 'high', source });
+  };
+  for (const c of m.circuits) {
+    const drive = [c.output.split(/\s/)[0], ...c.devices].find(isDrive);
+    if (!drive) continue;
+    // a relay circuit ending at a drive input
+    if (c.logicIn !== 'drive') for (const e of c.path ?? []) if (e.t === 'coil' && e.kind === 'drive-input' && e.terms) add(e.tag, e.terms, c.function.split(/[;,]/)[0].replace(new RegExp(`^${e.tag}\\s*`), ''), c.source);
+    // relay contacts into the drive's inputs, as written: "KA4 → DI1 SON", "KA1 21-24 ∥ KA2 21-24 → MI1 forward"
+    for (const t of c.conditions) {
+      const x = t.match(/^([A-Z]{1,3}\d+)[^→]*→\s*((?:[A-Z]{1,4}\d+|CN\d+-\d+))\s*([^,;∥]*)$/);
+      if (x && comp(x[1])?.category === 'relay' && !/^CN\d+$/.test(x[2])) add(drive, x[2], x[3].trim(), c.source);
+    }
+  }
+  return [...out.values()];
+}
+
+/** How every drive (VFD, servo drive) stops now; a drive the drawings don't describe is "unknown". */
+export function driveStops(m: ExistingMachine): DriveStop[] {
+  const tags = [...new Set([...m.components.filter((c) => c.category === 'vfd').map((c) => c.tag), ...m.axes.map((a) => a.driveTag)])];
+  return tags.map((tag) => m.safety.drives?.find((d) => d.tag === tag) ?? { tag, sto: 'unknown' as const, stopsBy: '' });
+}
+
+/**
+ * A safety relay is not enough when a drive's Safe Torque Off isn't wired to it: the drive then stops only
+ * through a single run contact, which is one channel, whatever category the drawings claim. Null when every
+ * drive's STO is wired (or there is no safety relay: that case is the "add a safety relay" recommendation).
+ */
+/** tags: the new tags to write it with (the review shows it with the drawing's own). */
+export function stoFinding(m: ExistingMachine, tags?: Map<string, string>): string | null {
+  if (m.safety.kind !== 'safety-relay') return null;
+  const open = driveStops(m).filter((d) => d.sto !== 'wired');
+  if (!open.length) return null;
+  const how = open.map((d) => `${d.tag} (${d.sto === 'none' ? 'no STO' : d.sto === 'not-wired' ? 'STO not wired' : 'STO not shown'}${d.stopsBy ? `; stops only by ${d.stopsBy}` : ''})`).join(', ');
+  const claimed = m.safety.category?.replace(/\s*\(claimed\)/i, '') || null;
+  const text = `${claimed ? `The drawings claim ${claimed}, but ` : ''}the safety relay ${m.safety.safetyRelay ?? ''} does not remove torque from ${how}: a single channel, so ${claimed ? `the claimed ${claimed} is not met` : 'the stop is not two-channel'}. Wire the Safe Torque Off inputs to the safety relay (STO-capable drives), or stop each drive through two monitored contactors (NFPA 79 9.2.5.4, ISO 13849-1). Re-validate after the conversion.`.replace('relay  does', 'relay does');
+  return tags ? retag(text, tags) : text;
+}
+
+/** The whole conversion of an existing machine to the target standard. */
+export function convertMachine(m: ExistingMachine, target: ConvertTarget = NA_TARGET): Conversion {
+  const sup = targetSupply(m.supplyDrawn, target);
+  const questions: SyncItem[] = sup.question ? [sup.question] : [];
+  // servo motors belong to their axis (the motion design), not to the panel's starters
+  const panelMotors = m.motors.filter((mm) => mm.kind !== 'servo');
+  const motorKw = panelMotors.map((mm) => ({ tag: mm.tag, kw: mm.kw, hp: mm.hp ?? (mm.kw !== null ? kwToHp(mm.kw) : 0) }));
+  const motors: MotorSpec[] = panelMotors.map((mm, i) => ({
+    tag: mm.tag.replace(/^[^A-Z]*/i, '').match(/^M\d+/i)?.[0].toUpperCase() ?? `M${i + 1}`,
+    description: mm.description,
+    hp: motorKw[i].hp || 1,
+    voltage: sup.supply,
+    starter: (mm.starter ?? 'contactor-overload') as StarterType,
+    reversing: mm.reversing,
+  }));
+  if (m.supplyDrawn.hz === 50 && (target.region === 'US' || target.region === 'Canada') && m.motors.length) {
+    questions.push({ text: 'The motors were 50 Hz and turn about 20 % faster on 60 Hz. Must every speed stay as it was (new gearing or drive settings), or is the faster speed acceptable?', section: 'motion', assumption: 'Keep the original speeds' });
+  }
+  const drives = [...m.components.filter((c) => c.category === 'vfd').map((c) => c.tag), ...m.axes.map((a) => a.driveTag)];
+  if (m.safety.estops.length && m.safety.kind === 'control-only') {
+    questions.push({ text: `The existing E-stop (${m.safety.estops.join(', ')}) is only an input of a drive or controller: it is not a safety circuit. The new design stops through a monitored safety relay${drives.length ? ' and the drives\' Safe Torque Off' : ''}. What safety category / performance level does the risk assessment require?`, section: 'safety', assumption: 'Category 3, PL d' });
+  } else if (m.safety.estops.length && !m.safety.safetyRelay) {
+    questions.push({ text: `The existing E-stop (${m.safety.estops.join(', ')}) is single-channel, without a safety relay. The new design uses a monitored safety relay. What safety category / performance level does the risk assessment require?`, section: 'safety', assumption: 'Category 3, PL d' });
+  }
+  const logic = logicChoice(m, target);
+  if (logic) {
+    const by = m.controller === 'servo-drive' ? 'the servo drive\'s built-in controller' : m.controller === 'relays' ? 'relay logic' : 'its own controller';
+    questions.push(logic === 'plc'
+      ? { text: `The machine has no PLC: ${by} runs it. The conversion moves the relay logic into a new PLC (the drives keep their built-in functions). Is that right, or should the relay logic be kept?`, section: 'sequence', assumption: 'A PLC runs the logic; the drives keep their built-in functions' }
+      : { text: `The machine has no PLC: ${by} runs it, and the conversion keeps the relay logic with parts for the new standard. Is that right, or should the logic move into a PLC?`, section: 'sequence', assumption: 'Keep the relay logic' });
+  }
+  const recommendations: Conversion['recommendations'] = [];
+  // North America renames the devices (QF1 → CB1…); an IEC target keeps the drawing's own tags
+  const na = target.region === 'US' || target.region === 'Canada';
+  const tags = na ? naTags([...m.components, ...ioOnlyDevices(m)], m) : new Map(m.components.map((c) => [c.tag, c.tag]));
+  const sto = stoFinding(m, tags);
+  if (sto) {
+    recommendations.push({ section: 'safety', text: sto });
+    const unknown = driveStops(m).filter((d) => d.sto === 'unknown').map((d) => d.tag);
+    if (unknown.length) questions.push({ text: `The drawings don't show whether the Safe Torque Off of ${unknown.join(', ')} is wired to the safety relay. Is it?`, section: 'safety', assumption: 'Not wired: the new design wires it' });
+  }
+  if (m.safety.kind !== 'safety-relay' && (m.safety.estops.length || drives.length)) {
+    recommendations.push({ section: 'safety', text: `${m.safety.kind === 'control-only' ? `The E-stop (${m.safety.estops.join(', ') || '—'}) only signals ${drives.length ? drives.join(', ') : 'the controller'}: that is not a safety circuit. ` : ''}Add a monitored safety relay (category / PL from the risk assessment)${drives.length ? ` and wire the Safe Torque Off (STO) inputs of ${drives.join(', ')} to it` : ''}, so an E-stop removes power or torque (NFPA 79 9.2.2, 9.2.5.4). Re-validate after the conversion.` });
+  }
+  for (const a of m.axes) {
+    recommendations.push({ section: 'motion', text: `Servo axis ${a.tag} (${a.description}): drive ${a.driveTag}${a.drivePart ? ` ${a.drivePart}` : ''}, ${a.motorKw ?? '?'} kW servo motor${a.encoder ? `, ${a.encoder}` : ''}${a.brakingResistor ? `, braking resistor ${a.brakingResistor}` : ''}: kept as one axis; the drive, motor, cables and braking resistor are chosen together by the motion design for ${target.supply.replace('VAC-3PH', ' V')}.` });
+  }
+  for (const [i, mm] of panelMotors.entries()) {
+    // the drawings' own questions may already ask it
+    const asked = m.questions.some((q) => /power|kw/i.test(q.text) && similarity(q.text, mm.description) >= 0.3);
+    if (!motorKw[i].hp && !asked) questions.push({ text: `What is the power of ${mm.tag} (${mm.description})? It is not on the drawings.`, section: 'motion', assumption: '1 HP' });
+  }
+  // a drive is sized by the motor it runs: the largest VFD-driven motor when the drive's own power isn't drawn
+  const vfdHp = Math.max(0, ...motors.filter((x) => x.starter === 'vfd').map((x) => x.hp));
+  // the axis' own devices, by tag: drive, motor, braking resistor, encoder ("line-length encoder PG1 on CN1-11/13")
+  const tagIn = (t: string | null) => (t ?? '').match(/\b[A-Z]{1,3}\d+\b/g)?.filter((x) => m.components.some((c) => c.tag === x)) ?? [];
+  const axisTags = new Set(m.axes.flatMap((a) => [a.driveTag, a.motorTag, ...tagIn(a.brakingResistor), ...tagIn(a.encoder)]));
+  const stoOpen = new Set(driveStops(m).filter((d) => d.sto !== 'wired').map((d) => d.tag));
+  // the safety relay's outputs: as drawn, plus two per drive whose STO the conversion wires to it
+  const srOutputs = (() => { const x = safetyOutputsNeeded(m, [...stoOpen].map((t) => tags.get(t) ?? t)); return { need: x.need, why: x.why }; })();
+  // the devices of the safety function: E-stops, guards and every drive that stops through its STO
+  const safetyTags = new Set([...m.safety.estops, ...m.safety.guards, ...driveStops(m).filter((d) => d.sto !== 'none' || stoOpen.has(d.tag)).map((d) => d.tag)]);
+  const parts = m.components.map((c) => {
+    // a servo axis is chosen as a whole by the motion design (drive, motor, encoder, braking resistor)
+    if (axisTags.has(c.tag)) {
+      const isDrive = m.axes.some((a) => a.driveTag === c.tag);
+      return { oldTag: c.tag, newTag: tags.get(c.tag) ?? c.tag, from: { partNumber: c.partNumber, manufacturer: c.manufacturer, description: c.description, category: c.category, ratings: ratingsOf(c) }, to: null, alternatives: [],
+        differences: isDrive ? [...(stoOpen.has(c.tag) ? ['STO wired to the safety relay'] : []), REVALIDATE] : [], status: 'engine' as const, reason: 'Servo axis: drive, motor, encoder and braking resistor are chosen together by the motion design.' };
+    }
+    const m2 = crossMatch(c, tags.get(c.tag) ?? c.tag, target, c.category === 'vfd' && c.ratings.kw === null && vfdHp ? vfdHp : undefined, c.category === 'safetyRelay' ? srOutputs : undefined, safetyTags.has(c.tag));
+    // a drive whose STO isn't wired now stops through it
+    return c.category === 'vfd' && stoOpen.has(c.tag) ? { ...m2, differences: [...m2.differences, 'STO wired to the safety relay', REVALIDATE] } : m2;
+  });
+  const srPick = parts.find((x) => x.from.category === 'safetyRelay' && x.status === 'to-select');
+  if (srPick && srOutputs.need) {
+    const loose = srPick.alternatives.find((x) => x.verified !== true && safetyOutputCount(x) >= srOutputs.need);
+    questions.push({ text: `The safety relay ${srPick.newTag} needs ${srOutputs.need} safety outputs (${srOutputs.why}), and no verified catalog relay has that many, alone or with an expansion module its maker lists for it.${loose ? ` ${loose.manufacturer} ${loose.partNumber} has ${safetyOutputCount(loose)}, but its ratings are not verified${loose.verify ? ` (${loose.verify})` : ''}.` : ''} Which safety relay (or base unit + expansion) should the new design use?`, section: 'safety', assumption: `A safety relay with ${srOutputs.need} safety outputs, or a base unit with a listed contact expansion` });
+  }
+  const circuits = convertCircuits(m, tags, logic);
+  const hardwired = circuits.filter((c) => c.hardwired.length);
+  if (hardwired.length) {
+    recommendations.push({ section: 'safety', text: `The safety relay's contacts stay hardwired, not through the PLC (NFPA 79 9.4.1; a standard PLC never carries a safety function): ${hardwired.map((c) => `${c.hardwired.join(', ')} in the ${tags.get(c.circuit.output) ?? c.circuit.output} coil circuit`).join('; ')}. Its other safety outputs keep removing power as drawn${m.safety.description ? ` (${retag(m.safety.description, tags)})` : ''}; with the relay logic in the PLC, they switch the safe 24 V (24+S) to the PLC outputs and the valves, not to relays. Re-validate after the conversion.` });
+  }
+  return { target, supply: sup.supply, supplyNote: sup.note, motors, motorKw, tags, parts, questions, recommendations, logic, circuits, io: withWatchdogs(m, withSafetyOk(m, withoutDriveFeedback(m, newIo(m, logic)), tags)) };
+}

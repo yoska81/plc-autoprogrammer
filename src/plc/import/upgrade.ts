@@ -1,0 +1,487 @@
+/**
+ * "Upgrade existing program": an imported program becomes the open project. Picks the PLC (the
+ * same family as the original when the app supports it), the CPU and modules that hold its I/O,
+ * places the I/O, keeps the original names as tag nicknames (so the exported files and the editor
+ * use them), writes a first machine description from the program and lists what to ask the user.
+ * Pure: the page (ui/ProgramImport.tsx) writes the result into the stores.
+ */
+import { axisText, isUnreadBox } from './mpe720';
+import type { LadderProgram, TagDefinition } from '../core/ladder';
+import type { PlcProfile } from '../core/profile';
+import type { IOPoint } from '../../types/io';
+import type { SpecSectionId } from '../../spec/types';
+import { PLC_PROFILES, getProfile } from '../core/profiles';
+import { moduleSlots } from '../core/modules';
+import { resolveAddresses } from '../core/profile';
+import { siemensAddress } from '../core/profiles/siemens';
+import { yaskawaCpuOf } from '../core/profiles/yaskawa';
+import { modulesToFit, type Need } from '../core/fit';
+import { getPart } from '../../electrical/catalog';
+import { importedRange, materialize, nickOf, pretty } from './convert';
+import { programFindings } from './findings';
+import type { ImportedProgram, SourceFormat } from './types';
+import { rungAddresses } from '../core/ladder';
+
+/** Draft key (stored with the project) of the original program. */
+export const UPGRADE_KEY = 'upgrade.original';
+
+/** The original program as it was imported, kept with the project for "Original vs now". */
+export interface UpgradeOriginal {
+  importedAt: string;
+  source: ImportedProgram['source'];
+  report: ImportedProgram['report'];
+  io: ImportedProgram['io'];
+  plcId: string;
+  cpuId: string;
+  /** Original program on the chosen PLC's addresses: the base of the diff. */
+  program: LadderProgram;
+  summary: string;
+  /** The I/O list as imported (descriptions, in order) for "Original vs now". */
+  ioList: { description: string; type: 'input' | 'output' }[];
+  /** App address → original tag name; block id → its routine in the original file. */
+  names: Record<string, string>;
+  blockOrigin: ImportedProgram['blockOrigin'];
+  rungOrigin?: ImportedProgram['rungOrigin'];
+  /** The original file, gzip + base64 (src/plc/import/gz.ts): changes are written back into it. */
+  fileGz?: string;
+  /** The machine's own controller is not one the app has: what the project shows instead, in plain words. */
+  cpuNote?: string;
+}
+
+export interface UpgradePlan {
+  plcId: string;
+  cpuId: string;
+  modules: string[];
+  program: LadderProgram;
+  io: Omit<IOPoint, 'id'>[];
+  /** Machine description written from the program (only sections it says something about). */
+  spec: Partial<Record<SpecSectionId, string>>;
+  questions: string[];
+  original: UpgradeOriginal;
+}
+
+/** PLC of the app that a source format comes from (a read-only one: the program stays on it until a PLC is chosen). */
+const SAME_FAMILY: Partial<Record<SourceFormat, string>> = { l5x: 'logix', l5k: 'logix', 'click-csv': 'click', 'siemens-scl': 'siemens-s7', 'siemens-stl': 'siemens-s7', 'siemens-xml': 'siemens-s7', 'siemens-tags': 'siemens-s7', 'yaskawa-mpe720': 'yaskawa-mp' };
+
+/**
+ * PLC the program goes on: the original's family (read only when the app cannot program it yet, never another
+ * brand in its place), else the current PLC when it draws ladder, else CLICK.
+ */
+export function targetPlc(format: SourceFormat, currentPlcId: string, vendor = ''): PlcProfile {
+  const same = format === 'plcopen' && /siemens/i.test(vendor) ? 'siemens-s7' : format === 'printout' ? printoutFamily(vendor) : SAME_FAMILY[format];
+  const p = same ? PLC_PROFILES.find((x) => x.id === same && (x.available || x.readOnly)) : undefined;
+  if (p) return p;
+  const cur = getProfile(currentPlcId);
+  return cur.available && cur.language === 'ladder' ? cur : getProfile('click');
+}
+
+/** PLC family of a printout from its maker / model as printed. */
+function printoutFamily(text: string): string | undefined {
+  if (/click|automationdirect/i.test(text)) return 'click';
+  if (/micro8[0-9]0|micro800/i.test(text)) return 'micro800';
+  if (/rockwell|allen|logix|compactlogix|controllogix|1756|1769|5069/i.test(text)) return 'logix';
+  if (/siemens|s7-|simatic|tia/i.test(text)) return 'siemens-s7';
+  if (/unistream/i.test(text)) return 'unitronics-unistream';
+  if (/unitronics|vision/i.test(text)) return 'unitronics-vision';
+  if (/yaskawa|mpe720|\bMP[23]\d{3}/i.test(text)) return 'yaskawa-mp';
+  return undefined;
+}
+
+export function needOf(imp: ImportedProgram): Need {
+  const n = (type: 'input' | 'output', analog: boolean) => imp.io.filter((p) => p.type === type && p.analog === analog).length;
+  // The signal of each analog point, so a current transmitter gets a current channel (not a 0–10 V onboard input).
+  const ranges = (type: 'input' | 'output') => imp.io.filter((p) => p.type === type && p.analog).map((p) => importedRange(p.original, p.description).range);
+  return { digitalInputs: n('input', false), digitalOutputs: n('output', false), analogInputs: n('input', true), analogOutputs: n('output', true), ethernetHmi: false, minHmiSizeIn: null, analogRanges: { input: ranges('input'), output: ranges('output') } };
+}
+
+/** First CPU of the profile (smallest first) that holds the I/O, with the modules it needs. */
+export function chooseCpu(profile: PlcProfile, need: Need): { cpuId: string; modules: string[] } {
+  for (const cpu of profile.cpuModels) {
+    const mods = modulesToFit(cpu.id, [], need);
+    if (mods) return { cpuId: cpu.id, modules: mods };
+  }
+  return { cpuId: profile.defaultCpuId, modules: [] };
+}
+
+/** "%IX1.0" / "%I1.0" / "I1.0" → byte and bit of an S7 digital address, or null. */
+const s7Bit = (a: string) => { const m = /^%?([IQ])X?(\d+)\.([0-7])$/i.exec(a.trim()); return m ? { area: m[1].toUpperCase(), index: Number(m[2]) * 8 + Number(m[3]) } : null; };
+
+/** The I/O modules of the original rack as catalog numbers, in slot order ("1769-IQ16/A" → "1769-IQ16"). */
+const fileModules = (imp: ImportedProgram) => (imp.source.modules ?? []).map((m) => m.catalog.replace(/\/[A-Z]$/i, '').toUpperCase());
+
+/** The controller a file names, as a catalog-style key ("1769-L33ER", "1214C", "6ES7214-1AG40-0XB0"), or ''. */
+const cpuKey = (controller: string) => /\b(6ES7[\w-]+|\d{4}-[A-Z]\w*(?:-[A-Z0-9]+)*|1[25]\d\d[A-Z]*)\b/i.exec(controller)?.[1] ?? '';
+const matchesCpu = (c: PlcProfile['cpuModels'][number], key: string) => c.id.toUpperCase() === key.toUpperCase() || new RegExp(`(^|[^\\w])${key}([^\\w]|$)`, 'i').test(c.label);
+
+/**
+ * The original program's own CPU, when it goes back on the same family: the CPU the file names ("CPU 1214C",
+ * "1769-L33ER", an order number), else (S7) the smallest CPU whose onboard I/O holds every original %I / %Q bit, so
+ * the addresses stay as they were. null = no such CPU in the app's list (the general choice applies).
+ */
+export function originalCpu(profile: PlcProfile, imp: ImportedProgram): { cpuId: string; modules: string[] } | null {
+  // Order numbers the file states (CPU and modules): the CPU among them, and its modules to start from.
+  // Catalog numbers in full, multi-part ones included (1769-L24ER-QBFC1B, 6ES7214-1AG40-0XB0).
+  const orders = [...imp.source.controller.matchAll(/\b6ES7[\w-]+|\b\d{4}-[A-Z]\w*(?:-[A-Z0-9]+)*/gi)].map((m) => m[0].toUpperCase());
+  const named = profile.cpuModels.find((c) => orders.includes(c.id.toUpperCase()));
+  // The file's own modules (the L5X rack by slot, else order numbers it names); never 1769 Compact I/O after a
+  // 1769-L1 (it expands with 1734 POINT I/O).
+  const fromFile = fileModules(imp);
+  const own = (fromFile.length ? fromFile : orders).filter((o) => !profile.cpuModels.some((c) => c.id.toUpperCase() === o) && getPart(o)?.category === 'plcModule' && !(/^1769-L1\d/i.test(named?.id ?? '') && /^1769-/i.test(o)));
+  const fit = (id: string, start: string[] = []) => { const mods = modulesToFit(id, start, needOf(imp)); return mods ? { cpuId: id, modules: mods } : null; };
+  if (named) {
+    const r = fit(named.id, own) ?? fit(named.id);
+    if (r) return r;
+  }
+  const key = cpuKey(imp.source.controller);
+  if (key) {
+    const cpu = profile.cpuModels.find((c) => matchesCpu(c, key));
+    const r = cpu && fit(cpu.id);
+    if (r) return r;
+  }
+  if (profile.id !== 'siemens-s7') return null;
+  const bits = imp.io.map((p) => s7Bit(p.original)).filter((b): b is { area: string; index: number } => b !== null);
+  if (!bits.length) return null;
+  const maxIn = Math.max(-1, ...bits.filter((b) => b.area === 'I').map((b) => b.index));
+  const maxOut = Math.max(-1, ...bits.filter((b) => b.area === 'Q').map((b) => b.index));
+  // Onboard bytes only (%I0.0–%I1.7 on an S7-1200): higher bytes are module addresses, kept by the module layout.
+  const onboard = (n: number) => (n < 16 ? n : -1);
+  for (const c of profile.cpuModels) {
+    if (c.builtInInputs <= onboard(maxIn) || c.builtInOutputs <= onboard(maxOut)) continue;
+    const r = fit(c.id);
+    if (r) return r;
+  }
+  return null;
+}
+
+/**
+ * A program kept read only on its own PLC: the controller, its rack and its servo axes as the file has them, and
+ * what to do next. Never a module list of another PLC (that is picked once the user chooses the PLC).
+ */
+export function readOnlyNote(source: ImportedProgram['source'], profile: PlcProfile): string {
+  const slots = (source.modules ?? []).map((m) => m.catalog);
+  // The CPU itself ("CPU301(16)", "CPU") and the functions built into it are listed apart from the rack modules.
+  const builtIn = slots.flatMap((c) => { const f = BUILT_IN_FUNCTIONS.find((x) => x.re.test(c)); return f ? [f.what === c ? c : `${f.what} (${c})`] : []; });
+  const mods = slots.filter((c) => !/CPU/i.test(c) && !BUILT_IN_FUNCTIONS.some((x) => x.re.test(c)));
+  const cpu = source.controller.replace(/\s*\([^)]*\)\s*$/, '');
+  const axes = (source.axes ?? []).map(axisText);
+  return [
+    profile.id === 'yaskawa-mp'
+      ? `Your machine's controller is a ${profile.vendor} ${source.controller}, programmed in MPE720. The app is learning to put programs into MPE720 for you (MPE720 has no way for other programs to load one, so the app will work its windows): on the Program page press Send to PLC software and do the steps under "Teach the app MPE720", then send the files it records. Until then the project keeps the program read only: the program, the I/O list and the simulator work on its own registers, and nothing is downloaded for it.`
+      : `Your machine's controller is a ${profile.vendor} ${source.controller}. The app cannot program it yet, so the project keeps it read only: the program, the I/O list and the simulator work on its own registers, and nothing is downloaded for it.`,
+    builtIn.length ? `Built into the ${cpu}: ${builtIn.join(', ')}.` : '',
+    mods.length ? `These are the ${profile.vendor} modules: ${mods.join(', ')}. They stay with the original. Choose the new PLC and the app picks its modules.` : '',
+    axes.length ? `Servo axes (${axes.length}): ${axes.join('; ')}.` : '',
+    profile.id === 'yaskawa-mp'
+      ? 'To change the machine to another PLC instead, choose one under "Move it to another PLC" on the Upgrade page (the servo axes on MECHATROLINK then need another motion network).'
+      : 'To change the machine to another PLC, choose one under "Move it to another PLC" on the Upgrade page.',
+  ].filter(Boolean).join(' ');
+}
+
+/** Functions an MPE720 rack lists in slots that are built into the MP3000 CPU (CPU-301 / 302), not modules. */
+const BUILT_IN_FUNCTIONS: { re: RegExp; what: string }[] = [
+  { re: /^218IFD$/i, what: 'Ethernet' },
+  { re: /^SVC(32)?$/i, what: 'MECHATROLINK-III' },
+  { re: /^SVR(32)?$/i, what: 'virtual axes' },
+  { re: /^M-EXECUTOR$/i, what: 'M-EXECUTOR' },
+];
+
+/** Analog points whose signal the program does not state: asked (taken as 4–20 mA, which decides the module). */
+function assumedRanges(imp: ImportedProgram): string[] {
+  return imp.io.filter((p) => p.analog && importedRange(p.original, p.description).assumed).map((p) => `Analog signal of ${p.name}${p.original && p.original !== p.name ? ` (${p.original})` : ''}: the original program does not say what signal it is (4–20 mA, 0–10 V, an RTD such as a PT100, or a thermocouple). It is taken as 4–20 mA, and a current input is planned for it. Check the transmitter's or sensor's nameplate and set the signal on the I/O list (an RTD needs an RTD input module).`);
+}
+
+/** S7 → S7: original %I / %Q / %IW / %QW addresses that the chosen PLC puts elsewhere, as questions (never silent). */
+function movedS7(imp: ImportedProgram, profile: PlcProfile, cpu: PlcProfile['cpuModels'][number], modules: string[], io: IOPoint[]): string[] {
+  if (profile.id !== 'siemens-s7') return [];
+  const slots = moduleSlots(modules);
+  const addr = resolveAddresses(profile, cpu, io, slots);
+  const norm = (a: string) => a.trim().toUpperCase().replace(/^%?([IQ])X(\d+\.)/, '%$1$2').replace(/^([IQ])/, '%$1');
+  const out: string[] = [];
+  io.forEach((p, k) => {
+    const orig = imp.io[k]?.original ?? '';
+    if (!/^%?[IQ][XWB]?\d+(\.\d)?$/i.test(orig)) return;
+    const now = siemensAddress(addr.get(p.id) ?? '', cpu, slots)?.address;
+    if (now && norm(now) !== norm(orig)) out.push(`Address changed: ${imp.io[k].name} was ${norm(orig)} in the original program and is ${now} on this PLC (${cpu.label.split(' — ')[0]}${modules.length ? ` + ${modules.join(', ')}` : ''}). Rewire it, or set its address on the I/O addressing page.`);
+  });
+  return out;
+}
+
+/** I/O addresses the program uses that no I/O point has: the checker reports them as errors, so say so up front. */
+function unassignedIo(program: LadderProgram, profile: PlcProfile, cpu: PlcProfile['cpuModels'][number], modules: string[], io: IOPoint[]): string[] {
+  const have = new Set([...resolveAddresses(profile, cpu, io, moduleSlots(modules)).values()].map((a) => a.toUpperCase()));
+  const used = [...new Set(program.rungs.flatMap(rungAddresses).map((a) => a.trim().toUpperCase()))]
+    .filter((a) => { const k = profile.parseAddress(a)?.kind; return (k === 'input' || k === 'output') && !have.has(a); });
+  return used.length ? [`The program uses I/O addresses no I/O point has: ${used.slice(0, 12).join(', ')}${used.length > 12 ? '…' : ''}. The checker reports each as an error (an address with no point behind it reads or drives whatever gets that address next): add the points to the I/O list, or change the rungs.`] : [];
+}
+
+export function planUpgrade(imp: ImportedProgram, currentPlcId: string, now = new Date()): UpgradePlan {
+  const profile = targetPlc(imp.source.format, currentPlcId, `${imp.source.vendor} ${imp.source.controller}`);
+  // Read only: the machine's own controller as the file names it, no modules of the app's (its rack is said instead).
+  const { cpuId, modules } = profile.readOnly ? { cpuId: yaskawaCpuOf(imp.source.controller).id, modules: [] } : originalCpu(profile, imp) ?? chooseCpu(profile, needOf(imp));
+  const cpu = profile.cpuModels.find((c) => c.id === cpuId) ?? profile.cpuModels[0];
+  const m = materialize(imp, profile, cpu, moduleSlots(modules));
+  // The file names a controller of this family the app does not have (a 1769-L33ER): never swapped silently.
+  const named = cpuKey(imp.source.controller);
+  const cpuText = named && SAME_FAMILY[imp.source.format] === profile.id && !matchesCpu(cpu, named)
+    ? `Your machine's controller is a ${named}. The app does not have it yet, so this project shows a ${cpu.label.split(' — ')[0]} (${cpu.label.split(' — ')[1] ?? profile.name}) on the parts list, drawings and status bar. Your program keeps its names and logic${imp.source.format === 'l5x' ? ', and the download into your original .L5X keeps your controller' : ''}; the parts list and drawings do not match your machine's controller.`
+    : '';
+  // The machine's own I/O modules, kept when the app has them; any difference is said, never silent.
+  const theirs = fileModules(imp);
+  const unknown = theirs.filter((m) => getPart(m)?.category !== 'plcModule');
+  const moduleText = theirs.length && theirs.join(' ') !== modules.join(' ')
+    ? `Your machine's I/O modules are ${theirs.join(', ')} (slots 1–${theirs.length}). ${unknown.length ? `The app does not have ${unknown.join(', ')}, so this` : 'This'} project uses ${modules.join(', ') || 'no modules'} instead: the parts list, drawings and module addresses show those. Check them against the machine before ordering parts.`
+    : '';
+  const cpuNote = profile.readOnly ? readOnlyNote(imp.source, profile) : [cpuText, moduleText].filter(Boolean).join(' ') || undefined;
+  // A 1769 controller with embedded I/O: the slot numbers after it are to check against the real project.
+  const embedded = /^1769-L[12]\d/i.test(cpu.id) ? `Check in Studio 5000 (I/O Configuration) the I/O addresses of the ${cpu.id}: the app puts its embedded I/O at Local:1${/QBFC/i.test(cpu.id) ? ' (analog at Local:2, Ch<n>Data)' : ''} and ${/^1769-L1/i.test(cpu.id) ? 'does not address its 1734 POINT I/O expansion' : `the first expansion module at Local:${/QBFC/i.test(cpu.id) ? 4 : 2}`}.` : '';
+  // I/O keeps its name from the original program (Start_PB, not the description).
+  const have = new Set(m.program.tags.map((t) => t.address.toUpperCase()));
+  const ioTags: TagDefinition[] = [];
+  const addressOf = materializedAddresses(m.names);
+  m.io.forEach((p, k) => {
+    const address = addressOf.get(imp.io[k].name);
+    if (address && !have.has(address.toUpperCase())) ioTags.push({ address, nickname: imp.io[k].name, comment: p.description });
+  });
+  let program: LadderProgram = { ...m.program, tags: [...ioTags, ...m.program.tags] };
+  // Names stay as in the original program; CLICK nicknames are at most 24 letters, digits and _ (full name in the comment).
+  if (profile.id === 'click') program = { ...program, tags: clickNicknames(program.tags) };
+  const summary = programSummary(imp);
+  return {
+    plcId: profile.id, cpuId: cpu.id, modules,
+    program,
+    io: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type, category: p.category, ...(p.signal ? { signal: p.signal, analog: p.analog } : {}), ...(p.plcAddress ? { plcAddress: p.plcAddress } : {}) })),
+    spec: describeProgram(imp),
+    // Likely bugs (missing seal-in, interlock on another station's sensor) are asked before the general question.
+    questions: withFindings([...(cpuNote ? [cpuNote] : []), ...(embedded ? [embedded] : []), ...questionsFor(imp), ...assumedRanges(imp), ...movedS7(imp, profile, cpu, modules, m.io), ...unassignedIo(program, profile, cpu, modules, m.io)], programFindings(program).map((f) => f.message)),
+    original: {
+      importedAt: now.toISOString(), source: imp.source, report: imp.report, io: imp.io, plcId: profile.id, cpuId: cpu.id, program, summary,
+      ioList: m.io.map((p, k) => ({ description: p.description || pretty(imp.io[k].name), type: p.type })),
+      names: m.names, blockOrigin: imp.blockOrigin, rungOrigin: imp.rungOrigin,
+      ...(cpuNote ? { cpuNote } : {}),
+    },
+  };
+}
+
+/** A nickname that reads like a PLC address (C1, T5, X0, M100, DS3) — misleading on a CLICK, where those are addresses. */
+const ADDRESS_LIKE = /^(X|Y|C|T|CT|SC|SD|DS|DD|DH|DF|TD|CTD|TXT|XD|YD|M|D|SM|ST|L|B|W|R)\d+$/i;
+
+/** CLICK nickname: the original name, or from the description when the name is address-like or missing. */
+function clickName(t: TagDefinition): string {
+  if (t.nickname && !ADDRESS_LIKE.test(nickOf(t.nickname))) return nickOf(t.nickname);
+  // Whole words that fit in 24 characters.
+  const all = t.comment.replace(/^Original:[^—]*—\s*/, '').match(/[A-Za-z0-9]+/g) ?? [];
+  let words = '';
+  for (const w of all) { const next = words ? `${words}_${w}` : w; if (next.length > 24) break; words = next; }
+  return nickOf(words && !ADDRESS_LIKE.test(words) ? words : `Orig_${t.nickname || t.address}`);
+}
+
+export function clickNicknames(tags: TagDefinition[]): TagDefinition[] {
+  const used = new Set<string>();
+  return tags.map((t) => {
+    let n = clickName(t);
+    for (let i = 2; used.has(n.toLowerCase()); i++) n = `${clickName(t).slice(0, 24 - String(i).length - 1).replace(/_+$/, '')}_${i}`;
+    used.add(n.toLowerCase());
+    return n === t.nickname ? t : { ...t, nickname: n, comment: [`Original: ${t.nickname}`, t.comment].filter(Boolean).join(' — ') };
+  });
+}
+
+function withFindings(questions: string[], findings: string[]): string[] {
+  const last = questions.length - 1; // "What problems does the machine have today…" stays last
+  return [...questions.slice(0, last), ...findings, ...questions.slice(last)];
+}
+
+/** Name → its address in the converted program (the first one, as the names are listed). */
+function materializedAddresses(names: Record<string, string>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [a, n] of Object.entries(names)) if (!a.startsWith('@') && !out.has(n)) out.set(n, a);
+  return out;
+}
+
+// ── Description written from the program ──
+
+const KIND: { section: SpecSectionId; re: RegExp }[] = [
+  { section: 'safety', re: /e-?stop|emergency|safety|light curtain|guard|interlock/i },
+  { section: 'operator', re: /push ?button|\bpb\b|selector|switch.*(auto|manual)|\bhmi\b|lamp|light|beacon|horn|buzzer|reset/i },
+  { section: 'motion', re: /motor|conveyor|vfd|drive|pump|fan|agitator|spindle|contactor/i },
+  { section: 'pneumatics', re: /valve|solenoid|cylinder|gripper|vacuum|air/i },
+  { section: 'sensing', re: /sensor|photo|\bpe\b|prox|reed|limit|level|pressure|temperature|flow|present|detect|encoder/i },
+];
+
+const ioLine = (p: ImportedProgram['io'][number]) => `- ${p.name}${p.description ? `: ${p.description}` : ''} (${p.type}${p.analog ? ', analog' : ''}, ${p.original || 'no address'})`;
+
+/** The rungs of each program part, in order (one pass: a big program has thousands of parts). */
+function rungsByBlock(imp: ImportedProgram): Map<string, ImportedProgram['program']['rungs']> {
+  const out = new Map<string, ImportedProgram['program']['rungs']>();
+  for (const r of imp.program.rungs) if (r.block) { const l = out.get(r.block); if (l) l.push(r); else out.set(r.block, [r]); }
+  return out;
+}
+
+/** A first machine description, in plain words, from what the program shows. */
+export function describeProgram(imp: ImportedProgram): Partial<Record<SpecSectionId, string>> {
+  const out: Partial<Record<SpecSectionId, string>> = {};
+  const s = imp.source;
+  const blocks = imp.program.blocks ?? [];
+  const where = [s.vendor, s.controller].filter(Boolean).join(' ');
+  // A big program is described by its first lines of each kind (the description goes into every AI request);
+  // a smaller one in full.
+  const timers = imp.program.rungs.flatMap((r) => r.outputs).flatMap((o) => (o.type === 'TMR' ? [o] : []));
+  const counters = imp.program.rungs.flatMap((r) => r.outputs).flatMap((o) => (o.type === 'CNT' ? [o] : []));
+  const lines = imp.program.rungs.filter((r) => r.comment.trim()).length + timers.length + counters.length + imp.io.length;
+  const max = (n: number) => (lines > BIG_DESCRIPTION_LINES ? n : Infinity);
+  out.overview = [
+    `Existing machine program "${s.projectName}" read from ${s.fileName}${where ? ` (${where})` : ''}.`,
+    `It has ${imp.program.rungs.length} rungs in ${blocks.length} part${blocks.length === 1 ? '' : 's'}: ${capped(blocks.map((b) => b.name), max(MAX_LINES.parts), (n) => `and ${n} more`).join(', ')}.`,
+    `${imp.io.filter((p) => p.type === 'input').length} inputs and ${imp.io.filter((p) => p.type === 'output').length} outputs are wired to the PLC.`,
+    'Written from the program: check it and add what the program cannot show (the product, the speed, the line).',
+  ].join('\n');
+
+  // Rung comments, part by part, are the sequence the original programmer described.
+  const seq: string[] = [];
+  const byBlock = rungsByBlock(imp);
+  // An MPE720 project has hundreds of drawings: the sequence is the drawings that say what they do (their first
+  // rung comments other than their own name), at most MPE720_SEQUENCE of them.
+  const mpe = imp.source.format === 'yaskawa-mpe720';
+  const said = (b: ProgramBlockLike) => [...new Set((byBlock.get(b.id) ?? []).map((r) => r.comment.trim()).filter((c) => c && !sameName(c, b.name)))];
+  const described = mpe ? blocks.filter((b) => said(b).length) : blocks;
+  const partsShown = described.slice(0, mpe ? MPE720_SEQUENCE : max(MAX_LINES.parts));
+  for (const b of partsShown) {
+    const comments = (mpe ? said(b).slice(0, 3) : said(b)).map((c) => `  - ${c}`);
+    if (comments.length) seq.push(`${b.name}:`, ...capped(comments, max(MAX_LINES.perPart), (n) => `  - … and ${n} more rung comments`));
+  }
+  if (described.length > partsShown.length) seq.push(`… and ${described.length - partsShown.length} more ${mpe ? 'drawings' : 'parts'} (see the PLC program).`);
+  const nick = new Map(imp.program.tags.map((t) => [t.address, t.nickname]));
+  if (timers.length) seq.push('Timers:', ...capped(timers.map((t) => `  - ${nick.get(t.address) ?? t.address}: ${t.preset} ${t.unit}${t.mode === 'OFF_DELAY' ? ' off-delay' : ''}${t.accumulate ? ' (retentive)' : ''}`), max(MAX_LINES.list), (n) => `  - … and ${n} more timers`));
+  if (counters.length) seq.push('Counters:', ...capped(counters.map((c) => `  - ${nick.get(c.address) ?? c.address}: counts to ${c.preset}`), max(MAX_LINES.list), (n) => `  - … and ${n} more counters`));
+  if (seq.length) out.sequence = seq.join('\n');
+
+  const moreIo = (n: number) => `- … and ${n} more (all are on the I/O list)`;
+  for (const k of KIND) {
+    const pts = imp.io.filter((p) => k.re.test(`${p.name} ${p.description}`) && KIND.find((x) => x.re.test(`${p.name} ${p.description}`)) === k);
+    if (pts.length) out[k.section] = capped(pts.map(ioLine), max(MAX_LINES.list), moreIo).join('\n');
+  }
+  const rest = imp.io.filter((p) => !KIND.some((k) => k.re.test(`${p.name} ${p.description}`)));
+  if (rest.length) out.other = `Other I/O:\n${capped(rest.map(ioLine), max(MAX_LINES.list), moreIo).join('\n')}`;
+
+  const blockName = new Map(blocks.map((b) => [b.id, b.name]));
+  const alarms = imp.program.rungs.filter((r) => /alarm|fault|jam|timeout|overload/i.test(`${r.comment} ${(r.block && blockName.get(r.block)) ?? ''}`));
+  if (alarms.length) out.alarms = capped([...new Set(alarms.map((r) => `- ${r.comment.trim() || 'Alarm rung'}`))], max(MAX_LINES.list), (n) => `- … and ${n} more alarm rungs`).join('\n');
+  machineFacts(imp, out, byBlock, max);
+  return out;
+}
+
+/** "IB00012" → its I/O word ("IB0001"), for the MP registers of a Yaskawa project; null for other addresses. */
+const mpWord = (a: string) => /^([IO])B([0-9A-F]{4})[0-9A-F]$/i.exec(a.trim())?.slice(1, 3).join('').toUpperCase() ?? null;
+
+/**
+ * What the project file says about the machine beyond the rungs (an MPE720 project: its rack, its drawings with
+ * their first comment, the I/O by register word, the servo axes, the motion programs, the touch panel), added to
+ * the description written from the program.
+ */
+function machineFacts(imp: ImportedProgram, out: Partial<Record<SpecSectionId, string>>, byBlock: Map<string, ImportedProgram['program']['rungs']>, max: (n: number) => number): void {
+  const s = imp.source;
+  const add = (id: SpecSectionId, lines: string[], after = false) => { if (lines.length) out[id] = (after ? [out[id], lines.join('\n')] : [lines.join('\n'), out[id]]).filter(Boolean).join('\n\n'); };
+  const over: string[] = [];
+  if (s.modules?.length) over.push(`Rack: ${s.modules.map((m) => m.catalog).join(', ')}.`);
+  if (s.format === 'yaskawa-mpe720') {
+    // Each drawing with what its first commented rung says it does.
+    const drawings = (imp.program.blocks ?? []).map((b) => {
+      const first = (byBlock.get(b.id) ?? []).find((r) => r.comment.trim() && !sameName(r.comment, b.name))?.comment.trim();
+      return `- ${b.name}${first ? ` — ${first}` : ''}`;
+    });
+    if (drawings.length) over.push('Drawings (in scan order):', ...capped(drawings, MPE720_DRAWINGS, (n) => `- … and ${n} more drawings (see the PLC program)`));
+    // The I/O by register word: one word is one 16-point module group on the machine.
+    const words = new Map<string, string[]>();
+    for (const p of imp.io) { const w = mpWord(p.original); if (w) words.set(w, [...(words.get(w) ?? []), p.description || p.name]); }
+    if (words.size) over.push('I/O by register word:', ...capped([...words].sort(([a], [b]) => a.localeCompare(b)).map(([w, names]) => `- ${w[0] === 'I' ? 'Inputs' : 'Outputs'} ${w[0]}B${w.slice(1)}0–${w[0]}B${w.slice(1)}F: ${names.join(', ')}`), MPE720_WORDS, (n) => `- … and ${n} more words (all are on the I/O list)`));
+  }
+  add('overview', over, true);
+  const motion: string[] = [];
+  const servos = (s.axes ?? []).filter((a) => a.kind === 'servo').length;
+  if (s.axes?.length) {
+    motion.push(`Servo axes on MECHATROLINK (${s.axes.length}${servos < s.axes.length ? `, ${s.axes.length - servos} virtual` : ''}): each servo axis is a ${s.vendor} servo drive with its servo motor, not a VFD or an AC motor.`, ...s.axes.map((a) => `- ${axisText(a)}`));
+    // The motion I/O written below are the program's signals: no motor of their own unless they name a contactor or a VFD.
+    if (out.motion) out.motion = `Motion I/O (signals of the program; an AC motor only where a contactor or VFD output is named, from the program: check):\n${out.motion}`;
+  }
+  // Other drives the machine has besides the servo axes: an input reporting a drive's fault names one each
+  // ("Conveyor 3 driver fault"). Listed apart from the axes, as AC / drive motors to check.
+  if (s.format === 'yaskawa-mpe720') {
+    const drives = imp.io.filter((p) => p.type === 'input' && /\b(driver?s?|inverter|vfd)\b/i.test(p.description) && /\b(fault|alarm|error|trip)\b/i.test(p.description));
+    if (drives.length) motion.push(`Conveyor drives (from fault inputs: check type, AC motor and drive) (${drives.length}):`, ...drives.map((p) => `- ${p.description.replace(/\s*\b(fault|alarm|error|trip)\b.*$/i, '').trim() || p.description} (fault input ${p.original})`));
+  }
+  const programs = imp.report.notConverted.filter((n) => / motion program$/.test(n.where));
+  if (programs.length) {
+    motion.push(`Motion programs (${programs.length}), kept as written:`, ...capped(programs.map((n) => {
+      const body = n.text.split('\n').map((l) => l.trim()).filter((l) => l && !/^end;?$/i.test(l));
+      return `- ${body[0] ?? n.where}${body.length > 1 ? ` (${body.length - 1} line${body.length === 2 ? '' : 's'}: ${body.slice(1, 3).join(' ')}${body.length > 3 ? ' …' : ''})` : ''}`;
+    }), max(MAX_LINES.list), (n) => `- … and ${n} more motion programs`));
+  }
+  add('motion', motion);
+  if (s.panel) add('operator', [`Touch panel: ${s.panel.software} project with ${s.panel.screens.length} screen${s.panel.screens.length === 1 ? '' : 's'}${s.panel.screens.length ? ` (${capped(s.panel.screens, 30, (n) => `and ${n} more`).join(', ')})` : ''}.`]);
+}
+
+/** A comment that only repeats its part's name ("A01 Ax.1" in drawing "A01 Ax.1", "Ax.1" in it). */
+type ProgramBlockLike = { id: string; name: string };
+const norm = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
+const sameName = (comment: string, name: string) => { const c = norm(comment), n = norm(name); return c === n || n.endsWith(` ${c}`); };
+/** Most drawings in an MPE720 project's sequence, drawing list and I/O words written into the description (users read it). */
+const MPE720_SEQUENCE = 40, MPE720_DRAWINGS = 30, MPE720_WORDS = 20;
+
+/** Most lines of each kind in the description written from a big program (one of more lines than BIG_DESCRIPTION_LINES). */
+const MAX_LINES = { parts: 40, perPart: 15, list: 150 };
+const BIG_DESCRIPTION_LINES = 1000;
+
+/** The first `max` lines, then one line saying how many more there are. */
+function capped(lines: string[], max: number, more: (n: number) => string): string[] {
+  return lines.length > max ? [...lines.slice(0, max), more(lines.length - max)] : lines;
+}
+
+/** What the program cannot tell: asked on the Machine description page. */
+export function questionsFor(imp: ImportedProgram): string[] {
+  const q: string[] = [];
+  const unsure = imp.io.filter((p) => p.confidence !== 'high');
+  if (unsure.length) q.push(`Are these wired to the PLC's terminals? ${unsure.map((p) => p.name).join(', ')} (the program does not say).`);
+  const noText = imp.io.filter((p) => !p.description);
+  if (noText.length) q.push(`What are these I/O points connected to? ${noText.map((p) => p.name).join(', ')}`);
+  // Instructions the reader could not read at all: every one is listed, to rewrite by hand.
+  for (const n of imp.report.notConverted.filter((x) => isUnreadBox(x.text))) {
+    q.push(`Rewrite by hand: the original program has an instruction that could not be read, "${n.text}" (${n.where}). In this program it does nothing. What does it do on the machine?`);
+  }
+  for (const n of imp.report.notConverted.filter((x) => !isUnreadBox(x.text)).slice(0, 8)) {
+    // A block of code (a motion program, a function kept whole) is named, not pasted into the question.
+    if (n.text.includes('\n')) { q.push(`The original program has ${codeName(n)}. It is kept as written (shown under Motion and on the Upgrade page); the simulator can't run it. What does it do on the machine?`); continue; }
+    q.push(n.kept
+      ? `The original program has "${n.text}" (${n.where}). It is kept as it was and goes back into the PLC, but the simulator can't run it. What does it do on the machine?`
+      : `The original program has "${n.text}" (${n.where}) that could not be brought in. What does it do on the machine?`);
+  }
+  for (const d of imp.report.notes.filter((x) => /^Double coil:/.test(x))) q.push(`${d} Which rung should control it (or should both, through an OR)?`);
+  for (const d of imp.report.notes.filter((x) => /^Hard to read:/.test(x))) q.push(`${d.replace(/\.$/, '')}. Please check it against the printout: is it right as read?`);
+  q.push('What problems does the machine have today, and what should the upgrade fix?');
+  return q;
+}
+
+/** A block of code by its name and size: motion program MPM001 "DEMO", 3 lines; else its part and first line. */
+function codeName(n: ImportedProgram['report']['notConverted'][number]): string {
+  const lines = n.text.split('\n').map((l) => l.trim()).filter((l) => l && !/^end;?$/i.test(l));
+  const mpm = /^(MPM\d+)\s+"([^"]*)"/.exec(lines[0] ?? '');
+  // a motion program's first line is its name: the lines after it are its code
+  const n0 = mpm ? lines.length - 1 : lines.length;
+  const count = `${n0} line${n0 === 1 ? '' : 's'}`;
+  if (mpm) return `motion program ${mpm[1]} "${mpm[2]}", ${count}`;
+  return `a block of ${count} in ${n.where} starting "${(lines[0] ?? '').slice(0, 60)}"`;
+}
+
+/** Short plain-text summary of the import (shown on the page and given to the AI that writes the description). */
+export function programSummary(imp: ImportedProgram): string {
+  const s = imp.source;
+  const r = imp.report;
+  const byBlock = rungsByBlock(imp);
+  const lines = [
+    `Program: ${s.projectName} (${s.fileName}; ${[s.vendor, s.controller].filter(Boolean).join(' ')})`,
+    `Rungs: ${r.converted} of ${r.rungs} converted${r.notConverted.length ? `; not converted: ${r.notConverted.map((n) => `${n.text} (${n.where})`).join('; ')}` : ''}`,
+    `Parts: ${(imp.program.blocks ?? []).map((b) => `${b.name} (${byBlock.get(b.id)?.length ?? 0} rungs)`).join(', ')}`,
+    'I/O:',
+    ...imp.io.map(ioLine),
+    ...(r.notes.length ? ['Notes:', ...r.notes.map((n) => `- ${n}`)] : []),
+  ];
+  return lines.join('\n');
+}

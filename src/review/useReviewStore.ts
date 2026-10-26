@@ -1,0 +1,59 @@
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import type { Finding, FindingMark, FindingStatus } from './types';
+import { appPersistStorage } from '../lib/appStorage';
+
+/** A finding handed to another stage's AI fix flow (consumed once by that page). */
+export interface FixRequest { stage: 'program'; text: string; findingId: string }
+
+interface ReviewStore {
+  checks: Finding[];
+  checkedAt: string | null;
+  ai: { summary: string; findings: Finding[]; at: string } | null;
+  /** Resolved / ignored marks by finding id; findings without a mark are open. */
+  marks: Record<string, FindingMark>;
+  fixRequest: FixRequest | null;
+  setChecks: (f: Finding[]) => void;
+  setAi: (r: { summary: string; findings: Finding[] } | null) => void;
+  mark: (id: string, status: FindingStatus, reason: string) => void;
+  requestFix: (r: FixRequest | null) => void;
+}
+
+export const useReviewStore = create<ReviewStore>()(
+  persist(
+    (set) => ({
+      checks: [],
+      checkedAt: null,
+      ai: null,
+      marks: {},
+      fixRequest: null,
+      // A mark saved under a finding's old id (by address: lost on a brand switch that renumbers the I/O) moves to its id.
+      setChecks: (checks) => set((s) => {
+        let marks = s.marks;
+        for (const f of checks) if (f.legacyId && marks[f.legacyId] && !marks[f.id]) {
+          marks = { ...marks, [f.id]: marks[f.legacyId] };
+          delete marks[f.legacyId];
+        }
+        return { checks, marks, checkedAt: new Date().toISOString() };
+      }),
+      setAi: (r) => set({ ai: r ? { ...r, at: new Date().toISOString() } : null }),
+      mark: (id, status, reason) => set((s) => {
+        const marks = { ...s.marks };
+        if (status === 'open') delete marks[id];
+        else marks[id] = { status, reason, at: new Date().toISOString() };
+        return { marks };
+      }),
+      requestFix: (fixRequest) => set({ fixRequest }),
+    }),
+    { name: 'plc-review-store', storage: appPersistStorage(), partialize: (s) => ({ checks: s.checks, checkedAt: s.checkedAt, ai: s.ai, marks: s.marks }) },
+  ),
+);
+
+export const statusOf = (marks: Record<string, FindingMark>, id: string): FindingStatus => marks[id]?.status ?? 'open';
+
+/** Open findings by severity (checks + AI review, resolved/ignored excluded). */
+export function openCounts(s: Pick<ReviewStore, 'checks' | 'ai' | 'marks'>): Record<'critical' | 'major' | 'minor' | 'info', number> {
+  const out = { critical: 0, major: 0, minor: 0, info: 0 };
+  for (const f of [...s.checks, ...(s.ai?.findings ?? [])]) if (statusOf(s.marks, f.id) === 'open') out[f.severity]++;
+  return out;
+}

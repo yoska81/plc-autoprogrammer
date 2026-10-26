@@ -1,0 +1,478 @@
+/**
+ * Rule-based electrical design engine: machine model + I/O list + supply/region + vendor preference
+ * in, complete ElectricalDesign out — no AI involved. The AI (src/lib/ai/machineModelAI.ts) only
+ * fills the MachineModel; without it `defaultMachineModel` does, so a simple machine always gets a
+ * valid, buildable design. Sizing follows the same rules the drawings and checkers use (derive.ts).
+ */
+import type { IOPoint } from '../../types/io';
+import type { AnalogSetupRow } from '../../plc/core/analog';
+import type { Region } from '../../standards/regions';
+import { enclosureText, isIec, powerText, SUPPLY_INFO } from '../../standards/regions';
+import { ALL_PARTS, DEFAULT_PREFERENCE, type VendorPreference } from '../catalogs';
+import { enclosureFamily, enclosurePanelArea, enclosureRank, enclosureSize, enclosuresFor, panelLayout, SPARE_RULE, spareSpace, terminalCounts, motorFla, vendorTerminal, type DrawingContext } from '../derive';
+import { DC_LOAD_A } from '../../deliverables/docs/calcs';
+import { getHmi } from '../../hmi/hmiCatalog';
+import { ALLOWED_RISE_C, cabinetHeat } from '../thermal';
+import { coolingWatts, dcFanAmps, pickAirConditioner, pickFanThermostat, pickFilterFan, pickHeatExchanger } from '../cooling';
+import type { CatalogCategory, CatalogPart, DesignComponent, DesignInputs, ElectricalDesign, EnclosureChoice, MotorSpec } from '../types';
+import { defaultMachineModel, drivesFromIo, type MachineModel } from './machineModel';
+import { cpuFit, findCpu, modulesToFit } from '../../plc/core/fit';
+import { needFromIo } from '../../spec/equipmentRules';
+import { comp, controlPower, mainDisconnect, motorBranches, Tags } from './power';
+import { devicesAndWiring, motorFor, OVER_TEMP_RE } from './devices';
+import { processLoads } from './process';
+import { num, Picker } from './select';
+import { controlInputAmps, motionDesign, motionDeviceType } from '../motion';
+import { commModulesFor } from '../commModule';
+import { isNetworkServoText, yaskawaCpuPart, type NetworkAxisInput } from '../mechatrolink';
+
+export { defaultMachineModel, type MachineModel } from './machineModel';
+
+export interface EngineInput {
+  model: MachineModel;
+  /** Supply, enclosure rating, designer notes and required parts (motors come from the model). */
+  inputs: DesignInputs;
+  io: IOPoint[];
+  /** I/O point id -> PLC address. */
+  addresses: Map<string, string>;
+  plc: DrawingContext['plc'];
+  /** PLC expansion modules in slot order (part numbers). */
+  modules: string[];
+  region?: Region;
+  pref?: VendorPreference;
+  getPart: (partNumber: string) => CatalogPart | undefined;
+  hmiPartNumber?: string | null;
+  analog?: AnalogSetupRow[];
+  projectName?: string;
+  /** The specification (motor powers for drives found only in the I/O list). */
+  spec?: string;
+  /** Motion parts not in the catalog yet (tests only; see src/electrical/motion.ts). */
+  motionParts?: CatalogPart[];
+  /** Servo axes commanded over a network (Yaskawa MECHATROLINK-III): the project's axis list; else read from the spec. */
+  networkAxes?: NetworkAxisInput[];
+  /** Timestamp for generatedAt (tests pass a fixed one). */
+  now?: string;
+}
+
+export interface EngineResult {
+  design: ElectricalDesign;
+  explanation: string;
+  /** The enclosure chosen has ≥ 25% spare panel space and everything fits. */
+  layoutOk: boolean;
+}
+
+const TAG_PREFIX: Partial<Record<CatalogCategory, string>> = {
+  breaker: 'CB', fuse: 'FU', powerSupply: 'PS', contactor: 'K', overload: 'OL', motorProtector: 'MP', vfd: 'VFD', relay: 'CR',
+  safetyRelay: 'SR', pushbutton: 'PB', estop: 'ES', pilotLight: 'PL', selector: 'SS', stackLight: 'STK', sensor: 'PX',
+  solenoidValve: 'SOL', plcModule: 'IO', hmi: 'HMI', fan: 'FAN', servoDrive: 'SVD', servoMotor: 'SVM', encoder: 'ENC',
+};
+
+/** Typical 24 VDC draw of the design (same figures as the calculations document). */
+export function dcLoad(components: DesignComponent[], getPart: EngineInput['getPart'], hmiPartNumber: string | null | undefined, fieldInputs: number): number {
+  let a = 0;
+  for (const c of components) {
+    const p = getPart(c.partNumber);
+    if (!p) continue;
+    if (p.category === 'solenoidValve') a += ((num(p.ratings.watts) ?? 2) / 24) * c.quantity;
+    else if (p.category === 'contactor' && !/24/.test(String(p.ratings.coilVoltage ?? ''))) continue;
+    else if (p.category === 'servoDrive') a += controlInputAmps(p) * c.quantity; // 460 V drives: control circuit on 24 VDC
+    // the maker's 24 VDC input current (Yaskawa base units, MP2300); modules in a base unit's slots are powered by it
+    else if (num(p.ratings.inputAmps24V) !== undefined) a += num(p.ratings.inputAmps24V)! * c.quantity;
+    else if (p.ratings.inRack === 'yes') continue;
+    else a += (DC_LOAD_A[p.category] ?? 0) * c.quantity;
+  }
+  const hmi = hmiPartNumber ? getHmi(hmiPartNumber) : undefined;
+  // An all-in-one PLC's screen is already in its own (PLC) draw.
+  if (hmi && getPart(hmiPartNumber!)?.category !== 'plc') a += hmi.sizeIn >= 10 ? 1.0 : 0.6;
+  return a + fieldInputs * 0.03;
+}
+
+function enclosureCandidates(pk: Picker, rating: DesignInputs['enclosureRating'] | undefined): CatalogPart[] {
+  const stainless = rating === 'NEMA 4X';
+  const n = (rating ?? 'NEMA 12').replace('NEMA ', '');
+  const all = pk.candidates('enclosure').filter((p) => p.ratings.kind === 'enclosure');
+  // NEMA 4X: stainless; otherwise painted steel. Non-metallic enclosures are the designer's choice (Electrical page).
+  const fit = all.filter((p) => enclosureFamily(p) === (stainless ? 'stainless' : 'steel')
+    && (n === '1' || String(p.ratings.nema ?? '').split('/').includes(n)));
+  return [...(fit.length ? fit : all)].sort(enclosureRank);
+}
+
+interface Trial { components: DesignComponent[]; spare: number; fits: boolean; ok: boolean; enc: CatalogPart; notes: string[]; score: number[] }
+
+export function generateDesign(input0: EngineInput): EngineResult {
+  // A Yaskawa CPU id from the PLC profile ("CPU-301") stands for its catalog part (JAPMC-CP3301-1-E).
+  const cpuPn = yaskawaCpuPart(input0.plc.cpuPartNumber);
+  const input = cpuPn === input0.plc.cpuPartNumber ? input0 : { ...input0, plc: { ...input0.plc, cpuPartNumber: cpuPn } };
+  const { inputs, getPart } = input;
+  const supply = inputs.supply;
+  const pk = new Picker(input.pref ?? DEFAULT_PREFERENCE);
+  // the relay logic's devices keep their converted tags (CR1, K1, PB4…): the rules never hand those out again
+  const relayDevices = inputs.relayLogic?.devices ?? [];
+  const tags = new Tags(['PLC', 'ENC1', 'SP1', 'DS1', 'SR1', ...relayDevices.map((d) => d.tag)]);
+  // Servo axes, encoders and ultrasonic sensors (src/electrical/motion.ts): wired there, left out of the rules below.
+  const motion = motionDesign({ io: input.io, addresses: input.addresses, supply, region: input.region, pref: input.pref, spec: input.spec, nextTag: (p) => tags.next(p), extraParts: input.motionParts,
+    cpu: getPart(input.plc.cpuPartNumber), networkAxes: input.networkAxes });
+  const io = input.io.filter((p) => !motion.claimed.has(p.id));
+  // A MECHATROLINK-III servo machine: a motor in the motor list that is a servo axis ("Servo drive 1", "Axis 3",
+  // "Main drive" read from the program's I/O comments) is a SERVOPACK axis above, never an AC motor on a VFD.
+  // (a motor the motor list read from one of the servo signals, e.g. "Main" from "Main drive run", is one too)
+  const words = (t: string) => t.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !/^(motor|run|drive|the|and|ready|enable|fault|reset|alarm|output|input|servo|axis)$/.test(w));
+  const fromSignal = (m: { description: string }) => { const mw = words(m.description); return mw.length > 0 && [...(motion.networkSignals ?? []), ...(input.networkAxes ?? []).map((a) => a.name)].some((d) => mw.every((w) => words(d).includes(w))); };
+  const servoMotors = motion.networkServo ? input.model.motors.filter((m) => isNetworkServoText(m.description) || fromSignal(m)) : [];
+  const dropped = (t: string) => servoMotors.some((m) => t.startsWith(`${m.description.replace(/ motor$/i, '')}:`) || t.includes(`${m.tag} `));
+  const baseModel = servoMotors.length ? { ...input.model, motors: input.model.motors.filter((m) => !servoMotors.includes(m)), assumptions: input.model.assumptions.filter((t) => !dropped(t)) } : input.model;
+  // One motor per machine motor: the same name read twice (two I/O groups of an imported program, "Conveyor 1" in
+  // IB000x and IB041x) is one motor.
+  const nameKey = (t: string) => t.toLowerCase().replace(/\b(motor|forward|fwd|reverse|rev|run|start|stop|jog|cw|ccw|on|off|output|contactor|starter)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+  const keyWords = (t: string) => nameKey(t).split(' ').filter(Boolean);
+  const seen = new Map<string, string>(), dupes: string[] = [];
+  const unique = baseModel.motors.filter((m) => {
+    const k = nameKey(m.description);
+    if (!k) return true;
+    if (seen.has(k)) { dupes.push(`${m.tag} (${m.description}) is ${seen.get(k)}`); return false; }
+    seen.set(k, m.tag);
+    return true;
+  });
+  // A motor with its own drive ("Driver of conveyor 1 fault"): the drive is on the machine, its type is not known —
+  // shown as that drive (check), its commands and fault wired to it, and no starter or VFD invented.
+  const DRIVER_FAULT = /\bdriver\b[^.]*\b(fault|alarm|error|trip)\b|\b(fault|alarm|error|trip)\b[^.]*\bdriver\b/i;
+  const ownDrive: DesignComponent[] = [], ownWiring: EngineResult['design']['ioWiring'] = [], ownClaimed = new Set<string>();
+  const kept = unique.filter((m) => {
+    const kw = keyWords(m.description);
+    if (!kw.length) return true;
+    const mine = (d: string) => { const dw = keyWords(d); return kw.every((w) => dw.includes(w)); };
+    const fault = io.filter((p) => p.type === 'input' && DRIVER_FAULT.test(p.description) && mine(p.description));
+    if (!fault.length) return true;
+    const tag = tags.next('U');
+    const pts = io.filter((p) => !ownClaimed.has(p.id) && mine(p.description));
+    for (const p of pts) {
+      ownClaimed.add(p.id);
+      const a = input.addresses.get(p.id) ?? '';
+      if (a) ownWiring.push({ address: a, deviceTag: tag, deviceType: 'vfd-input', description: p.description, location: 'Cabinet' });
+    }
+    ownDrive.push({ tag, partNumber: '', quantity: 1, motorTag: m.tag, category: 'other',
+      function: `${m.description.replace(/\b(motor|forward|fwd|reverse|rev|run)\b/gi, ' ').replace(/\s+/g, ' ').trim()} drive (on the machine, type not identified: check) — ${[...new Set(pts.filter((p) => p.type === 'output').map((p) => p.description))].join(', ') || 'no command output'} to it, ${[...new Set(fault.map((p) => p.description))].join(', ')} from it; no starter or VFD drawn` });
+    return false;
+  });
+  const io2 = ownClaimed.size ? io.filter((p) => !ownClaimed.has(p.id)) : io;
+  // the existing drives are parts of the design like the motion parts (drawn with their I/O, no power circuit)
+  motion.components.push(...ownDrive);
+  motion.ioWiring.push(...ownWiring);
+  const motorsModel = kept.length === baseModel.motors.length ? baseModel : { ...baseModel, motors: kept,
+    assumptions: baseModel.assumptions.filter((t) => kept.some((m) => t.includes(m.description.replace(/ motor$/i, ''))) || !baseModel.motors.some((m) => t.startsWith(`${m.description.replace(/ motor$/i, '')}:`))) };
+  const model = drivesFromIo(motorsModel, io2, input.spec ?? '');
+  const notes: string[] = [...motion.notes];
+  if (dupes.length) notes.push(`${dupes.join('; ')}: the same motor named twice in the I/O list — drawn once.`);
+  if (ownDrive.length) notes.push(`${ownDrive.map((c) => `${c.tag} ${c.function.split(' (')[0]}`).join(', ')}: each has its own drive on the machine (a "driver … fault" input), type not identified — check the drive on the machine; no starter or VFD is drawn for it.`);
+  if (servoMotors.length) notes.push(`${servoMotors.map((m) => `${m.tag} ${m.description}`).join(', ')}: a servo axis on MECHATROLINK-III, not an AC motor — left out of the motor circuits (no VFD or starter). Only AC induction motors get a VFD or starter.`);
+  const askUser: string[] = [...model.assumptions, ...motion.askUser];
+
+  // Discrete PLC points with addresses (analog channels are wired by electrical/analog.ts).
+  const points = io2
+    .map((point) => ({ point, address: input.addresses.get(point.id) ?? '' }))
+    .filter(({ point, address }) => address && point.signal !== 'analog' && !/^DF\d+$/i.test(address));
+
+  // VFD motors with a reverse output run both ways on the drive.
+  const vfdMotors = model.motors.filter((m) => m.start === 'vfd');
+  const revOutputs = points.filter(({ point }) => point.type === 'output' && /\b(rev|reverse)\b/i.test(point.description));
+  const reversingByIo = new Set<string>();
+  for (const { point } of revOutputs) {
+    const fake = vfdMotors.map((m) => ({ motor: m, fla: 0, contactors: [], sto: false, reversing: false, vfd: 'x' }));
+    const b = motorFor(point.description, fake, new Set(), 'vfd');
+    if (b) reversingByIo.add(b.motor.tag);
+  }
+
+  const power = motorBranches(pk, tags, model.motors, supply, input.region, reversingByIo);
+  notes.push(...power.notes);
+  const overTempInput = points.some(({ point }) => point.type === 'input' && OVER_TEMP_RE.test(point.description));
+  const proc = processLoads(pk, tags, model.heaters ?? [], supply, io2, overTempInput);
+  notes.push(...proc.notes);
+  askUser.push(...proc.askUser);
+  const dev = devicesAndWiring(pk, tags, model, power.branches, points, proc);
+  notes.push(...dev.notes);
+  askUser.push(...dev.askUser);
+
+  const cpu0 = getPart(input.plc.cpuPartNumber);
+  const plc: DesignComponent[] = [comp('PLC', input.plc.cpuPartNumber, 1, cpu0?.ratings.builtInFunctions ? `PLC CPU ${cpu0.ratings.series ?? ''} — built in: ${cpu0.ratings.builtInFunctions} (no separate parts)` : 'PLC CPU')];
+  // The CPU and its modules must hold the I/O (plc/core/fit.ts, the same check the PLC page and Equipment use): the
+  // modules modulesToFit adds go after the chosen ones, in slot order (the addresses X101… already count on them).
+  // A rack CPU on a base unit (Yaskawa MP3300) holds no I/O itself: its field I/O is remote I/O (derive.ts says so).
+  const cpuModel = cpu0?.ratings.baseUnit ? undefined : findCpu(input.plc.cpuPartNumber);
+  const need = needFromIo(input.io, false, 0);
+  const fit = cpuModel ? cpuFit(cpuModel, input.modules, need) : null;
+  let modules = input.modules;
+  if (cpuModel && fit && !fit.ok) {
+    const mods = modulesToFit(cpuModel.id, input.modules, need);
+    const added = mods ? mods.slice(input.modules.length) : [];
+    if (mods && input.modules.every((m, i) => mods[i] === m) && added.length) {
+      modules = mods;
+      notes.push(`${added.join(', ')} added after ${input.modules.length ? input.modules.join(', ') : `the ${input.plc.cpuPartNumber} CPU`} to hold the I/O (${fit.reason}) — add ${added.length > 1 ? 'them' : 'it'} on the PLC page.`);
+    } else askUser.push(`The PLC does not hold the I/O: ${fit.reason} No module of this platform makes it fit — choose a larger CPU or another module on the PLC page.`);
+  }
+  modules.forEach((pn, i) => {
+    const p = getPart(pn);
+    const discrete = num(p?.ratings.inputs) || num(p?.ratings.outputs);
+    const kind = /analog/i.test(p?.description ?? '') && !discrete ? 'Analog' : /snap-in/i.test(p?.description ?? '') ? 'Snap-in I/O' : 'I/O';
+    plc.push(comp(`IO${i + 1}`, pn, 1, `${kind} module, slot ${i + 1}`));
+  });
+  // A CPU that plugs into a base unit (Yaskawa MP3300): the base unit with the power supply, the smallest with enough
+  // option slots for the modules (CPU-302 also takes option slot 1); 24 VDC from the panel supply first.
+  const cpuRack = getPart(input.plc.cpuPartNumber);
+  if (cpuRack?.ratings.baseUnit) {
+    const need = input.modules.length + (num(cpuRack.ratings.slotsUsed) ?? 1) - 1;
+    const bus = ALL_PARTS.filter((p) => p.ratings.kind === 'plc-base-unit' && p.ratings.family === cpuRack.ratings.baseUnit && (num(p.ratings.optionSlots) ?? 0) >= need)
+      .sort((a, b) => Number(!/24\s*VDC/i.test(String(a.ratings.supplyVolts))) - Number(!/24\s*VDC/i.test(String(b.ratings.supplyVolts))) || (num(a.ratings.optionSlots) ?? 0) - (num(b.ratings.optionSlots) ?? 0));
+    const bu = bus[0];
+    if (bu) plc.unshift(comp(tags.next('PLCB'), bu.partNumber, 1, `${bu.ratings.family} base unit ${bu.ratings.series}: ${bu.ratings.supplyVolts} power supply, CPU slot + ${bu.ratings.optionSlots} option slots (${need} used)`));
+    else notes.push(`${input.plc.cpuPartNumber}: no ${cpuRack.ratings.baseUnit} base unit in the catalog with ${need} option slots — split the modules over an expansion rack.`);
+  }
+  // The PLC-side module the touch panel needs to reach the PLC (src/electrical/commModule.ts): a part, never an I/O slot.
+  const comm = commModulesFor(input.hmiPartNumber, input.plc.cpuPartNumber, getPart, (p) => tags.next(p));
+  plc.push(...comm.components);
+  notes.push(...comm.notes);
+
+  // Unitronics: the input type is set by wiring / a jumper, and some analog inputs are digital input terminals.
+  const cpuPart = getPart(input.plc.cpuPartNumber);
+  if (cpuPart?.vendor === 'unitronics') {
+    const npnIn = points.some(({ point }) => point.deviceType === 'sensor-npn');
+    const r = cpuPart.ratings;
+    // Inputs on the CPU, else on its snap-in / first module (V700 / V1040 / V1210 have none on board).
+    const inPart = num(r.discreteInputs) ? cpuPart : modules.map((m) => getPart(m)).find((m) => num(m?.ratings.inputs));
+    if (inPart) notes.push(`${inPart.partNumber} inputs (${inPart.ratings.inputType ?? 'see the guide'}): wired ${npnIn ? 'sourcing for the npn sensors (common to 24+)' : 'sinking for the pnp sensors (common to 0V)'}${/jumper/i.test(String(inPart.ratings.inputType ?? '')) ? `; set the input jumper to ${npnIn ? 'npn' : 'pnp'}` : ''}.`);
+    if (r.analogSharedWith) notes.push(`${input.plc.cpuPartNumber}: inputs ${r.analogSharedWith} are the analog inputs when used as analog (jumper per input); the I/O addressing leaves a used one out of the digital inputs.`);
+    // Mostly-relay CPUs: the npn points are given out last; a used one switches 0V, not a relay contact.
+    const npn = new Set(String(r.npnOutputs ?? '').split(',').map((x) => x.trim()).filter(Boolean));
+    const usedNpn = points.filter(({ point, address }) => point.type === 'output' && /^Y0/i.test(address) && npn.has(vendorTerminal(cpuPart, address) ?? ''));
+    if (usedNpn.length) notes.push(`${input.plc.cpuPartNumber}: ${usedNpn.map(({ point, address }) => `${address} (${vendorTerminal(cpuPart, address)}) ${point.description}`).join(', ')} on npn transistor output${usedNpn.length > 1 ? 's' : ''} (${r.transistorOutputCurrentA ?? '?'} A max, switches 0V: load between 24+ and the output) — the drawings show the CPU's relay outputs; check these points or add an output module.`);
+  }
+
+  // Parts the designer already chose that the rules did not pick.
+  const required: DesignComponent[] = [];
+  const chosen = new Set([...power.components, ...dev.components, ...plc].map((c) => c.partNumber));
+  for (const r of inputs.requiredParts) {
+    if (chosen.has(r.partNumber)) continue;
+    const p = getPart(r.partNumber);
+    // The CPU and the modules are the project's PLC selection: a CPU / module left in the required parts
+    // from an earlier equipment choice is never a second PLC.
+    if (p?.category === 'plc' || p?.category === 'plcModule') {
+      notes.push(`${r.partNumber} from the equipment list is not used: the project's PLC is ${input.plc.cpuPartNumber}${modules.length ? ` with ${modules.join(', ')}` : ''} (change it on the PLC page).`);
+      continue;
+    }
+    required.push(comp(tags.next(TAG_PREFIX[p?.category ?? 'other'] ?? 'X'), r.partNumber, r.quantity, `Required by the designer${p ? `: ${p.description}` : ''}`));
+  }
+
+  // Relay logic kept from a converted machine: each device of the rungs is a part of the design under its own tag
+  // (the converter's North-American part); a device without a part, or one the catalog does not know, is to select.
+  const taken = new Set([...power.components, ...dev.components, ...plc, ...required].map((c) => c.tag));
+  const toSelect: string[] = [];
+  for (const d of relayDevices) {
+    if (taken.has(d.tag)) continue;
+    const p = d.partNumber ? getPart(d.partNumber) : undefined;
+    if (p) { required.push(comp(d.tag, p.partNumber, 1, `${d.description} (relay logic)`)); taken.add(d.tag); }
+    else toSelect.push(`${d.tag} (${d.category}${d.partNumber ? `, ${d.partNumber} not in the catalog` : ''})`);
+  }
+  if (toSelect.length) notes.push(`Relay logic: select a part for ${toSelect.join(', ')} — drawn on the ladder, not yet in the parts list.`);
+
+  // a button of a station (PB1L / PB1R on station PB1) is the station's part, not an uncatalogued sensor
+  const compOf = (tag: string) => dev.components.find((c) => c.tag === tag) ?? dev.components.find((c) => tag.startsWith(c.tag) && /^[A-Z]$/.test(tag.slice(c.tag.length)));
+  const fieldInputs = dev.ioWiring.filter((w) => w.location && w.location !== 'Cabinet' && w.location !== 'Cabinet door' && !input.getPart(compOf(w.deviceTag)?.partNumber ?? '')).length;
+  const loadA = dcLoad([...power.components, ...proc.components, ...dev.components, ...motion.components, ...plc, ...required], getPart, input.hmiPartNumber, fieldInputs);
+  const ctl = controlPower(pk, tags, supply, loadA);
+  notes.push(...ctl.notes);
+
+  const motorSpecs: MotorSpec[] = power.branches.map((b) => ({
+    tag: b.motor.tag, description: b.motor.description, hp: b.motor.hp, voltage: supply,
+    starter: b.vfd ? 'vfd' : power.components.some((c) => c.motorTag === b.motor.tag && getPart(c.partNumber)?.category === 'motorProtector') ? 'motor-protector' : 'contactor-overload',
+    reversing: b.reversing,
+    // a motor the designer typed stays theirs; one the engine read from this machine is marked as the design's
+    ...(inputs.motors.some((m) => m.tag === b.motor.tag && m.description === b.motor.description && !m.fromDesign) ? {} : { fromDesign: true }),
+  }));
+  if (power.branches.length) {
+    const basis = SUPPLY_INFO[supply].hz === 50 ? 'IEC 60947-4-1 Annex G' : 'NEC Table 430.250 / 430.248';
+    askUser.push(`Motor currents from ${basis}: ${power.branches.map((b) => `${b.motor.tag} ${powerText(b.motor.hp, input.region)} ${motorFla(b.motor.hp, supply).toFixed(1)} A`).join(', ')} — confirm the nameplates.`);
+  }
+  const sto = power.branches.filter((b) => b.sto).map((b) => b.vfd);
+  if (sto.length) notes.push(`${sto.join(', ')}: Safe Torque Off (STO1/STO2) wired from the safety relay output, factory jumper removed — stop category 0; confirm with the risk assessment.`);
+
+  const core = [...power.components, ...proc.components, ...ctl.components, ...plc, ...dev.components, ...motion.components, ...required];
+  const nema4 = /4/.test(inputs.enclosureRating ?? '');
+  const bigIo = points.length > 48;
+  const termFeed = pk.byNumber('DN-T10-A') ?? pk.pick('terminal', (p) => !/ground/i.test(p.description));
+  const termGnd = pk.byNumber('DN-G10') ?? pk.pick('terminal', (p) => /ground|green/i.test(`${p.description} ${p.ratings.color ?? ''}`));
+  const endStop = pk.byNumber('DN-EB35');
+  const endCover = pk.byNumber('DN-EC1210');
+  const rail = pk.byNumber('DN-R35S1') ?? pk.pick('dinRail');
+  const duct = pk.byNumber(bigIo ? 'T1-2240G-1' : 'T1-1530G-1') ?? pk.pick('wireDuct');
+  const gbar = pk.byNumber('SCE-GB10') ?? pk.pick('groundBar');
+
+  const ctxOf = (components: DesignComponent[], design: Partial<ElectricalDesign> = {}): DrawingContext => ({
+    projectName: input.projectName ?? 'Machine',
+    design: {
+      inputs: { ...inputs, motors: motorSpecs, motorsMarked: true }, components, ioWiring: [...dev.ioWiring, ...motion.ioWiring], notes: [], machine: dev.machine,
+      generatedAt: input.now ?? new Date().toISOString(), ...design,
+    },
+    getPart, plc: input.plc,
+    io: input.io.map((p) => ({ address: input.addresses.get(p.id) ?? '', description: p.description, type: p.type })),
+    region: input.region, hmiPartNumber: input.hmiPartNumber, analog: input.analog,
+  });
+
+  const accessories = (counts: ReturnType<typeof terminalCounts>, railPcs: number, ductPcs: number): DesignComponent[] => {
+    const a: DesignComponent[] = [];
+    if (termFeed) a.push(comp('TB1', termFeed.partNumber, Math.max(1, counts.feed), 'Feed-through terminals'));
+    if (termGnd) a.push(comp('TBG', termGnd.partNumber, Math.max(1, counts.ground), 'Ground terminals'));
+    if (endCover) a.push(comp('TBC', endCover.partNumber, Math.max(1, counts.endPlates), 'Terminal end covers'));
+    if (endStop) a.push(comp('TBE', endStop.partNumber, Math.max(2, counts.endStops), 'End brackets'));
+    if (rail) a.push(comp('DIN', rail.partNumber, Math.max(1, railPcs), 'DIN rail'));
+    if (duct) a.push(comp('WD', duct.partNumber, Math.max(1, ductPcs), 'Wire duct'));
+    if (gbar) a.push(comp('GB1', gbar.partNumber, Math.max(1, Math.ceil((counts.ground + 4) / (num(gbar.ratings.points) ?? 10))), 'Ground bar'));
+    return a;
+  };
+
+  // Terminal counts come from the terminal plan, which does not depend on the enclosure.
+  const counts = terminalCounts(ctxOf([...core, ...accessories({ feed: 1, ground: 1, fused: 0, endPlates: 1, endStops: 2 }, 1, 1)]));
+
+  // Every enclosure tried is laid out with its own disconnect (depth), rails and duct quantities.
+  const trials = new Map<string, Trial>();
+  const tryEnclosure = (enc: CatalogPart): Trial => {
+    const hit = trials.get(enc.partNumber);
+    if (hit) return hit;
+    const sub = pk.byNumber(String(enc.ratings.subpanel ?? '')) ?? getPart(String(enc.ratings.subpanel ?? ''));
+    const depth = num(enc.ratings.depthIn) ?? 8;
+    const ds = mainDisconnect(pk, power.branches, supply, ctl.inputA, nema4, depth, proc.amps + motion.loadA, !isIec(input.region));
+    const head = [
+      comp('ENC1', enc.partNumber, 1, `Main enclosure ${enc.ratings.heightIn}x${enc.ratings.widthIn}x${enc.ratings.depthIn} ${enclosureText(inputs.enclosureRating, input.region)}`),
+      ...(sub ? [comp('SP1', sub.partNumber, 1, 'Back panel')] : []),
+      ...ds.components,
+    ];
+    // Pass 1 sizes rails and duct from the layout; pass 2 checks the panel with the real quantities.
+    const trial = [...head, ...core, ...accessories(counts, 1, 1)];
+    const L = panelLayout(ctxOf(trial));
+    const railPcs = Math.ceil(L.rails.reduce((s, r) => s + r.w, 0) / (num(rail?.ratings.lengthMm) ?? 1000));
+    const ductPcs = Math.ceil(L.ducts.reduce((s, d) => s + Math.max(d.w, d.h), 0) / ((num(duct?.ratings.lengthM) ?? 2) * 1000));
+    const components = [...head, ...core, ...accessories(counts, railPcs, ductPcs)];
+    const ctx = ctxOf(components);
+    const L2 = panelLayout(ctx);
+    const spare = spareSpace(ctx).panel;
+    const fits = !L2.overflow && !L2.notFit.length && !L2.door.overflow;
+    const t: Trial = { components, spare, fits, ok: fits && spare >= SPARE_RULE, enc, notes: ds.notes, score: [fits && spare >= SPARE_RULE ? 1 : 0, -L2.notFit.length, L2.door.overflow ? 0 : 1, spare] };
+    trials.set(enc.partNumber, t);
+    return t;
+  };
+  // Recommended: the first enclosure (wall-mount single-door first, smallest back panel) that holds everything with
+  // the spare-space rule. When none does, the closest one: fewest back-panel parts left out, then a door that fits
+  // (HMI, operators, handle), then the most spare space — never simply the smallest (all score 0 % spare).
+  const better = (a: number[], b: number[]) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i]; return false; };
+  const candidates = enclosureCandidates(pk, inputs.enclosureRating);
+  let rec: Trial | undefined;
+  for (const enc of candidates) {
+    const t = tryEnclosure(enc);
+    if (!rec || t.ok || better(t.score, rec.score)) rec = t;
+    if (t.ok) break;
+  }
+  if (!rec) throw new Error('No enclosure in the catalog.');
+  // The designer's pick: kept when everything fits (even when larger than needed); too small -> the smallest of its
+  // rating and material that holds the parts, with a note. The pick stays in the inputs either way.
+  let best = rec;
+  const prefPart = inputs.enclosurePreference ? getPart(inputs.enclosurePreference) : undefined;
+  let choice: EnclosureChoice = { recommended: rec.ok ? rec.enc.partNumber : null, preferred: null, used: rec.enc.partNumber, status: 'recommended' };
+  if (prefPart && prefPart.category === 'enclosure' && prefPart.ratings.kind !== 'subpanel') {
+    const t = tryEnclosure(prefPart);
+    const recPn = rec.ok ? rec.enc.partNumber : null;
+    if (t.fits) {
+      best = t;
+      const larger = !!recPn && recPn !== prefPart.partNumber && enclosurePanelArea(prefPart) > enclosurePanelArea(rec.enc);
+      const status: EnclosureChoice['status'] = !recPn || recPn === prefPart.partNumber ? 'recommended' : larger ? 'larger' : 'kept';
+      choice = { recommended: recPn, preferred: prefPart.partNumber, used: prefPart.partNumber, status,
+        note: status === 'larger' ? `This cabinet is bigger than needed — the recommended size is ${enclosureSize(rec.enc)} (${rec.enc.partNumber}).`
+          : status === 'kept' ? `Your size (${enclosureSize(prefPart)}) holds the parts with only ${Math.round(t.spare * 100)} % spare space; the recommended size is ${enclosureSize(rec.enc)} (${rec.enc.partNumber}).` : undefined };
+    } else {
+      const works = enclosuresFor(inputs.enclosureRating, enclosureFamily(prefPart)).map(tryEnclosure).find((x) => x.fits);
+      if (works) best = works;
+      choice = { recommended: recPn, preferred: prefPart.partNumber, used: best.enc.partNumber, status: 'tooSmall',
+        note: works ? `Your size (${enclosureSize(prefPart)}) was too small for the parts; we use ${enclosureSize(works.enc)} (${works.enc.partNumber}).`
+          : `Your size (${enclosureSize(prefPart)}) is too small for the parts and no catalog enclosure of its rating and material holds them; using ${best.enc.partNumber} — split the panel.` };
+    }
+    if (choice.note) notes.push(choice.note);
+  }
+  // ---- Cooling: the heat the walls cannot shed (thermal.ts, 15 °C rise) leaves through a filter fan (NEMA 1/12;
+  // 24 VDC from the control supply, or AC when the panel has a control voltage), switched by a thermostat. A sealed
+  // enclosure (NEMA 4/4X: a fan breaks the seal), or no fan big enough: the next enclosure size of the same material
+  // that sheds the heat itself, else a heat exchanger (ambient up to 40 °C), else an air conditioner.
+  const hmiForHeat = input.hmiPartNumber ? getHmi(input.hmiPartNumber) : undefined;
+  const heatOf = (t: Trial) => cabinetHeat(t.components, getPart, hmiForHeat && getPart(input.hmiPartNumber!)?.category !== 'plc' ? { partNumber: hmiForHeat.partNumber, sizeIn: hmiForHeat.sizeIn } : undefined);
+  const rating = String(inputs.enclosureRating ?? 'NEMA 12').replace('NEMA ', '');
+  const sealed = /^4X?$/.test(rating);
+  const coolVendors = [...new Set([...(input.pref ?? DEFAULT_PREFERENCE).enclosure, 'automationdirect' as const])];
+  const acVolts = supply === '120VAC-1PH' ? '115' : supply === '230VAC-1PH' ? '230' : best.components.some((c) => getPart(c.partNumber)?.ratings.kind === 'transformer') ? '115' : undefined;
+  const heat = heatOf(best);
+  const cooling: DesignComponent[] = [];
+  if (heat.ventilation) {
+    const v = heat.ventilation;
+    const fan = sealed ? null : pickFilterFan(v.airflowM3h, { supply: '24VDC', nema: rating, vendors: coolVendors })
+      ?? (acVolts ? pickFilterFan(v.airflowM3h, { supply: 'AC', volts: acVolts, nema: rating, vendors: coolVendors }) : null);
+    if (fan) {
+      const th = pickFanThermostat();
+      const dc = dcFanAmps(fan.fan) !== null;
+      cooling.push(comp('FAN1', fan.fan.partNumber, 1, `Filter fan (inlet, low on the left wall) — ${Math.round(fan.airflowM3h)} m³/h with filters >= ${Math.ceil(v.airflowM3h)} m³/h to carry ${Math.round(v.wattsToRemove)} W (${heat.watts.toFixed(0)} W in the cabinet, ${heat.rise!.toFixed(0)} °C rise without it, limit ${ALLOWED_RISE_C} °C)${dc ? `, 24 VDC ${dcFanAmps(fan.fan)!.toFixed(2)} A` : `, ${acVolts} VAC`}`));
+      // the outlet filter is the fan's accessory: its tag + F (like fuse cartridges in a holder)
+      if (fan.exhaust) cooling.push(comp('FAN1F', fan.exhaust.partNumber, 1, `Exhaust filter for FAN1 (outlet, high on the right wall)`));
+      else notes.push(`FAN1 ${fan.fan.partNumber}: no matching exhaust filter in the catalog — select the maker's outlet filter for it.`);
+      if (th) cooling.push(comp('TH1', th.partNumber, 1, `Thermostat for FAN1 — N.O. closes on rise; set to ~35 °C`));
+      if (dc) {
+        const ps = best.components.find((c) => getPart(c.partNumber)?.category === 'powerSupply');
+        const psA = ps ? num(getPart(ps.partNumber)?.ratings.amps ?? getPart(ps.partNumber)?.ratings.outputAmps) : undefined;
+        const need = (loadA + dcFanAmps(fan.fan)!) * 1.25;
+        if (psA !== undefined && psA + 0.05 < need) notes.push(`${ps!.tag} ${ps!.partNumber} (${psA} A): with FAN1 the 24 VDC load is ${(loadA + dcFanAmps(fan.fan)!).toFixed(1)} A + 25% = ${need.toFixed(1)} A — select the next larger supply.`);
+      }
+    } else {
+      // a bigger enclosure of the same material and mounting that sheds the heat through its walls (not past the
+      // designer's pick); at most twice the panel area — beyond that a heat exchanger / air conditioner is the sane choice
+      const area0 = enclosurePanelArea(best.enc);
+      const floor0 = best.enc.ratings.mounting === 'floor';
+      const bigger = choice.preferred ? undefined : candidates
+        .filter((e) => enclosurePanelArea(e) > area0 && enclosurePanelArea(e) <= 2 * area0 && (e.ratings.mounting === 'floor') === floor0)
+        .map(tryEnclosure).find((t) => t.fits && !heatOf(t).ventilation);
+      if (bigger) {
+        notes.push(`Enclosure ${bigger.enc.partNumber} instead of ${best.enc.partNumber}: ${heat.watts.toFixed(0)} W would raise the ${best.enc.partNumber} ${heat.rise!.toFixed(0)} °C (limit ${ALLOWED_RISE_C} °C)${sealed ? ` and a ${inputs.enclosureRating} enclosure takes no filter fan` : ' and no catalog filter fan fits'}; the larger enclosure sheds it through its walls.`);
+        best = bigger;
+        choice = { ...choice, used: bigger.enc.partNumber };
+      } else {
+        const hx = pickHeatExchanger(v.wattsToRemove, ALLOWED_RISE_C, { nema: rating, vendors: coolVendors });
+        const ac = hx ? null : pickAirConditioner(v.wattsToRemove, { nema: rating, vendors: coolVendors });
+        const unit = hx ?? ac;
+        if (unit) {
+          cooling.push(comp(hx ? 'HX1' : 'AC1', unit.partNumber, 1, `${hx ? `Heat exchanger — ${num(unit.ratings.wPerK)} W/K x ${ALLOWED_RISE_C} K >= ${Math.round(v.wattsToRemove)} W (ambient up to ~40 °C; hotter needs an air conditioner)` : `Air conditioner — ${Math.round(coolingWatts(unit) ?? 0)} W cooling >= ${Math.round(v.wattsToRemove)} W`}, closed-loop, keeps ${inputs.enclosureRating}; supply ${unit.ratings.volts ?? 'per maker'}, cutout per maker drawing`));
+          notes.push(`${hx ? 'HX1' : 'AC1'} ${unit.partNumber}: wire its supply (${unit.ratings.volts ?? 'per maker'}) and cut the enclosure per the maker's drawing — not drawn.`);
+        } else notes.push(`Cooling: ${Math.round(v.wattsToRemove)} W must leave the ${inputs.enclosureRating} enclosure (${heat.rise!.toFixed(0)} °C rise, limit ${ALLOWED_RISE_C} °C) and no catalog fan, heat exchanger or air conditioner fits — select the cooling.`);
+      }
+    }
+  }
+  if (cooling.length) best = { ...best, components: [...best.components, ...cooling] };
+  if (best.notes.length) notes.push(...best.notes);
+  best = { ...best, components: best.components.map((c) => (c.tag === 'ENC1' ? { ...c, function: `${c.function} — ${choice.preferred ? 'chosen by the designer,' : best.ok ? 'smallest catalog enclosure with everything placed and' : 'everything placed, but only'} ${Math.round(best.spare * 100)}% spare panel space (target >= ${Math.round(SPARE_RULE * 100)}%)` } : c)) };
+  if (!rec.ok) notes.push(`No catalog enclosure leaves ${Math.round(SPARE_RULE * 100)}% spare panel space: ${rec.enc.partNumber} is the closest (${Math.round(rec.spare * 100)}% spare) — consider a second enclosure.`);
+
+  const motorsText = power.branches.map((b) => `${b.motor.tag} ${powerText(b.motor.hp, input.region)} ${b.vfd ? `on ${getPart(best!.components.find((c) => c.tag === b.vfd)?.partNumber ?? '')?.partNumber ?? 'a VFD'}${b.sto ? ' (STO)' : ''}` : b.reversing ? 'reversing starter' : 'across the line'}`).join(', ');
+  const ps = best.components.find((c) => getPart(c.partNumber)?.category === 'powerSupply');
+  const explanation = `Rule-based design: ${enclosureText(inputs.enclosureRating, input.region)} ${best.enc.partNumber}, ${SUPPLY_INFO[supply].label} through ${best.components.find((c) => c.tag === 'DS1')?.function.replace('Main disconnect ', '') ?? 'a'} disconnect${motorsText ? `; motors: ${motorsText}` : ''}; 24 VDC from ${ps?.partNumber ?? '(select a supply)'} for ${loadA.toFixed(1)} A load + 25%; dual-channel E-stop${model.safety.estops > 1 ? 's' : ''} into a safety relay with monitored manual reset; ${Math.round(best.spare * 100)}% spare panel space.`;
+
+  return {
+    design: {
+      inputs: { ...inputs, motors: motorSpecs, motorsMarked: true, enclosureRating: inputs.enclosureRating },
+      components: best.components,
+      ioWiring: [...dev.ioWiring, ...motion.ioWiring],
+      notes: [...askUser, ...notes],
+      askUser,
+      machine: dev.machine,
+      enclosureChoice: choice,
+      generatedAt: input.now ?? new Date().toISOString(),
+    },
+    explanation,
+    layoutOk: best.fits && (best.ok || choice.status === 'kept'),
+  };
+}
+
+/** Design straight from the project (no AI): the default machine model, then the rules. */
+export function generateDefaultDesign(input: Omit<EngineInput, 'model'> & { spec?: string }): EngineResult {
+  return generateDesign({ ...input, model: defaultMachineModel(input.io.filter((p) => !motionDeviceType(p)), input.inputs, input.spec ?? '') });
+}

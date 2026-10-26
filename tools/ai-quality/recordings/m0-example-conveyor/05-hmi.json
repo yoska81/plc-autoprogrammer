@@ -1,0 +1,5 @@
+{
+ "stage": "hmi",
+ "model": "e2e-fixture",
+ "text": "{\"machineName\":\"Conveyor Cell\",\"actuators\":[{\"index\":0,\"name\":\"Conveyor\",\"manual\":true},{\"index\":1,\"name\":\"Pusher\",\"manual\":true}],\"states\":[{\"value\":0,\"text\":\"Stopped\",\"style\":\"normal\"},{\"value\":1,\"text\":\"Running\",\"style\":\"ok\"},{\"value\":2,\"text\":\"Pushing Part\",\"style\":\"ok\"},{\"value\":3,\"text\":\"Faulted\",\"style\":\"alarm\"},{\"value\":4,\"text\":\"Manual\",\"style\":\"warning\"},{\"value\":5,\"text\":\"Safety Stop\",\"style\":\"alarm\"}],\"questions\":[\"Which operator password levels are needed?\"]}"
+}

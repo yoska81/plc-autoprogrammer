@@ -1,0 +1,5 @@
+{
+ "stage": "electrical",
+ "model": "hand-written",
+ "text": "{\"motors\":[{\"tag\":\"M1\",\"description\":\"Unwinder motor\",\"power\":0.5,\"unit\":\"hp\",\"powerGiven\":true,\"start\":\"vfd\",\"vertical\":false,\"zone\":\"Unwind\"}],\"estops\":1,\"guardDoors\":[],\"lightCurtains\":[{\"zone\":\"Sealing station\"}],\"zones\":[\"Unwind\",\"Sealing station\"],\"interfaces\":[],\"questions\":[\"Confirm the heater power and voltage.\",\"Confirm the light curtain type (type 4) and the two-hand control category (ISO 13851 type IIIC).\"]}"
+}

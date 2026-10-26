@@ -1,0 +1,121 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useSpecStore } from '../store/useSpecStore';
+import { useSettingsStore } from '../store/useSettingsStore';
+import type { SpecSections } from '../spec/types';
+import { organizeSpec } from '../lib/ai/specAI';
+import { Spinner, ReasoningPanel } from './common';
+import { useDraft } from '../store/useDraftStore';
+import { useUi } from '../store/useUiStore';
+import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../lib/ai/jobs';
+import VoiceTextarea from '../voice/VoiceTextarea';
+import { PLC_PROGRAM_FILE } from '../convert/uploadCheck';
+
+// PLC program files are listed so a user who picks one here is sent to the Program tab
+const ACCEPT = '.pdf,.docx,.txt,.md,.csv,image/*,.ymw7,.YMW7,.emtp,.l5x,.L5X';
+
+/** Free text + document upload that the AI merges into the spec, plus open questions. */
+export default function SpecIntake() {
+  const spec = useSpecStore();
+  const settings = useSettingsStore();
+  const [newText, setNewText] = useDraft('spec.newText', '');
+  const [files, setFiles] = useState<File[]>([]);
+  // Global AI job: the spec is updated even if the user leaves this page meanwhile.
+  const busy = useAiJobRunning('spec');
+  const error = useAiJobError('spec');
+  const [summary, setSummary] = useUi<string | null>('spec.summary', null);
+  const [reasoning, setReasoning] = useState<string | null>(null);
+  const [undo, setUndo] = useDraft<SpecSections | null>('spec.undo', null);
+  const [dragOver, setDragOver] = useState(false);
+  // PLC program files are not spec documents: they are read on the Import page's Program tab
+  const [programFiles, setProgramFiles] = useState<string[]>([]);
+  const addFiles = (list: File[]) => {
+    setProgramFiles(list.filter((f) => PLC_PROGRAM_FILE.test(f.name)).map((f) => f.name));
+    const docs = list.filter((f) => !PLC_PROGRAM_FILE.test(f.name));
+    if (docs.length) setFiles((f) => [...f, ...docs]);
+  };
+  const apiKey = settings.anthropicApiKey;
+
+  const organize = () => {
+    if (!apiKey || (!newText.trim() && !files.length)) return;
+    const current = spec.sections, text = newText, sent = files;
+    void startAiJob({
+      kind: 'spec', label: 'Organizing the spec', keepResult: true,
+      run: async (h) => ({ before: current, sent, ...(await organizeSpec({ apiKey, model: settings.anthropicModel, effort: settings.effort, signal: h.signal, current, newText: text, files: sent })) }),
+      apply: (r) => {
+        const st = useSpecStore.getState();
+        st.setSections(r.sections);
+        st.setQuestions(r.questions);
+        r.sent.forEach((f) => st.addDocument(f.name));
+      },
+    });
+  };
+  useTakeResult<{ before: SpecSections; sent: File[]; summary: string; reasoning: string | null }>('spec', (r) => {
+    setUndo(r.before);
+    setSummary(r.summary);
+    setReasoning(r.reasoning);
+    setNewText('');
+    setFiles([]);
+  });
+
+  return (
+    <div className="space-y-5">
+
+          {/* Add information */}
+          <div className="bg-white rounded-lg border border-brand-200 p-5 space-y-3">
+            <h3 className="text-sm font-semibold text-steel-800">Add to the spec</h3>
+            <p className="text-xs text-steel-500">Describe the machine in your own words, paste notes, or upload a spec document. The AI sorts it into the sections below and keeps everything already there.</p>
+            <VoiceTextarea value={newText} onValueChange={setNewText} rows={6} aria-label="Add to the spec"
+              placeholder="e.g. Pick and place cell. Operator loads trays at the front. Two guard doors with locking switches; opening a door during Auto stops all motion (category 1 stop) and the robot gripper holds the part. Homing: Z axis up first to its home switch, then X to home. Modes: Auto, Manual jog from the HMI, Setup with doors open at low speed..."
+              className="w-full border border-steel-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            <label
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles([...e.dataTransfer.files]); }}
+              className={`flex items-center justify-center border-2 border-dashed rounded py-4 text-sm cursor-pointer ${dragOver ? 'border-brand-500 bg-brand-50' : 'border-steel-300 text-steel-600 hover:border-brand-400'}`}
+            >
+              Drop spec documents here or click to choose (PDF, Word .docx, text)
+              <input type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { const picked = [...(e.target.files ?? [])]; e.target.value = ''; addFiles(picked); }} />
+            </label>
+            {programFiles.length > 0 && (
+              <div role="status" data-testid="spec-program-file" className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                {programFiles.join(', ')} {programFiles.length > 1 ? 'are PLC program files' : 'is a PLC program file'}: it is read on <Link to="/import?tab=program" className="underline font-medium">Import an existing machine → Program</Link>, which also writes the machine description from it.
+              </div>
+            )}
+            {files.length > 0 && (
+              <ul className="flex flex-wrap gap-2">
+                {files.map((f, i) => (
+                  <li key={i} className="text-xs bg-steel-100 rounded px-2 py-1 flex gap-2">
+                    {f.name}
+                    <button onClick={() => setFiles(files.filter((_, j) => j !== i))} className="text-steel-400 hover:text-red-600" aria-label={`Remove ${f.name}`}>✕</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="flex items-center gap-3">
+              <button onClick={organize} disabled={busy || !apiKey || (!newText.trim() && !files.length)}
+                className="px-4 py-2 text-sm bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
+                {busy ? <><Spinner /> Organizing the spec…</> : 'Add to spec'}
+              </button>
+              {undo && !busy && (
+                <button onClick={() => { spec.setSections(undo); setUndo(null); setSummary(null); }} className="text-sm text-steel-600 underline">Undo</button>
+              )}
+              {!apiKey && newText.trim() && (
+                // Without the AI the text goes into the overview as written (sorted into sections later, or by hand).
+                <button onClick={() => { const cur = spec.sections.overview.trim(); spec.setSections({ ...spec.sections, overview: cur ? `${cur}\n\n${newText.trim()}` : newText.trim() }); setNewText(''); setSummary('Added to the machine overview as written. Add an API key to have it sorted into the sections, or edit the sections on the Machine description page.'); }}
+                  className="px-4 py-2 text-sm border border-steel-300 rounded hover:bg-steel-50">Add as the machine overview (no AI)</button>
+              )}
+              {!apiKey && <span className="text-sm text-yellow-800">Add your Anthropic API key in <Link to="/settings" className="underline">Settings</Link> to have it sorted into the sections, or add it as the overview as written.</span>}
+            </div>
+            {error && <div role="alert" className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">{error}</div>}
+            {summary && <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-900">{summary}</div>}
+            {reasoning && <ReasoningPanel reasoning={reasoning} />}
+            {spec.documents.length > 0 && (
+              <p className="text-xs text-steel-400">Documents added: {spec.documents.map((d) => d.name).join(', ')}</p>
+            )}
+          </div>
+
+
+    </div>
+  );
+}

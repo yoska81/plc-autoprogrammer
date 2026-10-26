@@ -1,0 +1,136 @@
+block safety "Safety & modes"
+block alarms "Alarms"
+block cycle "Cycle"
+block pusher "Pusher"
+block manual "Manual"
+block outputs "Outputs"
+block status "HMI & status"
+
+[safety] First scan: Pusher timeout (s) outside 1-30 is loaded with the default 3
+    NO:SC2 DS1001<1 | NO:SC2 DS1001>30  ->  COPY 3->DS1001
+[safety] First scan: batch target outside 0-9999 is loaded with the default 0
+    NO:SC2 DS1002<0 | NO:SC2 DS1002>9999  ->  COPY 0->DS1002
+[safety] First scan: service interval (h) outside 50-2000 is loaded with the default 500
+    NO:SC2 DS1003<50 | NO:SC2 DS1003>2000  ->  COPY 500->DS1003
+[safety] Safety OK from the safety relay (E-Stop OK (safety relay))
+    NO:X001  ->  OUT C1
+[safety] Reset command: HMI Reset
+    NO:C1003  ->  OUT C7
+[safety] Manual mode request is refused while the cycle runs: the HMI toggle is reset
+    NO:C2 NO:C1004  ->  RST C1004
+[safety] Manual mode active: HMI Manual selected and the cycle stopped
+    NO:C1004 NC:C2  ->  OUT C1201
+[safety] Cycle running: Start Button or HMI Start seals in; Stop Button (NC), HMI Stop, safety loss, a fault, Manual mode or batch complete drops it
+    RISE:X002 NO:X003 NC:C1002 NO:C1 NC:C3 NC:C1201 NC:C4 | RISE:C1001 NO:X003 NC:C1002 NO:C1 NC:C3 NC:C1201 NC:C4 | NO:C2 NO:X003 NC:C1002 NO:C1 NC:C3 NC:C1201 NC:C4  ->  OUT C2
+[safety] Running status for the HMI
+    NO:C2  ->  OUT C1202
+[alarms] Pusher did not reach its position in time: latched
+    NO:T1 | NO:T2  ->  SET C1103
+[alarms] Pusher timeout reset: Reset once the valve is off
+    NO:C7 NC:Y002  ->  RST C1103
+[alarms] Safety circuit open alarm while Safety OK is off
+    NC:C1  ->  OUT C1102
+[alarms] Any fault (stops the cycle): C1103
+    NO:C1103 | NO:C1101  ->  OUT C3
+[alarms] Service due warning: hours since service reached the service interval
+    DS1104>=DS1003 DS1003>0  ->  OUT C1104
+[cycle] Cycle not running: step 0 (idle)
+    NC:C2  ->  COPY 0->DS1150
+[cycle] Cycle start: step 10 — Feed until a part is at Part at end photo-eye
+    NO:C2 DS1150==0  ->  COPY 10->DS1150
+[cycle] Step 20 timeout: 5 s
+    DS1150==20  ->  TMR T5 5sec
+[cycle] Step 30 timeout: 5 s
+    DS1150==30  ->  TMR T6 5sec
+[cycle] A cycle step did not finish in time: latched (stops the cycle)
+    NO:T5 | NO:T6  ->  SET C1101
+[cycle] Step timeout reset: Reset while the cycle is stopped
+    NO:C7 NC:C2  ->  RST C1101
+[cycle] Step 30 — Pusher retract until Pusher retracted: done when X006 ON → cycle complete, back to step 10
+    NO:C2 NO:C1 DS1150==30 NO:X006  ->  COPY 10->DS1150, CNT CT2 rst C1007
+[cycle] Step 20 — Pusher extend until Pusher extended: done when X005 ON → step 30
+    NO:C2 NO:C1 DS1150==20 NO:X005  ->  COPY 30->DS1150
+[cycle] Step 10 — Feed until a part is at Part at end photo-eye: done when X004 ON → step 20
+    NO:C2 NO:C1 DS1150==10 NO:X004  ->  COPY 20->DS1150
+[cycle] Conveyor run: in step 10
+    DS1150==10  ->  OUT C20
+[cycle] Pusher extend: in step 20
+    DS1150==20  ->  OUT C21
+[pusher] Pusher: extend timeout — valve on but not at Pusher extended within the setpoint
+    NO:C1 NO:Y002 NC:X005  ->  TMR T1 DS1001sec
+[pusher] Pusher: retract timeout — valve off but not at Pusher retracted within the setpoint
+    NO:C1 NC:Y002 NC:X006  ->  TMR T2 DS1001sec
+[manual] Conveyor: Jog permitted — Manual mode, Safety OK, no other motion
+    NO:C1201 NO:C1 NC:Y002  ->  OUT C1204
+[manual] Conveyor: manual Jog (Conveyor motor contactor) while the HMI button is held and permitted
+    NO:C1005 NO:C1204  ->  OUT C23
+[manual] Pusher: Extend permitted — Manual mode, Safety OK, no other motion
+    NO:C1201 NO:C1 NC:Y001  ->  OUT C1205
+[manual] Pusher: manual Extend (Pusher solenoid) while the HMI button is held and permitted (an earlier jog has priority)
+    NO:C1006 NO:C1205 NC:C23  ->  OUT C24
+[outputs] Conveyor motor contactor: automatic (cycle running) or manual request, Safety OK
+    NO:C20 NO:C2 NO:C1 | NO:C23 NO:C1  ->  OUT Y001
+[outputs] Pusher solenoid: automatic (cycle running) or manual request, Safety OK
+    NO:C21 NO:C2 NO:C1 | NO:C24 NO:C1  ->  OUT Y002
+[outputs] Main air dump valve: on only while Safety OK (loss of safety exhausts the air)
+    NO:C1  ->  OUT Y003
+[status] One-scan pulse on each rising edge of the 1 s system clock SC7
+    RISE:SC7  ->  OUT C6
+[status] PLC heartbeat for the HMI: changes state every second
+    NO:C6 NC:C1203 | NC:C6 NO:C1203  ->  OUT C1203
+[status] Machine state 0 Stopped (default, overwritten below by higher states)
+    NO:SC1  ->  COPY 0->DS1101
+[status] Machine state 1 Running
+    NO:C2  ->  COPY 1->DS1101
+[status] Machine state 3 Manual
+    NO:C1201  ->  COPY 3->DS1101
+[status] Machine state 2 Faulted
+    NO:C3  ->  COPY 2->DS1101
+[status] Machine state 4 Safety Stop
+    NC:C1  ->  COPY 4->DS1101
+[status] Part counter: each part at Part at end photo-eye, reset from the HMI
+    NO:X004  ->  CNT CT1 rst C1007
+[status] Batch complete: a batch target is set and the part count reached it
+    DS1002>0 CTD1>=DS1002  ->  OUT C4
+[status] Rate window timer: 10 s, restarts itself
+    NC:T3  ->  TMR T3 10sec
+[status] Every 10 s: shift the six 10 s buckets and store the parts counted in the last 10 s
+    NO:T3  ->  COPY DS1125->DS1126, COPY DS1124->DS1125, COPY DS1123->DS1124, COPY DS1122->DS1123, COPY DS1121->DS1122, MATH DS1121=CTD1 - DS1119, COPY CTD1->DS1119
+[status] A count reset makes the newest bucket negative: count it as 0
+    NO:T3 DS1121<0  ->  COPY 0->DS1121
+[status] Parts per minute DS1102: the six 10 s buckets
+    NO:T3  ->  MATH DS1102=DS1121 + DS1122 + DS1123 + DS1124 + DS1125 + DS1126
+[status] Run-hour timer: accumulates while the cycle runs, restarts after each full hour
+    NO:C2  ->  TMR T4 3600sec
+[status] One full run hour reached
+    NO:T4  ->  OUT C5
+[status] Add the hour to the run hours and the hours since service
+    NO:C5  ->  MATH DS1103=DS1103 + 1, MATH DS1104=DS1104 + 1
+[status] HMI Service Done clears the hours since service
+    NO:C1008  ->  COPY 0->DS1104
+
+C1 Safety_OK: Safety relay healthy
+C7 Cmd_Reset: Reset from the HMI or the panel
+C2 Cycle_Running: Automatic cycle running
+C20 Auto_Conveyor_run: Automatic run request for Conveyor (set by the cycle block)
+C21 Auto_Pusher_extend: Automatic extend request for Pusher (set by the cycle block)
+T1 Tmr_Pusher_Ext: Pusher extend timeout
+T2 Tmr_Pusher_Ret: Pusher retract timeout
+C22 Auto_Main_Air_Dump_run: Automatic run request for Main Air Dump (set by the cycle block)
+C3 Any_Fault: A latched fault: stops the cycle
+C23 Man_Conveyor_Run: Manual request Conveyor motor contactor
+C24 Man_Pusher_Extend: Manual request Pusher solenoid
+C6 Pulse_1s: One scan every second
+C4 Batch_Done: Batch target reached
+T3 Tmr_Rate: 10 s rate window
+T4 Tmr_Run_Hour: Run-hour timer
+C5 Run_Hour_Pulse: One run hour reached
+DS1150 Step_Cycle: Automatic cycle step (0 idle, 10, 20…)
+CT2 Cnt_Cycles: Completed automatic cycles
+T5 Tmr_Step_20_Tmo: Step 20 timeout
+T6 Tmr_Step_30_Tmo: Step 30 timeout
+
+note: The automatic cycle was built from the I/O list (Feed until a part is at Part at end photo-eye → Pusher extend until Pusher extended → Pusher retract until Pusher retracted); describe the cycle in the specification, or edit the steps, if it is different.
+note: step 10: Conveyor run | waits X004 ON | timeout —
+note: step 20: Pusher extend | waits X005 ON | timeout 5 s
+note: step 30: — | waits X006 ON | timeout 5 s

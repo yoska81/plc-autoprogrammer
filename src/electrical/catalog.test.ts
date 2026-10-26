@@ -1,0 +1,289 @@
+/// <reference types="node" />
+/**
+ * Catalog data checks: every part is traceable to the manufacturer's / distributor's published data
+ * and its key ratings are present and plausible. A new entry without a source, with an invented-looking
+ * part number or with a missing / implausible rating fails here.
+ * Run with:  npx tsx src/electrical/catalog.test.ts
+ */
+import assert from 'node:assert/strict';
+import { CATALOG, getPart } from './catalog';
+import { PRICES } from './prices';
+import { HMI_MODELS } from '../hmi/hmiCatalog';
+import { CLICK_CPUS } from '../plc/core/profiles/clickData';
+import type { CatalogCategory, CatalogPart } from './types';
+
+let passed = 0;
+const failures: string[] = [];
+function test(name: string, fn: () => void) {
+  try { fn(); passed++; console.log(`  ok  ${name}`); }
+  catch (e) { failures.push(name); console.log(`  FAIL ${name}\n       ${(e as Error).message.split('\n').join('\n       ')}`); }
+}
+
+/**
+ * Where a part's data may come from: the manufacturer's own site, or the distributor that sells it
+ * under its part number. Add a vendor here together with its first parts.
+ */
+const SOURCE_HOSTS: { host: RegExp; makers: RegExp }[] = [
+  // AutomationDirect sells its own brands and these makers under AD part numbers
+  { host: /(^|\.)automationdirect\.com$/, makers: /./ },
+  { host: /(^|\.)rockwellautomation\.com$/, makers: /allen[- ]?bradley|rockwell/i },
+  // siemens.com includes the official download cache (cache.industry.siemens.com) and support portal;
+  // docs.tia.siemens.cloud is Siemens' official TIA Portal documentation site; apim.industry.siemens.cloud serves the
+  // product datasheets that support.industry.siemens.com/teddatasheet links redirect to
+  { host: /(^|\.)(siemens\.com|tia\.siemens\.cloud|industry\.siemens\.cloud)$/, makers: /siemens/i },
+  { host: /(^|\.)(se\.com|schneider-electric\.com|schneider-electric\.us)$/, makers: /schneider|square ?d|telemecanique/i },
+  { host: /(^|\.)ifm\.com$/, makers: /\bifm\b/i },
+  { host: /(^|\.)pepperl-fuchs\.com$/, makers: /pepperl/i },
+  { host: /(^|\.)bannerengineering\.com$/, makers: /banner/i },
+  { host: /(^|\.)pilz\.com$/, makers: /pilz/i },
+  // e-mechatronics.com is Yaskawa's own product and catalog site (dlc.e-mechatronics.com serves the catalog PDFs)
+  { host: /(^|\.)(yaskawa\.(com|eu|eu\.com|de)|e-mechatronics\.com)$/, makers: /yaskawa/i },
+  { host: /(^|\.)(nvent\.com|hoffmanonline\.com)$/, makers: /hoffman|nvent/i },
+  { host: /(^|\.)rittal\.(com|us)$/, makers: /rittal/i },
+  { host: /(^|\.)phoenixcontact\.com$/, makers: /phoenix/i },
+  { host: /(^|\.)weidmueller\.com$/, makers: /weidm(ü|ue)ller/i },
+  { host: /(^|\.)eaton\.com$/, makers: /eaton/i },
+  { host: /(^|\.)abb\.com$/, makers: /\babb\b/i },
+  { host: /(^|\.)(omron\.com|omron\.eu)$/, makers: /omron/i },
+  { host: /(^|\.)weintek\.com$/, makers: /weintek/i },
+  // Red Lion is part of HMS Networks: redlion.net now redirects to hms-networks.com
+  { host: /(^|\.)(redlion\.net|hms-networks\.com)$/, makers: /red ?lion/i },
+  { host: /(^|\.)maplesystems\.com$/, makers: /maple/i },
+  { host: /(^|\.)(mitsubishielectric\.com|mitsubishielectric\.co\.jp)$/, makers: /mitsubishi/i },
+  { host: /(^|\.)(deltaww\.com|delta-americas\.com)$/, makers: /delta/i },
+  { host: /(^|\.)(proface\.com|pro-face\.com)$/, makers: /pro-?face/i },
+  { host: /(^|\.)unitronicsplc\.com$/, makers: /unitronics/i },
+];
+
+/** Key ratings a part of each category must state (the design and calculations use them). */
+const REQUIRED: Partial<Record<CatalogCategory, string[]>> = {
+  breaker: ['amps', 'poles', 'volts', 'interruptingKA'],
+  contactor: ['amps', 'poles', 'coilVoltage'],
+  overload: ['minAmps', 'maxAmps', 'tripClass'],
+  motorProtector: ['minAmps', 'maxAmps', 'poles', 'volts'],
+  fuse: ['amps', 'volts', 'fuseClass'],
+  powerSupply: ['outputVolts', 'outputAmps', 'inputVolts'],
+  vfd: ['inputVolts', 'inputPhases', 'outputAmps'],
+  plc: ['supplyVolts'],
+  plcModule: ['family'],
+  commModule: ['family', 'interface', 'forUse'],
+  enclosure: [],
+  estop: ['contacts'],
+  pushbutton: ['contacts', 'color'],
+  selector: ['positions', 'contacts'],
+  pilotLight: ['color', 'volts'],
+  sensor: ['output', 'volts'],
+  solenoidValve: ['coilVoltage'],
+  safetyRelay: ['coilVoltage', 'safetyOutputs'],
+  stackLight: ['volts'],
+  servoDrive: ['inputVolts', 'outputAmps'],
+  servoMotor: ['ratedWatts', 'ratedTorqueNm'],
+  encoder: ['ppr', 'supplyVolts'],
+};
+/** Some parts state a rating under another name. */
+const ALIASES: Record<string, string[]> = { volts: ['volts', 'supplyVolts'], coilVoltage: ['coilVoltage', 'coil'] };
+
+/** Plausible ranges for numeric ratings (a typo like 4800 V or 0.0 A fails). */
+const RANGES: Record<string, [number, number]> = {
+  // amps from 0.01: small enclosure fans draw 0.06 A (Stego 018000-02, Rittal 3237.724).
+  amps: [0.01, 2000], minAmps: [0.05, 1000], maxAmps: [0.1, 1000], outputAmps: [0.1, 2000], vtAmps: [0.1, 2000],
+  interruptingKA: [1, 200], sccrKA: [1, 200], sccrKA480: [1, 200], poles: [1, 4],
+  hp200: [0, 500], hp230: [0, 500], hp480: [0, 1000], hp575: [0, 1000], hp1ph120: [0, 50], hp1ph230: [0, 50], hp1ph: [0, 50],
+  outputVolts: [5, 600], watts: [0.1, 5000], va: [10, 100000],
+  discreteInputs: [0, 512], discreteOutputs: [0, 512], sensingMm: [0.5, 100000], operatorMm: [20, 100], diameterMm: [3, 200],
+};
+
+/** Enclosure sizes in inches (other parts use widthIn for e.g. a wire duct width). */
+const ENCLOSURE_IN: [number, number] = [2, 100];
+
+/**
+ * Parts that cannot be verified yet, each with the reason (shown in the review). The list must stay short:
+ * an entry for a part that is verified, or missing from the catalog, fails.
+ */
+const UNVERIFIED_OK: Record<string, string> = {
+  'SGDV-280D21A': 'Yaskawa Sigma-V 11 kW (legacy, the user\'s machine): footprint 230 x 400 mm from the MECHATROLINK-II SGDV-280D drawing; Yaskawa\'s catalog has no MECHATROLINK-III (21A) drawing for this size.',
+  'XCSPA993': 'contacts (2 NC + 1 NO slow break), 1/2in NPT entry and AC-15 rating from the Schneider XCS catalog; terminal numbers still to be checked on the product data sheet (se.com not reachable).',
+  '3SE5112-0QV10': 'Siemens data sheet server refused the download (403): terminal numbers and AC-15 / DC-13 ratings still to be checked; contacts (1 NO + 2 NC), M20 entry and actuator from distributor listings.',
+  'C2-14D1': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-14D2': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-14TTL': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-14DR': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08D1-4VC': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08D2-4VC': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08DR-4VC': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08D1-6C': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08D2-6C': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08DR-6C': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08D1-6V': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08D2-6V': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-08DR-6V': 'CLICK PLUS option-slot module: installs inside the CPU option slot, so it has no panel footprint of its own (widthMm/heightMm left out on purpose).',
+  'C2-01CPU-2': 'CLICK PLUS two-slot CPU: width 80.5 mm read from the C2 manual dual-slot drawing (the part drawing is not dimensioned); 87.8 mm in the same drawing taken as including the latch.',
+  'C2-02CPU-2': 'CLICK PLUS two-slot CPU: width 80.5 mm read from the C2 manual dual-slot drawing (the part drawing is not dimensioned); 87.8 mm in the same drawing taken as including the latch.',
+  'C2-03CPU-2': 'CLICK PLUS two-slot CPU: width 80.5 mm read from the C2 manual dual-slot drawing (the part drawing is not dimensioned); 87.8 mm in the same drawing taken as including the latch.',
+  'VFD2A8MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
+  'VFD4A8MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
+  'VFD7A5MS21ANSAA': 'Delta MS300 1-phase 230 V without EMC filter: Delta\'s table lists only frame and size, so the output current is taken from the same-kW model with the filter.',
+};
+
+/** A maker's document (PDF catalog / datasheet or documentation portal) covering many parts (Yaskawa's manuals: /_downloads/download_d<n>, a PDF). */
+const isMakerDocument = (u: URL) => /\.pdf$/i.test(u.pathname) || /^\/_downloads\/download_d\d+$/.test(u.pathname) || /\.pdf$/i.test(u.searchParams.get('documentName') ?? '') || /\/dl\/files\//.test(u.pathname) || /\/library\/Download\.aspx$/i.test(u.pathname) || /^docs\.|^literature\./.test(u.host);
+
+const isAdHost = (u: string) => /(^|\.)automationdirect\.com$/.test(new URL(u).host);
+const has = (p: CatalogPart, k: string) => (ALIASES[k] ?? [k]).some((a) => p.ratings[a] !== undefined && p.ratings[a] !== '');
+
+console.log('catalog');
+
+test('part numbers are unique and look like real part numbers', () => {
+  const seen = new Set<string>();
+  const bad: string[] = [];
+  for (const p of CATALOG) {
+    if (seen.has(p.partNumber)) bad.push(`${p.partNumber}: duplicate`);
+    seen.add(p.partNumber);
+    // A kit (no single maker part number) is named by its real parts: 'A + B + C', exactly its kitParts.
+    const kit = p.ratings.kitParts !== undefined && p.partNumber === String(p.ratings.kitParts).split(',').map((x) => x.trim().replace(/ x\d+$/, '')).join(' + ');
+    if (p.ratings.kitParts !== undefined && !kit) bad.push(`${p.partNumber}: kit name must be its kitParts joined with ' + '`);
+    if (!kit && !/^[A-Za-z0-9][A-Za-z0-9./#+\- ]{1,40}$/.test(p.partNumber) || /\b(TBD|XXX|N\/A|GENERIC|EXAMPLE)\b/i.test(p.partNumber)) bad.push(`${p.partNumber}: not a part number`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('every part has a source page from its maker or the distributor that sells it', () => {
+  const bad: string[] = [];
+  for (const p of CATALOG) {
+    let host = '';
+    try { const u = new URL(p.url); host = u.host; if (u.protocol !== 'https:') bad.push(`${p.partNumber}: source must be https`); } catch { bad.push(`${p.partNumber}: no source URL`); continue; }
+    const src = SOURCE_HOSTS.find((s) => s.host.test(host));
+    if (!src) bad.push(`${p.partNumber}: source ${host} is not a known maker / distributor site`);
+    else if (!src.makers.test(p.manufacturer)) bad.push(`${p.partNumber}: ${p.manufacturer} part sourced from ${host}`);
+    if (!p.manufacturer.trim()) bad.push(`${p.partNumber}: no manufacturer`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('the source page is the page of that part', () => {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const bad = CATALOG.filter((p) => {
+    const u = new URL(p.url);
+    const last = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() ?? '').toLowerCase();
+    if (isAdHost(p.url)) return last !== p.partNumber.toLowerCase() && !u.pathname.toLowerCase().includes(`/pn/${p.partNumber.toLowerCase()}`);
+    const names = p.ratings.kitParts !== undefined ? p.partNumber.split(' + ') : [p.partNumber];
+    return !names.some((n) => norm(decodeURIComponent(u.pathname + u.search)).includes(norm(n))) && !isMakerDocument(u);
+  }).map((p) => `${p.partNumber}: ${p.url}`);
+  assert.deepEqual(bad, []);
+});
+
+test('every part is checked against its datasheet (verified), or listed with a reason', () => {
+  assert.deepEqual(CATALOG.filter((p) => !p.verified && !UNVERIFIED_OK[p.partNumber]).map((p) => p.partNumber), []);
+  const stale = Object.entries(UNVERIFIED_OK).filter(([pn, why]) => !CATALOG.some((p) => p.partNumber === pn && !p.verified) || why.trim().length < 30).map(([pn]) => pn);
+  assert.deepEqual(stale, [], 'allowlist entries must be unverified catalog parts with a reason of 30+ characters');
+});
+
+test('key ratings are stated for each category', () => {
+  const bad: string[] = [];
+  for (const p of CATALOG) {
+    for (const k of REQUIRED[p.category] ?? []) if (!has(p, k)) bad.push(`${p.partNumber} (${p.category}): no ${k}`);
+    // enclosures state their outside size; subpanels their panel size
+    if (p.category === 'enclosure') {
+      const sub = String(p.ratings.kind ?? '') === 'subpanel';
+      for (const k of sub ? ['panelHeightIn', 'panelWidthIn'] : ['heightIn', 'widthIn']) if (!has(p, k)) bad.push(`${p.partNumber} (${sub ? 'subpanel' : 'enclosure'}): no ${k}`);
+    }
+    // controllers with on-board I/O state it; modular controllers state their expansion capacity
+    if (p.category === 'plc' && !(has(p, 'discreteInputs') && has(p, 'discreteOutputs')) && !has(p, 'maxExpansionModules')) bad.push(`${p.partNumber} (plc): no on-board I/O or expansion capacity`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('numeric ratings are plausible', () => {
+  const bad: string[] = [];
+  for (const p of CATALOG) {
+    for (const [k, v] of Object.entries(p.ratings)) {
+      const r = RANGES[k];
+      if (!r || typeof v !== 'number') continue;
+      if (!Number.isFinite(v) || v < r[0] || v > r[1]) bad.push(`${p.partNumber}: ${k} = ${v} (expected ${r[0]}..${r[1]})`);
+    }
+    if (p.category === 'enclosure') for (const k of ['heightIn', 'widthIn', 'depthIn']) {
+      const v = p.ratings[k];
+      if (typeof v === 'number' && (v < ENCLOSURE_IN[0] || v > ENCLOSURE_IN[1])) bad.push(`${p.partNumber}: ${k} = ${v}`);
+    }
+    if (typeof p.ratings.minAmps === 'number' && typeof p.ratings.maxAmps === 'number' && p.ratings.minAmps >= p.ratings.maxAmps) bad.push(`${p.partNumber}: minAmps >= maxAmps`);
+    if (p.widthMm !== undefined && !(p.widthMm > 0 && p.widthMm < 2500)) bad.push(`${p.partNumber}: widthMm ${p.widthMm}`);
+    if (p.heightMm !== undefined && !(p.heightMm > 0 && p.heightMm < 2500)) bad.push(`${p.partNumber}: heightMm ${p.heightMm}`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('ratings in the part number agree with the ratings (breakers, power supplies)', () => {
+  const bad: string[] = [];
+  for (const p of CATALOG) {
+    const gm = /^GMCBU?-(\d)C-(\d+)$/.exec(p.partNumber);
+    if (gm && (Number(gm[1]) !== p.ratings.poles || Number(gm[2]) !== p.ratings.amps)) bad.push(`${p.partNumber}: poles ${p.ratings.poles}, amps ${p.ratings.amps}`);
+    const ps = /^PS[RLN]-?24-(\d{3})/.exec(p.partNumber);
+    if (ps && p.ratings.watts !== undefined && Number(ps[1]) !== p.ratings.watts && Number(ps[1]) / 10 !== p.ratings.outputAmps) bad.push(`${p.partNumber}: watts ${p.ratings.watts}, amps ${p.ratings.outputAmps}`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('parts of other vendors give a datasheet footprint for back-panel parts', () => {
+  // AutomationDirect parts may still use the category footprint estimate (shown as estimated on the layout);
+  // new vendors' back-panel parts must state width x height from the datasheet.
+  const bad = CATALOG.filter((p) => !isAdHost(p.url) && p.mount === 'backplate' && !['enclosure', 'dinRail', 'wireDuct', 'terminalAccessory'].includes(p.category) && p.ratings.inCpu !== 'yes' && p.ratings.inRack !== 'yes' && !(p.widthMm && p.heightMm)).map((p) => p.partNumber);
+  assert.deepEqual(bad, []);
+  // Option boards that plug into the CPU (FX5-232-BD, NX1W-CIF, CP1W-CIF) take no panel space of their own.
+  for (const p of CATALOG.filter((x) => x.ratings.inCpu === 'yes')) assert.ok(p.category === 'commModule' && !p.widthMm, `${p.partNumber}: in-CPU board`);
+  // Rack modules that plug into a base unit's slot (Yaskawa MP3300 CPU and option modules): the base unit has the footprint.
+  for (const p of CATALOG.filter((x) => x.ratings.inRack === 'yes')) assert.ok(['plc', 'plcModule'].includes(p.category) && !p.widthMm, `${p.partNumber}: rack module`);
+});
+
+test('prices belong to catalog parts and come from the same site', () => {
+  const byPn = new Map<string, { url: string }>([...CATALOG.map((p) => [p.partNumber, p] as const), ...HMI_MODELS.map((h) => [h.partNumber, { url: h.url }] as const)]);
+  const bad: string[] = [];
+  for (const [pn, pr] of Object.entries(PRICES)) {
+    const p = byPn.get(pn);
+    if (!p) { bad.push(`${pn}: price for a part not in the catalog`); continue; }
+    if (new URL(pr.sourceUrl).host !== new URL(p.url).host) bad.push(`${pn}: price from ${new URL(pr.sourceUrl).host}, part page on ${new URL(p.url).host}`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(pr.date)) bad.push(`${pn}: price date ${pr.date}`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('safety relays and expansions state their safety outputs as a count', () => {
+  // The drawing converter sizes the safety relay (base + expansion) from these: '(4) N.O.' and safetyOutputCount 4.
+  const bad = CATALOG.filter((p) => p.category === 'safetyRelay' && !(/^\(\d+\) N\.O\.$/.test(String(p.ratings.safetyOutputs)) && Number(p.ratings.safetyOutputCount) === Number(String(p.ratings.safetyOutputs).match(/\d+/)?.[0]))).map((p) => p.partNumber);
+  assert.deepEqual(bad, []);
+});
+
+test('operator devices write their contacts in one form: "(1) N.O." / "(1) N.C."', () => {
+  // The pushbutton / E-stop / selector picks match this form for every maker (AutomationDirect's spelling).
+  const ONE = /^\(\d+\) N\.[OC]\.(\/\(\d+\) N\.[OC]\.)?$/;
+  const bad = CATALOG.filter((p) => ['pushbutton', 'estop', 'selector'].includes(p.category) && p.ratings.contacts !== undefined
+    && !/\dx \(/.test(String(p.ratings.contacts)) && !ONE.test(String(p.ratings.contacts))).map((p) => `${p.partNumber}: ${p.ratings.contacts}`);
+  assert.deepEqual(bad, []);
+});
+
+test('kits list real catalog parts: "PN xN" each, every one verified', () => {
+  const bad: string[] = [];
+  for (const p of CATALOG.filter((x) => x.ratings.kitParts !== undefined)) {
+    for (const item of String(p.ratings.kitParts).split(',').map((x) => x.trim())) {
+      const m = /^(\S+) x(\d+)$/.exec(item);
+      const part = m && getPart(m[1]);
+      if (!m || !part || !part.verified) bad.push(`${p.partNumber}: ${item}`);
+    }
+    if (!(Number(p.ratings.amps) > 0)) bad.push(`${p.partNumber}: kit needs its total current`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('every switching disconnect states its UL listing: 98, 489 or 508', () => {
+  // The main-disconnect pick (UL 508A) needs UL 98 / 489; a UL 508 part is a motor disconnect only. Handles and shafts carry no amps.
+  const bad = CATALOG.filter((p) => p.category === 'disconnect' && p.ratings.amps !== undefined && !/^(98|489|508)$/.test(String(p.ratings.ul ?? ''))).map((p) => `${p.partNumber}: ul ${p.ratings.ul}`);
+  assert.deepEqual(bad, []);
+});
+
+test('every CLICK CPU the PLC profile offers is in the catalog with a footprint', () => {
+  // The CPU chooser lists CLICK_CPUS; the BOM, back-panel layout and prices need the catalog part.
+  const bad = CLICK_CPUS.filter((c) => { const p = CATALOG.find((x) => x.partNumber === c.id); return !p || !(p.widthMm && p.heightMm); }).map((c) => c.id);
+  assert.deepEqual(bad, []);
+});
+
+console.log(failures.length ? `\n${failures.length} failed: ${failures.join(', ')}` : `\n${passed} passed, 0 failed`);
+process.exit(failures.length ? 1 : 0);

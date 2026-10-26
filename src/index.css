@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-size: 13px;
+  background: #eef0f2;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+}
+
+/*
+ * The app's look, in one place (pages keep their markup and classes): the white boxes pages put their
+ * sections in are cards (rounded, a soft shadow, no hard border), section title strips are white with a
+ * thin divider, form fields are rounded, info boxes are soft amber, tables have light rows and grey
+ * header text. Only the app's own pages: HMI screens and drawings are SVG and keep their own colours,
+ * and the print view keeps the printed look.
+ */
+:root {
+  --card-radius: 10px;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --field-radius: 6px;
+}
+main :is(section, div, form, details, fieldset, article, aside, li).bg-white.border:not(.print-page *) {
+  border-radius: var(--card-radius);
+  border-color: transparent;
+  box-shadow: var(--card-shadow);
+}
+/* A card's title strip: white with a thin divider, its title larger and bold. */
+main .bg-white.border > .bg-\[\#e9edef\].border-b:first-child:not(.print-page *) {
+  background: #fff;
+  border-color: #e9edef;
+  border-top-left-radius: var(--card-radius);
+  border-top-right-radius: var(--card-radius);
+}
+main .bg-white.border > .bg-\[\#e9edef\].border-b:first-child > :is(h3, h4):not(.print-page *) {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1d2327;
+}
+/* Page titles (the header of every page). */
+main h2.text-base.font-semibold:not(.print-page *) {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1d2327;
+}
+/* Form fields. */
+main :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), select, textarea):not(.print-page *) {
+  border-radius: var(--field-radius);
+}
+main :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), select, textarea).border-steel-300:not(:focus) {
+  border-color: #d4dbdf;
+}
+/* Buttons: primary (brand) and outlined ones rounded like the fields; red-outlined (delete) ones are pills. */
+main button:is(.bg-brand-600, .border):not(.print-page *) {
+  border-radius: var(--field-radius);
+}
+main button.border:is(.border-red-300, .border-red-400, .text-red-700):not(.bg-red-600, .bg-red-700) {
+  border-radius: 9999px;
+  border-color: #e53935;
+}
+/* Info and warning boxes: soft amber, amber border, rounded. */
+main :is(div, p, section).bg-amber-50.border:not(.print-page *) {
+  border-color: #f2c66d;
+  border-radius: 8px;
+}
+/* Notes and info boxes that used the brand tint: soft amber too, so they never read as a red error. */
+main :is(div, p, section, aside).bg-brand-50:is(.border-brand-200, .border-brand-300):not(.print-page *) {
+  background: #fff8e6;
+  border-color: #f2c66d;
+}
+main :is(div, p, section, aside).bg-brand-50.border:is(.border-brand-200, .border-brand-300):not(.print-page *) {
+  border-radius: 8px;
+}
+main .bg-brand-50:is(.border-brand-200, .border-brand-300).text-brand-900 {
+  color: #3d2e0a;
+}
+/* Tables: grey header text, thin row dividers. */
+main thead :is(th):not(.print-page *) {
+  color: #55646c;
+}
+
+/* Print view: let the ladder grow to its full height instead of scrolling. */
+.print-page .overflow-auto { overflow: visible !important; height: auto !important; }
+@media print {
+  .no-print { display: none !important; }
+  #root { height: auto; }
+}
+
