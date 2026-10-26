@@ -163,11 +163,15 @@ static class Tests
             const string mine = "C:\\Users\\tech\\Documents\\ISA Auto Programmer\\machines";
             new Runner(ui, 42, CancellationToken.None, said.Add) { SaveIn = mine }.Run(Plan("[{\"do\":\"window\",\"title\":\"^CLICK Programming\"},{\"do\":\"keys\",\"keys\":\"^s\"}]"));
             Eq("keys ^s", ui.Did.Last());
-            foreach (var outside in new[] { "D:\\\\plant\\\\line.ckp", "C:\\\\Users\\\\tech\\\\Documents\\\\ISA Auto Programmer\\\\machines\\\\..\\\\x.ckp" })
+            // a bare name would be saved in whatever folder the Save window shows
+            foreach (var outside in new[] { "D:\\\\plant\\\\line.ckp", "C:\\\\Users\\\\tech\\\\Documents\\\\ISA Auto Programmer\\\\machines\\\\..\\\\x.ckp", "line.ckp", "..\\\\line.ckp" })
             {
                 var e = Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, said.Add) { SaveIn = mine }.Run(Plan("[{\"do\":\"setText\",\"find\":{\"name\":\"^File name\"},\"text\":\"" + outside + "\"}]")));
                 True(e.Message.Contains("saves only there"), e.Message);
             }
+            var typed = Throws<BridgeError>(() => new Runner(ui, 42, CancellationToken.None, said.Add) { SaveIn = mine }.Run(Plan("[{\"do\":\"keys\",\"keys\":\"D:\\\\\\\\x.ckp{ENTER}\"}]")));
+            True(typed.Message.Contains("type a path"), typed.Message);
+            Runner.GuardFolder(Plan("[{\"do\":\"setText\",\"find\":{\"name\":\"^File name\"},\"text\":\"" + mine.Replace("\\", "\\\\") + "\\\\line.ckp\"}]")[0], mine); // a full path in it: allowed
         });
 
         Test("runner: another window in front pauses it (said), CLICK back in front goes on", () =>

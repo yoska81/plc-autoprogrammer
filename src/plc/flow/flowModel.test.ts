@@ -51,6 +51,13 @@ assert.ok(d.edges.some((e) => e.from === dec20.id && e.to === 'cycle:step:30' &&
 const loop = d.edges.find((e) => e.from.includes(':r4') && e.to === 'cycle:step:10')!;
 assert.ok(loop.back && loop.points.length === 4, 'the loop back to step 10 drawn on the left');
 assert.ok(d.nodes.some((n) => n.kind === 'any' && n.rungIds[0] === 'r0' && n.lines.join() === 'NOT Run'), 'from any step: not running → idle');
+// an OR rung "from any step" (not running OR E-stop → idle): a box per branch, every id its own
+const orAny = diagramOf('cycle', 'Cycle', '', [{ ...cycle[0], branches: [[NC('C1')], [NO('X009')]] }, ...cycle.slice(1)], nameOf);
+const anys = orAny.nodes.filter((n) => n.kind === 'any');
+assert.equal(anys.length, 2);
+assert.equal(new Set(orAny.nodes.map((n) => n.id)).size, orAny.nodes.length, 'node ids unique');
+assert.equal(new Set(orAny.edges.map((e) => e.id)).size, orAny.edges.length, 'edge ids unique');
+assert.ok(anys.every((n) => orAny.edges.some((e) => e.from === n.id && e.to === 'cycle:step:0')), 'each box its arrow to idle');
 const lamp = d.nodes.filter((n) => n.rungIds.includes('r7'));
 assert.deepEqual(lamp.map((n) => n.kind), ['decision', 'action'], 'a rung outside the sequence: IF → THEN');
 assert.ok(d.nodes.every((n) => n.rungIds.every((id) => cycle.some((r) => r.id === id))), 'every box linked to its rungs');

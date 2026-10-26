@@ -2,7 +2,7 @@
 // picks the blocks, each part goes alone with progress, one proposal at the end with every part's change.
 //   npm run dev -- --port 5225 &  ;  BASE_URL=http://localhost:5225 node e2e/ai-block-by-block.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const { useAppModules } = require('./lib/appModule.cjs');
+const { useAppModules, waitApp } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5225';
 const fails = [];
 const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', what); } else console.log('  ✓', what); };
@@ -67,7 +67,7 @@ function sse(model, text) {
   const job = page.locator('[data-job="program-revise"]');
   await job.waitFor({ timeout: 10000 });
   const progress = await job.innerText().catch(() => '');
-  await page.waitForFunction(async () => Boolean((await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().proposal), null, { timeout: 60000 });
+  await waitApp(page, async () => Boolean((await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().proposal), { timeout: 60000 }).catch(() => {});
   const st = await page.evaluate(async () => {
     const s = (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState();
     if (!s.proposal) return { n: 0, checked: [], chat: s.chat.map((c) => c.text).join(' | '), rungs: s.ladder.rungs.filter((r) => r.comment.endsWith('(checked)')).length };

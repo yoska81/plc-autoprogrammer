@@ -55,6 +55,23 @@ assert.equal(sim.readWord('DS1150'), 30, 'through 25 (at once) to 30');
 sim.setInput('X003', true); sim.run(50);
 assert.equal(sim.readWord('DS1150'), 10, 'and the loop back');
 
+// step 20 with a timeout way out to a fault step (written first) and a way out shared with step 10 (OR branches): only
+// 20's way on to 30 goes to the new step; the timeout still goes to 900, step 10's branch still to 30
+const busy: LadderProgram = { tags: [], rungs: [
+  { id: 'rt', block: 'cycle', comment: 'Step 20 — Clamp: timeout → step 900', branches: [[AT(20), NO('T1')]], outputs: [GO(900)] },
+  ...cycle,
+  { id: 'rs', block: 'cycle', comment: 'Skip: → step 30', branches: [[AT(10), NO('X008')], [AT(20), NO('X009')]], outputs: [GO(30)] },
+] };
+const b = (addStepAfter(busy, 'DS1150', 20, 'Check') as { program: LadderProgram }).program;
+assert.deepEqual(b.rungs.find((r) => r.id === 'rt')!.outputs, [GO(900)], 'the timeout way out not re-linked');
+assert.deepEqual(b.rungs.find((r) => r.id === 'r3')!.outputs, [GO(25)]);
+const rs = b.rungs.find((r) => r.id === 'rs')!;
+assert.deepEqual([rs.branches, rs.outputs], [[[AT(10), NO('X008')]], [GO(30)]], 'step 10\'s branch still goes to 30');
+assert.ok(b.rungs.some((r) => r.id !== 'rs' && JSON.stringify(r.branches) === JSON.stringify([[AT(20), NO('X009')]]) && JSON.stringify(r.outputs) === JSON.stringify([GO(25)])), 'step 20\'s branch of it to 25');
+assert.equal(new Set(b.rungs.map((r) => r.id)).size, b.rungs.length, 'rung ids unique');
+// deleting step 20: the steps that went to it go on to 30 (its way on), not to the fault step
+assert.deepEqual((deleteStep(busy, 'DS1150', 20) as { program: LadderProgram }).program.rungs.find((r) => r.id === 'r2')!.outputs, [GO(30)]);
+
 // no room between two numbers
 const tight: LadderProgram = { rungs: [
   { id: 't1', comment: 'Step 10 — A: done → step 11', branches: [[AT(10), NO('X001')]], outputs: [GO(11)] },

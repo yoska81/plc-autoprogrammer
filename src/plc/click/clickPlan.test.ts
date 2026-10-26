@@ -84,10 +84,20 @@ assert.equal(literal('a.b(c)'), 'a\\.b\\(c\\)');
 // Write to the machine: saves (the one run that may) the app's own copy, connects by the port asked, writes
 const wp = writeToPlcPlan({ file: 'C:\\Users\\tech\\Documents\\ISA Auto Programmer\\machines\\Line.ckp', port: 'USB', runAfter: true });
 assert.ok(saveSteps(wp).length > 0, 'it saves: the bridge allows it only for this confirmed run, in the app\'s folder');
-assert.ok(wp.some((s) => s.do === 'setText' && s.text === 'C:\\Users\\tech\\Documents\\ISA Auto Programmer\\machines\\Line.ckp'));
+assert.ok(allSteps(wp).some((s) => s.do === 'setText' && s.text === 'C:\\Users\\tech\\Documents\\ISA Auto Programmer\\machines\\Line.ckp'));
+// Ctrl+S only where it cannot save over another file: a new project (it opens Save As) or the app's own copy; else Save As
+const save = wp.find((s) => s.do === 'oneOf' && s.what === 'Saving the app\'s copy')!;
+const title = (o: { steps: ClickStep[] }) => new RegExp(o.steps[0].title!);
+for (const o of save.options!.filter((x) => x.steps.some((y) => y.keys === '^s'))) assert.equal(o.steps[0].do, 'window', `${o.label}: CLICK's title checked first`);
+assert.ok(title(save.options![0]).test('CLICK Programming Software (Version4.00) - NewProject1.ckp - [Main Program]'), 'a new CLICK 4 project');
+assert.ok(!title(save.options![0]).test('CLICK Programming Software (Version4.00) - Plant line.ckp - [Main Program]'), 'not a project saved elsewhere');
+assert.ok(title(save.options![1]).test('CLICK Programming Software (Version4.00) - Line.ckp - [Main Program]'), 'the app\'s copy');
+assert.ok(!title(save.options![1]).test('CLICK Programming Software (Version4.00) - Old Line.ckp - [Main Program]'), 'not another file');
+assert.ok(!save.options![1].steps.some((x) => x.do === 'setText'), 'saved in place');
+assert.deepEqual(save.options![2].steps[1].path, ['File', 'Save Project As']);
 assert.ok(wp.some((s) => s.do === 'select' && s.find?.id === '20050' && s.item === '^USB$'), 'Connect to CLICK PLC: Port Type USB');
 const order = ['^Connect$', '^Write Project into PLC$'].map((n) => wp.findIndex((s) => s.do === 'doubleClick' && s.find?.name === n));
 assert.ok(order[0] > 0 && order[1] > order[0], 'connect, then write');
-assert.ok(wp.findIndex((s) => s.do === 'keys' && s.keys === '^s') < order[0], 'saved before connecting');
+assert.ok(wp.indexOf(save) < order[0], 'saved before connecting');
 assert.ok(writeToPlcPlan({ file: 'x', port: 'Ethernet', runAfter: false }).some((s) => s.do === 'click' && s.find?.name === '^(No|Cancel)$'), 'not back to RUN when not asked');
 console.log('clickPlan.test: all passed');

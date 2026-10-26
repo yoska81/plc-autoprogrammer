@@ -103,10 +103,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await noClick('/hmi');
   // The Equipment page is a catalog of every brand: its panel table must not judge panels against a CLICK.
   await page.goto(BASE + '/equipment');
-  await page.waitForFunction(() => window.__isaAppReady && /Choose the PLC first|Fits this machine/.test(document.querySelector('main')?.innerText ?? ''), null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__isaAppReady && /keeps its own controller/.test(document.querySelector('main')?.innerText ?? ''), null, { timeout: 30000 });
   const eq = await page.locator('main').innerText();
   check(!/to CLICK|CLICK is not in|CLICK only/.test(eq), '/equipment: no panel judged against a CLICK');
-  check(/Choose the PLC first: the MP-CPU is the machine's own controller/.test(eq), '/equipment: panels wait for the PLC to be chosen');
+  check(/Your machine keeps its own controller/.test(eq) && /Yaskawa CPU-/.test(eq), '/equipment: the machine\'s own controller shown, no new PLC chosen for it');
   // The brand rows follow the machine: its Yaskawa PLC and servo drives, its Weintek panel; never AutomationDirect for those.
   const brands = await page.locator('section[aria-label="Preferred brands"] select[aria-label^="Brand for"]').evaluateAll((els) => els.map((e) => [e.getAttribute('aria-label'), e.selectedOptions[0]?.textContent ?? '']));
   const row = (re) => brands.find(([label]) => re.test(label))?.[1] ?? '';

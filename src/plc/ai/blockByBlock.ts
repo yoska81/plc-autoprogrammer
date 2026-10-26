@@ -12,6 +12,7 @@ import { approxTokens, programParts, programSlice, PROGRAM_OUT_TOKENS } from '..
 import { callClaude, type ChatTurn } from '../../lib/ai/anthropic';
 import { callOpenAI } from '../../lib/ai/openai';
 import { GENERAL_BLOCK } from '../sim/blocks';
+import { mergeRungs } from '../flow/flowEdit';
 import { reviseLadder, type AIConfig, type PlcContext } from './ladderAI';
 
 /** A block of the program as the picker sees it. */
@@ -58,17 +59,12 @@ function ctxFor(ctx: PlcContext, rungs: Rung[]): PlcContext {
   return { ...ctx, io: ctx.io.filter((pt) => used.has((ctx.addresses.get(pt.id) ?? '').toUpperCase())) };
 }
 
-/** A part's answer put back in place: its rungs replace the part's rungs (new ones after them, in its block); its tags join the program's. */
+/** A part's answer put back in place (mergeRungs: each rung where it was, in its block); its tags join the program's. */
 export function mergePart(full: LadderProgram, partIds: string[], edited: LadderProgram): LadderProgram {
-  const ids = new Set(partIds);
-  const first = full.rungs.findIndex((r) => ids.has(r.id));
-  const block = first >= 0 ? full.rungs[first].block : undefined;
-  const mine = edited.rungs.map((r) => (r.block === undefined && block !== undefined ? { ...r, block } : r));
-  const rest = full.rungs.filter((r) => !ids.has(r.id));
-  const pos = first < 0 ? rest.length : full.rungs.slice(0, first).filter((r) => !ids.has(r.id)).length;
+  const merged = mergeRungs(full, partIds, edited.rungs);
   const tags = new Map(full.tags.map((t) => [t.address.toUpperCase(), t]));
   for (const t of edited.tags ?? []) tags.set(t.address.toUpperCase(), t);
-  return { ...full, rungs: [...rest.slice(0, pos), ...mine, ...rest.slice(pos)], tags: [...tags.values()] };
+  return { ...merged, tags: [...tags.values()] };
 }
 
 /** The conversation for each part: the opening turn, then the last few turns (alternating, ending before the request). */

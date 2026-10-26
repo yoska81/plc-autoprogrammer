@@ -7,8 +7,10 @@ import { rungAddresses, rungWrites } from '../../plc/core/ladder';
  * that send the program check its size first and send it in parts (or ask for a smaller part).
  */
 
+/** Tokens of a text this many characters long. */
+export const tokensOfLength = (chars: number) => Math.ceil(chars / 3.5);
 /** About how many tokens a text is (program listings and JSON run near 3.5 characters a token). */
-export const approxTokens = (text: string) => Math.ceil(text.length / 3.5);
+export const approxTokens = (text: string) => tokensOfLength(text.length);
 
 /** Most tokens the app's own part of a request may take (the rest is the system prompt and the answer). */
 export const INPUT_TOKENS = 120_000;

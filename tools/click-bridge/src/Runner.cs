@@ -112,13 +112,16 @@ namespace ClickBridge
             if ((s.Do == "click" || s.Do == "doubleClick" || s.Do == "select") && s.Find?.Name != null && SaveName.IsMatch(s.Find.Name.TrimStart('^'))) throw new BridgeError("The plan has a step that would press Save; the app never saves for you.");
         }
 
-        /// <summary>In the confirmed Write to PLC run: a file name typed must be in the app's machines folder.</summary>
+        /// <summary>In the confirmed Write to PLC run: every text typed into a field is a full path in the app's machines
+        /// folder (a bare name would land in whatever folder the Save window shows), and keys type no path.</summary>
         public static void GuardFolder(Step s, string folder)
         {
             foreach (var o in s.Options ?? new List<KeyValuePair<string, List<Step>>>()) foreach (var x in o.Value) GuardFolder(x, folder);
             var root = folder.TrimEnd('\\', '/') + "\\";
-            if (s.Do == "setText" && s.Text != null && Regex.IsMatch(s.Text, @"^[A-Za-z]:\\|^\\\\") && (!s.Text.StartsWith(root, StringComparison.OrdinalIgnoreCase) || s.Text.Contains("..")))
+            if (s.Do == "setText" && (s.Text == null || !Regex.IsMatch(s.Text, @"^[A-Za-z]:\\") || !s.Text.StartsWith(root, StringComparison.OrdinalIgnoreCase) || s.Text.Contains("..") || s.Text.IndexOf('/') >= 0))
                 throw new BridgeError($"The plan would save outside the app's machines folder ({s.Text}); the app saves only there.");
+            if (s.Do == "keys" && s.Keys != null && Regex.IsMatch(s.Keys, @"[\\/:]"))
+                throw new BridgeError($"The plan would type a path ({s.Keys}); in this run only a full path in the app's machines folder is typed.");
         }
 
         public int Run(IList<Step> steps)

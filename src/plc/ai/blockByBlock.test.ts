@@ -61,4 +61,21 @@ assert.equal(m.rungs.find((x) => x.id === 'n1')!.block, 'c');
 assert.equal(m.rungs.findIndex((x) => x.id === 'n1'), m.rungs.findIndex((x) => x.id === 'c0') + 1);
 assert.ok(m.tags.some((t) => t.address === 'C9000'));
 
+// two blocks apart (Safety and Alarms, the Cycle between): one part together, but put back each in its own place; the
+// answer lost every rung's block (as the checker's normalize drops a block it does not know) and added a rung
+const apart = await reviseByBlocks(ai, ctx, program, [], [], 'x', {
+  deps: {
+    pick: async () => ({ ids: ['a', 'c'], why: '' }),
+    revise: async (_a, _c, slice) => ({
+      program: { ...slice, rungs: slice.rungs.flatMap((x) => { const y = { ...x, block: undefined }; return x.id === 'a4' ? [{ ...y, comment: 'e' }, { id: 'new1', comment: 'new', branches: [], outputs: [] }] : [{ ...y, comment: 'e' }]; }) },
+      explanation: 'ok', reasoning: null,
+    }),
+  },
+});
+const ap = apart.program!;
+assert.deepEqual(ap.rungs.map((x) => x.id), [...program.rungs.slice(0, 5).map((x) => x.id), 'new1', ...program.rungs.slice(5).map((x) => x.id)], 'each rung where it was, the new one after a4');
+assert.deepEqual([...new Set(ap.rungs.filter((x) => x.comment === 'e').map((x) => x.block))], ['a', 'c'], 'each keeps its block');
+assert.equal(ap.rungs.find((x) => x.id === 'new1')!.block, 'a', 'the new rung in the block of the rung before it');
+assert.ok(ap.rungs.filter((x) => x.block === 'b').every((x) => x.comment.startsWith('Rung b')), 'the Cycle between untouched');
+
 console.log(`blockByBlock.test: all passed (${stages.length} progress lines)`);

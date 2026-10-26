@@ -6,7 +6,7 @@
 //
 //   VITE_PREVIEW=1 npx vite --port 5206 --strictPort &  ;  BASE_URL=http://localhost:5206 node e2e/sealing-head.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const { useAppModules } = require('./lib/appModule.cjs');
+const { useAppModules, waitApp } = require('./lib/appModule.cjs');
 const fs = require('fs');
 const OUT = __dirname + '/out-sealing-head/';
 fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true });
@@ -144,7 +144,7 @@ function reply(text) {
   await page.evaluate(async () => { window.__stages = []; (await appImport('/src/lib/ai/jobs.ts')).useAiJobs.subscribe((st) => { for (const j of st.jobs) if (j.stage && window.__stages[window.__stages.length - 1] !== j.stage) window.__stages.push(j.stage); }); });
   await build.click();
   // wait for the job to finish
-  await page.waitForFunction(async () => !(await appImport('/src/lib/ai/jobs.ts')).useAiJobs.getState().jobs.some((j) => j.status === 'running'), null, { timeout: 120000, polling: 500 });
+  await waitApp(page, async () => !(await appImport('/src/lib/ai/jobs.ts')).useAiJobs.getState().jobs.some((j) => j.status === 'running'), { timeout: 120000 });
   await page.waitForTimeout(1000);
   const jobs = await page.evaluate(async () => (await appImport('/src/lib/ai/jobs.ts')).useAiJobs.getState().jobs.map((j) => ({ kind: j.kind, status: j.status, stage: j.stage, error: j.error })));
   log('Jobs:', JSON.stringify(jobs));

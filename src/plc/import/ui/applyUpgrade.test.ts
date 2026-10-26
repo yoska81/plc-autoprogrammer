@@ -9,7 +9,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { importProgramText } from '../index';
-import { applyUpgrade } from './applyUpgrade';
+import { applyUpgrade, removeUpload } from './applyUpgrade';
+import { useProjectStore } from '../../../store/useProjectStore';
 import { replaceProgramQuestion, useProgramStore } from '../../../store/useProgramStore';
 import { seedSampleProject, LADDER } from '../../../preview/sampleProject';
 
@@ -34,5 +35,16 @@ st.editLadder({ ...st.ladder, rungs: st.ladder.rungs.slice(1) });
 assert.match(replaceProgramQuestion(useProgramStore.getState()), /^Replace the program read from capper\.L5X/);
 useProgramStore.getState().setGeneratedLadder(structuredClone(LADDER), 'New.', null);
 assert.equal(useProgramStore.getState().ladderSource, undefined);
+
+// Deleting the upload: a programmable PLC stays; a controller the app only reads (Yaskawa MP) goes back to the default
+applyUpgrade(capper);
+const plc = useProjectStore.getState().plcId;
+assert.deepEqual(removeUpload({ io: true }), { plcReset: null });
+assert.equal(useProjectStore.getState().plcId, plc, 'a programmable PLC stays');
+useProjectStore.getState().setPlc('yaskawa-mp', 'CPU-301');
+useProjectStore.getState().setModules(['218IFD']);
+const r = removeUpload({ io: true });
+assert.ok(r.plcReset && /Yaskawa|MP/.test(r.plcReset), JSON.stringify(r));
+assert.deepEqual([useProjectStore.getState().plcId, useProjectStore.getState().modules], ['click', []], 'back to the default PLC, its modules cleared');
 
 console.log('applyUpgrade tests passed');

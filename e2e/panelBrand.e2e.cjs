@@ -4,7 +4,7 @@
 //
 //   npx vite --port 5204 &  ;  BASE_URL=http://localhost:5204 node e2e/panelBrand.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const { useAppModules } = require('./lib/appModule.cjs');
+const { useAppModules, waitApp } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5173';
 const log = (...a) => console.log('•', ...a);
 const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what); };
@@ -51,12 +51,12 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
   check((await vendorsOf(['contactor'])).every((v) => v.endsWith(':automationdirect')), 'Cancel: design not changed');
   answer = true;
   await offer.getByRole('button', { name: 'Use Siemens for panel parts too' }).click();
-  await page.waitForFunction(async () => {
+  await waitApp(page, async () => {
     const { useElectricalStore: E } = await appImport('/src/store/useElectricalStore.ts');
     const { getPart } = await appImport('/src/electrical/catalog.ts');
     const s = E.getState();
     return !s.isGenerating && s.design.components.some((c) => getPart(c.partNumber)?.category === 'pushbutton' && getPart(c.partNumber)?.vendor === 'siemens');
-  }, null, { timeout: 60000 });
+  }, { timeout: 60000 });
   const after = await vendorsOf(['pushbutton', 'contactor']);
   log('After:', after.join(', '));
   check(after.filter((v) => v.startsWith('contactor:')).every((v) => v.endsWith(':siemens')), 'contactors from Siemens');
@@ -72,7 +72,7 @@ const check = (ok, what) => { if (!ok) throw new Error('Check failed: ' + what);
   if (after.some((v) => v === 'pushbutton:siemens')) check(leftover.every((c) => c !== 'green' && c !== 'red'), 'only colours Siemens lacks stay AutomationDirect');
   check(await page.getByTestId('panel-brand-offer').count() === 0, 'offer gone once the brand is chosen');
   check(await page.evaluate(async () => (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().info.vendors?.panel?.[0]) === 'siemens', 'panel brand saved');
-  check(/Siemens panel parts/.test(await page.locator('header').first().innerText()), 'header names the panel brand');
+  check(/Panel parts: Siemens/.test(await page.locator('header').first().innerText()), 'header names the panel brand');
 
   // "No thanks" is remembered for the project.
   await page.evaluate(async () => {

@@ -3,7 +3,7 @@
 // Program flow show it with the comments beside the boxes.
 //   npm run dev -- --port 5227 &  ;  BASE_URL=http://localhost:5227 node e2e/yaskawa-understand.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const { useAppModules } = require('./lib/appModule.cjs');
+const { useAppModules, waitApp } = require('./lib/appModule.cjs');
 const path = require('node:path');
 const BASE = process.env.BASE_URL || 'http://localhost:5227';
 const FIXTURE = path.join(__dirname, '..', 'src', 'plc', 'import', '__fixtures__', 'demo_mp.YMW7');
@@ -34,7 +34,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.goto(BASE + '/program');
   await page.getByRole('button', { name: 'Change', exact: true }).first().click();
   await page.getByRole('button', { name: 'Add comments', exact: true }).click();
-  await page.waitForFunction(async () => Boolean((await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().proposal), null, { timeout: 30000 });
+  await waitApp(page, async () => Boolean((await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().proposal), { timeout: 30000 });
   await page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().applyProposal());
   const p1 = await prog();
   const blank1 = p1.ladder.rungs.filter((r) => !r.comment.trim()).length;

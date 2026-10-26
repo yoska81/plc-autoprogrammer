@@ -161,7 +161,7 @@ export default function UpgradePage({ embedded = false }: { embedded?: boolean }
                     <p className="text-xs">The program it put in ({ladder.rungs.length} rungs) is removed and kept in History (you can bring it back from there); the original kept for the comparison and its file are deleted. The PLC choice, the machine description and the drawings stay.</p>
                     <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={deleteIo} onChange={(e) => setDeleteIo(e.target.checked)} data-testid="upload-delete-io" />Also clear the I/O list it filled in ({io.length} points)</label>
                     <div className="flex gap-2">
-                      <button onClick={() => { removeUpload({ io: deleteIo }); setDeleting(false); notify(`${original.source.fileName} deleted from the project${deleteIo ? ', with its I/O list' : ''}. Its program is in History.`); }} data-testid="upload-delete-yes"
+                      <button onClick={() => { const { plcReset } = removeUpload({ io: deleteIo }); setDeleting(false); notify(`${original.source.fileName} deleted from the project${deleteIo ? ', with its I/O list' : ''}. Its program is in History.${plcReset ? ` The PLC is back to ${getProfile(useProjectStore.getState().plcId).name} (the app only reads ${plcReset}): choose another on PLC Setup.` : ''}`); }} data-testid="upload-delete-yes"
                         className="text-xs px-3 py-1.5 rounded bg-red-600 text-white font-medium hover:bg-red-700">Delete it</button>
                       <button onClick={() => setDeleting(false)} className="text-xs px-3 py-1.5 rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700">Cancel</button>
                     </div>

@@ -226,15 +226,26 @@ const answer = (button: string): ClickStep[] => [
  */
 export function writeToPlcPlan(w: WriteToPlc): ClickStep[] {
   const plcTab: ClickStep = { do: 'click', find: { type: 'TabItem', name: '^PLC$' }, timeoutMs: 3000, optional: true };
-  return [
-    main,
-    // save (a new project's first save opens Save As)
-    { do: 'keys', keys: '^s', say: 'Saving the project in the app\'s machines folder' },
+  const base = w.file.split(/[\\/]/).pop() ?? w.file;
+  const saveAs: ClickStep[] = [
     { do: 'window', title: '^Save', timeoutMs: 8000 },
     { do: 'setText', find: { type: 'Edit', name: '^File name' }, text: w.file },
     { do: 'click', find: { type: 'Button', name: '^Save$' }, mouse: true },
     // the same file name again: replace it (the app's own copy)
     ...answer('^(Yes|OK)$'),
+  ];
+  return [
+    main,
+    // Save: the way depends on what CLICK has open (its title names the file: "CLICK Programming Software (Version4.00) -
+    // NewProject1.ckp - [Main Program]"). Ctrl+S on a project saved elsewhere would save over that file silently, so it
+    // is pressed only on a new project (it opens Save As) or on the app's own copy (saved in place, the same file).
+    {
+      do: 'oneOf', what: 'Saving the app\'s copy', say: 'Saving the project in the app\'s machines folder', options: [
+        { label: 'a new project: Ctrl+S opens Save As', steps: [{ do: 'window', title: `${CLICK_MAIN}.*(- NewProject\\d*\\.ckp\\b|\\[Untitled\\])`, timeoutMs: 1500 }, { do: 'keys', keys: '^s' }, ...saveAs] },
+        { label: `the app's copy (${base}), saved before: Ctrl+S`, steps: [{ do: 'window', title: `${CLICK_MAIN}.* - ${literal(base)} - `, timeoutMs: 1500 }, { do: 'keys', keys: '^s' }] },
+        { label: 'File › Save Project As', steps: [main, { do: 'menu', path: ['File', 'Save Project As'] }, ...saveAs] },
+      ],
+    },
     { do: 'wait', ms: 1500 },
     // connect
     main,

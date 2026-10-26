@@ -32,6 +32,8 @@ import { startAiJob, useAiJobError, useAiJobRunning, useTakeResult } from '../li
 
 const MAX_MODULES = 8;
 /** Bigger brands offered when no CLICK can hold the machine: catalog vendor and button text. */
+/** The AI's way of saying no CLICK can do it (equipmentAI's prompt), as it may word it: anywhere, any case, "a CLICK" or "CLICK". */
+const NEEDS_BIGGER = /needs? a (bigger|larger) PLC than (a )?CLICK/i;
 const BIGGER: [VendorId, string][] = [['siemens', 'Siemens (S7-1500 / S7-1200)'], ['allen-bradley', 'Allen-Bradley (CompactLogix)']];
 
 function CapacityBar({ label, need, have }: { label: string; need: number; have: number }) {
@@ -166,7 +168,7 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
   // No CLICK can hold this machine (the AI said so, or no CLICK fits the I/O even fully expanded): offer a bigger brand
   const clickCpus = PLC_PROFILES.find((p) => p.id === 'click')?.cpuModels ?? [];
   const onClick = Boolean(choice && clickCpus.some((c) => c.id === choice.cpuId));
-  const needsBigger = !keptProfile && (Boolean(rec?.summary.startsWith('Needs a bigger PLC than a CLICK')) || (onClick && ioPoints.length > 0 && !clickCpus.some((c) => modulesToFit(c.id, [], need) !== null)));
+  const needsBigger = !keptProfile && (NEEDS_BIGGER.test(rec?.summary ?? '') || (onClick && ioPoints.length > 0 && !clickCpus.some((c) => modulesToFit(c.id, [], need) !== null)));
   const cap = cpu && choice ? ioCapacity(cpu, moduleSlots(choice.modules)) : null;
   // something to apply: the user's own pick, or the AI's suggestion (not the default a fresh project starts from)
   const chosen = Boolean(pending && pending.basis === basis) || Boolean(project.recommendation);
@@ -233,7 +235,8 @@ export default function EquipmentPanel({ onApplied }: { onApplied?: () => void }
       {replaceKept && <p className="text-amber-800">A new PLC replaces the controller{original?.source.axes?.length ? `, and its ${original.source.axes.length} servo axes need another motion network or drives` : ''}. Moving the program to it is done under "Move it to another PLC" on the Upgrade page.</p>}
     </div>
   );
-  if (kept && !replaceKept) return <div className="space-y-4">{kept}</div>;
+  // the brands still count (its drives and panel are the machine's makers: the electrical design and the HMI use them)
+  if (kept && !replaceKept) return <div className="space-y-4">{kept}<VendorPreferenceCard /></div>;
 
   return (
     <div className="space-y-4">

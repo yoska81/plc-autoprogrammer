@@ -44,6 +44,17 @@ function guards(program: LadderProgram, reg: string): LadderElement[] {
   return rest[0].filter((e) => rest.every((br) => br.some((x) => key(x) === key(e))));
 }
 
+/**
+ * The ways out of a step, and the one that goes on in the sequence: the nearest later step (a timeout or fault way out
+ * goes elsewhere, often far: 900), else the first (the last step back to the start).
+ */
+function waysOut(program: LadderProgram, reg: string, step: number): { outs: Rung[]; next: number | null } {
+  const outs = program.rungs.filter((r) => goesTo(r, reg) !== null && r.branches.some((br) => stepIn(br, reg) === step));
+  const to = outs.map((r) => goesTo(r, reg)!);
+  const later = to.filter((n) => n > step);
+  return { outs, next: outs.length ? (later.length ? Math.min(...later) : to[0]) : null };
+}
+
 export interface EditResult { program: LadderProgram; message: string; focusRung?: string }
 
 /**
@@ -52,9 +63,10 @@ export interface EditResult { program: LadderProgram; message: string; focusRung
  * what it turns on and what it waits for, in its ladder).
  */
 export function addStepAfter(program: LadderProgram, reg: string, after: number, name: string): EditResult | { error: string } {
-  const outs = program.rungs.filter((r) => goesTo(r, reg) !== null && r.branches.some((br) => stepIn(br, reg) === after));
-  if (!outs.length) return { error: `Step ${after} has no way out to put a step after it.` };
-  const next = goesTo(outs[0], reg)!;
+  const { outs: all, next } = waysOut(program, reg, after);
+  if (next === null) return { error: `Step ${after} has no way out to put a step after it.` };
+  // only the way on to `next` is re-linked (a timeout or fault way out still goes where it went)
+  const outs = all.filter((r) => goesTo(r, reg) === next);
   const taken = new Set(stepsOf(program, reg));
   let value: number | null = null;
   if (next > after) { for (let v = Math.floor((after + next) / 2); v > after; v--) if (!taken.has(v)) { value = v; break; } }
@@ -65,7 +77,14 @@ export function addStepAfter(program: LadderProgram, reg: string, after: number,
     id: newRungId(), block: outs[0].block, comment: `Step ${value} — ${label}: done at once (set what it waits for) → step ${next}`,
     branches: [[...guards(program, reg), at(reg, value)]], outputs: [{ type: 'COPY', source: String(next), dest: reg }],
   };
-  const rungs = program.rungs.map((r) => (outs.includes(r) ? { ...r, outputs: setGoTo(r.outputs, reg, value!), comment: r.comment.replace(new RegExp(`(→\\s*step\\s*)${next}\\b`, 'i'), `$1${value}`) } : r));
+  const relink = (r: Rung): Rung => ({ ...r, outputs: setGoTo(r.outputs, reg, value!), comment: r.comment.replace(new RegExp(`(→\\s*step\\s*)${next}\\b`, 'i'), `$1${value}`) });
+  const rungs = program.rungs.flatMap((r): Rung[] => {
+    if (!outs.includes(r)) return [r];
+    // a way out shared with other steps (OR branches): theirs stay as they were, a copy with `after`'s branches only
+    const mine = r.branches.filter((br) => stepIn(br, reg) === after);
+    const theirs = r.branches.filter((br) => stepIn(br, reg) !== after);
+    return theirs.length ? [{ ...r, branches: theirs }, relink({ ...r, id: newRungId(), branches: mine })] : [relink(r)];
+  });
   // written before the way out of `after` (as the app writes them, last step first: a step lasts at least one scan)
   const i = rungs.findIndex((r) => outs.some((o) => o.id === r.id));
   rungs.splice(i, 0, rung);
@@ -74,9 +93,8 @@ export function addStepAfter(program: LadderProgram, reg: string, after: number,
 
 /** Delete a step: the arrows into it go on to where it went; its way out and what it did are removed. */
 export function deleteStep(program: LadderProgram, reg: string, step: number): EditResult | { error: string } {
-  const outs = program.rungs.filter((r) => goesTo(r, reg) !== null && r.branches.some((br) => stepIn(br, reg) === step));
-  if (!outs.length) return { error: `Step ${step} has no way out: nothing to go on to.` };
-  const next = goesTo(outs[0], reg)!;
+  const { outs, next } = waysOut(program, reg, step);
+  if (next === null) return { error: `Step ${step} has no way out: nothing to go on to.` };
   if (next === step) return { error: `Step ${step} goes back to itself.` };
   const rungs: Rung[] = [];
   for (const r of program.rungs) {
@@ -116,17 +134,45 @@ export function registerOf(program: LadderProgram, block: string | undefined): s
 }
 
 /**
- * Some rungs edited (the ladder editor beside the diagram): put back in their place, the deleted ones removed, the
- * new ones after the last of them, in the same function.
+ * Some rungs edited (the ladder editor beside the diagram, a part of a big program the AI changed): put back in their
+ * place, the deleted ones removed. Each edited rung keeps its block when the answer lost it; a new one goes in the
+ * block of the rung before it. Rungs that sat together: put back as one run (in the edited order, new ones where they
+ * were put). Rungs from apart (several blocks with other rungs between): each in its own place, a new rung after the
+ * rung it followed in the answer, so no rung moves past the rungs between them.
  */
 export function mergeRungs(full: LadderProgram, ids: string[], edited: Rung[]): LadderProgram {
   const set = new Set(ids);
-  const first = full.rungs.findIndex((r) => set.has(r.id));
-  const block = first >= 0 ? full.rungs[first].block : undefined;
-  const mine = edited.map((r) => (r.block === undefined && block !== undefined ? { ...r, block } : r));
+  const known = new Set((full.blocks ?? []).map((b) => b.id));
+  const was = new Map(full.rungs.filter((r) => set.has(r.id)).map((r) => [r.id, r]));
+  const at = full.rungs.flatMap((r, i) => (set.has(r.id) ? [i] : []));
+  let prev = at.length ? full.rungs[at[0]].block : undefined;
+  const mine = edited.map((r) => {
+    const old = was.get(r.id);
+    const block = r.block !== undefined && (known.has(r.block) || r.block === old?.block) ? r.block : old ? old.block : prev;
+    prev = block;
+    return block === r.block ? r : { ...r, block };
+  });
   const rest = full.rungs.filter((r) => !set.has(r.id));
-  const pos = first < 0 ? rest.length : full.rungs.slice(0, first).filter((r) => !set.has(r.id)).length;
-  return { ...full, rungs: [...rest.slice(0, pos), ...mine, ...rest.slice(pos)] };
+  if (!at.length || at[at.length - 1] - at[0] + 1 === at.length) {
+    const pos = at.length ? at[0] : rest.length;
+    return { ...full, rungs: [...rest.slice(0, pos), ...mine, ...rest.slice(pos)] };
+  }
+  // apart: each new rung after the kept rung it followed in the answer (before the first, at the first one's place)
+  const after = new Map<string, Rung[]>();
+  let anchor = '';
+  for (const r of mine) {
+    if (was.has(r.id)) anchor = r.id;
+    else after.set(anchor, [...(after.get(anchor) ?? []), r]);
+  }
+  const now = new Map(mine.filter((r) => was.has(r.id)).map((r) => [r.id, r]));
+  const rungs: Rung[] = [];
+  for (const [i, r] of full.rungs.entries()) {
+    if (i === at[0]) rungs.push(...(after.get('') ?? []));
+    if (!set.has(r.id)) { rungs.push(r); continue; }
+    const e = now.get(r.id);
+    if (e) rungs.push(e, ...(after.get(r.id) ?? [])); // (deleted in the answer: gone)
+  }
+  return { ...full, rungs };
 }
 
 export interface FlowChange { kind: 'added' | 'removed' | 'changed'; rungId: string; title: string; before: string[]; after: string[] }

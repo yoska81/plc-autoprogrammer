@@ -7,7 +7,7 @@
 //  review note; machine spec text; I/O description; rung comment; HMI alarm text; everything in the .isap file.
 //   npx vite --port 5205 &  ;  BASE_URL=http://localhost:5205 node e2e/voice-edit.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const { useAppModules } = require('./lib/appModule.cjs');
+const { useAppModules, waitApp } = require('./lib/appModule.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const BASE = process.env.BASE_URL || 'http://localhost:5205';
@@ -341,7 +341,7 @@ const FAKE_SPEECH = () => {
   // ── 13. Regenerate the electrical design: the edits stay ──
   await page.goto(BASE + '/electrical?tab=design');
   await page.getByRole('button', { name: 'Update design' }).first().click();
-  await page.waitForFunction(async () => { const m = await appImport('/src/store/useElectricalStore.ts'); return !m.useElectricalStore.getState().isGenerating; }, null, { timeout: 120000 });
+  await waitApp(page, async () => { const m = await appImport('/src/store/useElectricalStore.ts'); return !m.useElectricalStore.getState().isGenerating; }, { timeout: 120000 });
   await page.waitForTimeout(1000);
   await page.goto(BASE + '/export');
   await page.waitForTimeout(800);

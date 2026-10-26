@@ -11,6 +11,8 @@ import { notify } from '../../../store/useNoticeStore';
 import type { ImportedProgram } from '../types';
 import type { SpecSectionId } from '../../../spec/types';
 import type { LadderProgram } from '../../core/ladder';
+import { getProfile } from '../../core/profiles';
+import { clickProfile } from '../../core/profiles/click';
 import { panelTags, programRoles } from '../hmiRoles';
 import type { UpgradeRoles } from '../../../hmi/engine/upgradeHmi';
 import type { NetworkAxis } from '../../core/networkAxes';
@@ -83,10 +85,18 @@ function machineBrands(imp: ImportedProgram): void {
  * program it put in (kept in History, as every program the app replaces), and, when asked, the I/O list it filled in.
  * The rest of the project (the PLC chosen, the machine description, drawings) stays.
  */
-export function removeUpload(o: { io: boolean }): void {
+export function removeUpload(o: { io: boolean }): { plcReset: string | null } {
   useDraftStore.getState().clearDraft(UPGRADE_KEY);
   useProgramStore.getState().clearLadder();
   if (o.io) useIOStore.getState().importPoints([], true);
+  // a controller the app only reads (Yaskawa MP / MPE720): with its program gone, nothing could be made for it;
+  // the project goes back to the app's default PLC (choose another on PLC Setup)
+  const project = useProjectStore.getState();
+  const was = getProfile(project.plcId);
+  if (!was.readOnly) return { plcReset: null };
+  project.setPlc(clickProfile.id, '');
+  project.setModules([]);
+  return { plcReset: was.name };
 }
 
 /** Largest compressed original kept with the project (the project is saved in the browser's storage). */

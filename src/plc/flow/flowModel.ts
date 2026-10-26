@@ -276,11 +276,12 @@ export function diagramOf(id: string, name: string, description: string, rungs: 
     const stepNode = new Map<number, FlowNode>();
     // from any step (no `REG == n` in the branch): one box above the steps
     const fromAny = seq.transitions.filter((t) => t.from === null);
-    for (const t of fromAny) {
+    for (const [k, t] of fromAny.entries()) {
       const lines = conditionLines([t.branch], nameOf, isStepCmp(reg));
       const ios = ioReads([t.branch], io);
       const h = boxH(lines.length + 1, DEC_H, ios.length);
-      const nid = `${id}:any:${t.rung.id}:${t.to}`;
+      // (an OR rung gives one box per branch: the branch's number keeps their ids apart)
+      const nid = `${id}:any:${t.rung.id}:${t.to}:${k}`;
       if (t.rung.comment) comments.set(nid, t.rung.comment);
       nodes.push({ id: nid, kind: 'any', title: `From any step → ${stepName(t.to, seq.transitions)}`, lines, rungIds: [t.rung.id], ...(ios.length ? { io: ios } : {}), x: 30, y, w: DEC_W + 40 + ACT_W, h });
       y += h + GAP;
@@ -329,8 +330,8 @@ export function diagramOf(id: string, name: string, description: string, rungs: 
         edges.push({ id: `${node.id}:yes`, from: node.id, to: target.id, label: 'YES', back, points: [[node.x, node.y + node.h / 2], [lx, node.y + node.h / 2], [lx, target.y + target.h / 2], [target.x, target.y + target.h / 2]] });
       }
     }
-    for (const t of fromAny) {
-      const n = nodes.find((x) => x.id === `${id}:any:${t.rung.id}:${t.to}`)!;
+    for (const [k, t] of fromAny.entries()) {
+      const n = nodes.find((x) => x.id === `${id}:any:${t.rung.id}:${t.to}:${k}`)!;
       const target = stepNode.get(t.to);
       if (target) edges.push({ id: `${n.id}:yes`, from: n.id, to: target.id, label: 'YES', points: [[n.x + 20, n.y + n.h], [n.x + 20, target.y + target.h / 2], [target.x, target.y + target.h / 2]] });
     }

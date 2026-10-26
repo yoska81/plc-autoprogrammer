@@ -3,7 +3,7 @@
 // the S7 way (%I0.0 …). CLICK stays as it is (X001, C1001).
 //   npm run dev -- --port 5203 &  ;  BASE_URL=http://localhost:5203 node e2e/hmi-native-address.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const { useAppModules } = require('./lib/appModule.cjs');
+const { useAppModules, waitApp } = require('./lib/appModule.cjs');
 const BASE = process.env.BASE_URL || 'http://localhost:5203';
 const log = (...a) => console.log('•', ...a);
 const fails = [];
@@ -41,10 +41,10 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   await page.waitForTimeout(2500);
   await page.goto(BASE + '/hmi');
   await page.getByRole('button', { name: 'Redesign screens' }).click();
-  await page.waitForFunction(async () => {
+  await waitApp(page, async () => {
     const d = (await appImport('/src/store/useHmiStore.ts')).useHmiStore.getState().design;
     return Boolean(d?.screens.some((s) => s.elements.some((e) => /Siemens/.test(e.label ?? ''))));
-  }, null, { timeout: 30000 }).catch(() => {});
+  }, { timeout: 30000 }).catch(() => {});
   await page.locator('th', { hasText: /^Siemens address$/i }).first().waitFor({ timeout: 15000 });
   const cells = await page.locator('table tbody tr td:first-child').allInnerTexts();
   log('Siemens cells:', cells.map((c) => c.replace(/\n/g, ' / ')).join(' | '));

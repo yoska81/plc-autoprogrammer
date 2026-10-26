@@ -196,6 +196,13 @@ assert.match(validateProgram(bad, siemensProfile, new Set()).map((i) => i.messag
   in3('"Valve_position_raw" := DINT_TO_INT(ROUND((#Valve_position - 0.0) / (100.0 - 0.0) * 27648.0));');
   in3('FUNCTION_BLOCK "Machine"\nVERSION : 0.1');
   in3('ORGANIZATION_BLOCK "Main"\nTITLE = "Main Program Sweep (Cycle)"\nVERSION : 0.1');
+  // the instance DB keeps its values through a power cycle: on the first scan the flags and timers are cleared (a seal-in
+  // does not come back on with the power), the counters and setpoints keep theirs
+  const first = x.scl.slice(x.scl.indexOf('IF #FirstScan THEN'), x.scl.indexOf('END_IF;', x.scl.indexOf('IF #FirstScan THEN')));
+  assert.ok(first.includes('#RT_1_M := FALSE;') && first.includes('#T1_TON(IN := FALSE, PT := T#0MS);'), first);
+  assert.ok(!first.includes('#Cycles') && !/Tank_level|"/.test(first), 'counters, analog values and I/O tags left as they are');
+  assert.ok(x.scl.indexOf('IF #FirstScan THEN') > x.scl.indexOf('"ISA_Initialized" := TRUE;'), 'after the first scan is known');
+  assert.ok(!buildScl(prog3, { ...ctx, addresses: a3, labels: labels3, cpuId: cpu.id, modules: [] }).scl.includes('IF #FirstScan THEN\n'), 'an S7-1200 / 1500: non-retentive statics restart by themselves');
   assert.deepEqual(x.st.warnings, []);
   assert.ok(x.tags.some((t) => t.name === 'ISA_Initialized' && t.address === '%M100.0' && !t.inferred), 'the first-scan bit in the tag table');
   // a down counter loads with LOAD (S7-300 CTD), its preset from a register as INT

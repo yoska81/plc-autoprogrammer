@@ -175,6 +175,7 @@ export default function FlowPage() {
   }, [ladder]);
   // Watch: each read from the PLC (read only: this page never writes); the connection closes with the page
   const watchRef = useRef<(st: ReturnType<typeof useOnlineStore.getState>) => void>(() => undefined);
+  const ownConn = useRef(false);
   useEffect(() => {
     watchRef.current = (st) => {
       if (st.status !== 'connected' || !st.lastUpdate) return;
@@ -185,7 +186,8 @@ export default function FlowPage() {
     if (mode !== 'watch') return;
     clock.current = new Map();
     const unsub = useOnlineStore.subscribe((st, prev) => { if (st.lastUpdate !== prev.lastUpdate) watchRef.current(st); });
-    return () => { unsub(); void disconnectPlc(); };
+    // closed only when this page opened it (a connection the Online page opened stays)
+    return () => { unsub(); if (ownConn.current) { ownConn.current = false; void disconnectPlc(); } };
   }, [mode]);
 
   // search: boxes whose text or rungs' addresses match
@@ -269,7 +271,7 @@ export default function FlowPage() {
               ? <><span className="rounded bg-green-100 px-2 py-0.5 font-semibold text-green-900">Watching {online.settings.host} · read only</span><button type="button" onClick={() => void disconnectPlc()} className="rounded border border-steel-300 bg-white px-2 py-1">Disconnect</button></>
               : <>
                   <span className="text-steel-600">PLC {online.settings.host}{online.error ? ` · ${online.error}` : ''}</span>
-                  <button type="button" disabled={!modbusBridge() || online.status === 'connecting'} onClick={() => void connectPlc(allAddresses)} className="rounded bg-brand-600 px-2 py-1 font-semibold text-white disabled:opacity-40">{online.status === 'connecting' ? 'Connecting…' : 'Connect (read only)'}</button>
+                  <button type="button" disabled={!modbusBridge() || online.status === 'connecting'} onClick={() => { ownConn.current = true; void connectPlc(allAddresses); }} className="rounded bg-brand-600 px-2 py-1 font-semibold text-white disabled:opacity-40">{online.status === 'connecting' ? 'Connecting…' : 'Connect (read only)'}</button>
                   {!modbusBridge() && <span className="text-steel-500">needs the desktop app</span>}
                   <Link to="/online" className="underline text-steel-500">PLC address</Link>
                 </>}

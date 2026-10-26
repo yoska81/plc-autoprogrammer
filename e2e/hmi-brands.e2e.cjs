@@ -78,7 +78,7 @@ const CASES = [
 
     // HMI page: screens at the panel's resolution, maker named.
     await page.goto(BASE + '/hmi');
-    await page.waitForTimeout(1200);
+    await page.locator('svg[aria-label^="HMI screen"]').first().waitFor({ timeout: 20000 }).catch(() => {});
     const body = await page.locator('main').innerText();
     check(body.includes(c.maker), `${c.name}: HMI page names the maker`);
     const vb = await page.locator('svg[aria-label^="HMI screen"]').first().getAttribute('viewBox');
@@ -87,12 +87,12 @@ const CASES = [
 
     // Simulator: the live HMI runs against the program.
     await page.goto(BASE + '/simulate');
-    await page.waitForTimeout(1500);
+    await page.locator('svg[aria-label^="HMI screen"]').first().waitFor({ timeout: 20000 }).catch(() => {});
     check(await page.locator('svg[aria-label^="HMI screen"]').count() > 0, `${c.name}: live HMI in the simulator`);
 
     // Deliverables: tag list with the PLC's tag names, how-to naming the software, screen images.
     await page.goto(BASE + '/export');
-    await page.waitForTimeout(800);
+    await page.getByRole('button', { name: 'HMI tag list (CSV)' }).first().waitFor({ timeout: 20000 }).catch(() => {});
     check(await page.getByRole('button', { name: 'HMI tag list (CSV)' }).count() === 1, `${c.name}: HMI tag list button`);
     const out = await page.evaluate(async () => {
       const { collectProject } = await appImport('/src/deliverables/collect.ts');

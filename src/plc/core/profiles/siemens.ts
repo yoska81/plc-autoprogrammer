@@ -227,11 +227,22 @@ export function buildScl(program: LadderProgram, ctx: ExportContext): SclExport 
   for (const r of program.rungs) for (const o of r.outputs) if (own(o) && o.type === 'RAW') blocks.push(o.text.trim());
   const rest: LadderProgram = { ...program, rungs: program.rungs.map((r) => ({ ...r, outputs: r.outputs.filter((o) => !own(o)) })).filter((r) => r.outputs.length) };
   const st = toIecSt(rest, ctx, sclDialect(ctx, c, tags));
-  const s300 = isS7300(c);
-  if (s300) tags.push({ name: S7300_INITIALIZED.name, address: S7300_INITIALIZED.address, type: 'Bool', comment: 'Set after the first scan (outside the retentive memory bytes MB0 to MB15: cleared at every start)', inferred: false });
   // Setpoints, counters and run hours survive a power cycle (CLICK keeps DS / DD / DH / DF registers and
   // counters retentive): those statics are RETAIN in the optimized instance DB, the rest are not.
   const RETAIN_RE = /^(DS|DD|DH|DF|CT|CTD)\d+$/i;
+  const s300 = isS7300(c);
+  // S7-300: its instance DB keeps every value through a power cycle, a seal-in's flag too (a motor that ran would start
+  // again when the power comes back). So on the first scan the statics that restart on the other CPUs are cleared:
+  // flags FALSE, timers stopped. Setpoints, counters and run hours (RETAIN below on the other CPUs) keep their values.
+  if (s300) {
+    const reset = st.variables.filter((v) => !v.io && !RETAIN_RE.test(v.base)).flatMap((v) =>
+      v.type === 'Bool' ? [`    #${v.name} := FALSE;`] : v.type === 'TON' || v.type === 'TOF' ? [`    #${v.name}(IN := FALSE, PT := T#0MS);`] : []);
+    const at = `"${S7300_INITIALIZED.name}" := TRUE;`;
+    if (reset.length && st.body.includes(at)) {
+      st.body = st.body.replace(at, `${at}\n(* After a power cycle the block's values are still there: what restarts at FALSE on other CPUs is cleared here *)\nIF #FirstScan THEN\n${reset.join('\n')}\nEND_IF;`);
+    }
+  }
+  if (s300) tags.push({ name: S7300_INITIALIZED.name, address: S7300_INITIALIZED.address, type: 'Bool', comment: 'Set after the first scan (outside the retentive memory bytes MB0 to MB15: cleared at every start)', inferred: false });
   // The user's own texts a comment quotes (I/O descriptions, tag comments, rung comments) keep their words.
   // Comments the app or its AI wrote (tag and rung comments) speak the program's names; the user's own I/O
   // descriptions and kept code of another PLC stay as written.

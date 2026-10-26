@@ -2,7 +2,7 @@
 // PLC gives the same result it is said once, in plain words, then just the buttons; Structured Text named plainly.
 //   npx vite --port 5205 &  ;  BASE_URL=http://localhost:5205 node e2e/upgrade-remake.e2e.cjs
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const { useAppModules } = require('./lib/appModule.cjs');
+const { useAppModules, waitApp } = require('./lib/appModule.cjs');
 const fs = require('fs');
 const path = require('path');
 const BASE = process.env.BASE_URL || 'http://localhost:5205';
@@ -46,7 +46,7 @@ const check = (ok, what) => { if (!ok) { fails.push(what); console.log('  ✗', 
   });
   check(/\(OB0000[0-9A-F]\)/.test(onYaskawa), 'the comments name Yaskawa registers before the remake');
   await page.getByTestId('upgrade-move-siemens-s7').click();
-  await page.waitForFunction(async () => (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().plcId === 'siemens-s7', null, { timeout: 15000 });
+  await waitApp(page, async () => (await appImport('/src/store/useProjectStore.ts')).useProjectStore.getState().plcId === 'siemens-s7', { timeout: 15000 });
   const onSiemens = await page.evaluate(async () => (await appImport('/src/store/useProgramStore.ts')).useProgramStore.getState().ladder.rungs.map((r) => r.comment).join('\n'));
   check(!/\([IOM][BWLF][0-9A-F]{4,}\)/.test(onSiemens) && /\(Y00\d\)/.test(onSiemens), `the comments follow the remake (${(onSiemens.match(/[^\n]*\(Y00\d\)[^\n]*/) ?? [''])[0].slice(0, 90)})`);
   check(errors.length === 0, `no page errors ${errors.join(' | ')}`);

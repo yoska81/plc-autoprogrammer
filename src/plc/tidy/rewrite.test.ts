@@ -13,6 +13,7 @@ import { clearAiCache } from '../../lib/ai/cache';
 import type { LadderProgram, Rung } from '../core/ladder';
 import type { PlcContext } from '../ai/ladderAI';
 import { checkEquivalence } from './equivalence';
+import { approxTokens, programSlice } from '../../lib/ai/budget';
 import { BLOCK_TOKENS, rewriteCandidates, rewriteUnits, simplifyBlocks } from './rewrite';
 
 const warn = console.warn;
@@ -133,12 +134,14 @@ assert.ok(profiles.length && profiles.every((x) => x === 'click'), `the check ru
 {
   const mk = (id: string, i: number, raw = false): Rung => ({ id, block: 'big', comment: `Rung ${i} ${'—'.repeat(60)}`, branches: [[{ type: 'NO', address: `C${i}` }]], outputs: [raw ? ({ type: 'RAW', text: 'MOVW', vendor: 'yaskawa-mp' } as never) : { type: 'OUT', address: `C${i + 1}` }] });
   const rungs = Array.from({ length: 400 }, (_, i) => mk(`g${i}`, i * 2, i === 150));
-  const l: LadderProgram = { tags: [], blocks: [{ id: 'big', name: 'H01', description: '' }], rungs };
+  // with names: a part's tags count toward its size too
+  const l: LadderProgram = { tags: Array.from({ length: 800 }, (_, i) => ({ address: `C${i}`, nickname: `Name_${i}`, comment: 'x'.repeat(40) })), blocks: [{ id: 'big', name: 'H01', description: '' }], rungs };
   const units = rewriteUnits(l, 'big', 'H01');
   assert.ok(units.length > 2, `in parts (${units.length})`);
   assert.ok(units.every((u) => u.rungIds.length >= 2 && !u.rungIds.includes('g150')), 'the kept instruction stays out of every part');
   assert.equal(units.reduce((n, u) => n + u.rungIds.length, 0), 399, 'every other rung in a part');
-  assert.ok(units.every((u) => JSON.stringify(rungs.filter((r) => u.rungIds.includes(r.id))).length / 3.5 <= BLOCK_TOKENS * 1.1), 'each part fits one answer');
+  assert.ok(units.every((u) => approxTokens(JSON.stringify(programSlice(l, rungs.filter((r) => u.rungIds.includes(r.id))))) <= BLOCK_TOKENS), 'each part fits one answer, its tags with it');
+  assert.ok(units.every((u) => approxTokens(JSON.stringify(programSlice(l, rungs.filter((r) => u.rungIds.includes(r.id))))) > BLOCK_TOKENS * 0.8 || u === units[units.length - 1] || units[units.indexOf(u) + 1].rungIds[0] === 'g151'), 'and near full (no needless parts)');
   assert.match(units[0].name, /^H01 \(part 1 of \d+\)$/);
   const c = rewriteCandidates(l);
   assert.ok(c[0].ok && /in \d+ parts/.test(c[0].name), c[0].name);

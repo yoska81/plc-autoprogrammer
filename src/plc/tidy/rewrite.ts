@@ -8,7 +8,7 @@
  * Everything else is dropped with its reason. The blocks kept come together as one proposal to approve.
  */
 import type { ProjectSnapshot } from '../../deliverables/collect';
-import { approxTokens, programSlice } from '../../lib/ai/budget';
+import { approxTokens, programSlice, tokensOfLength } from '../../lib/ai/budget';
 import { rewriteBlockLadder, type AIConfig, type PlcContext } from '../ai/ladderAI';
 import { rungAddresses, rungWrites, type LadderProgram, type Rung } from '../core/ladder';
 import { validateProgram } from '../core/validate';
@@ -44,13 +44,22 @@ export function rewriteUnits(l: LadderProgram, blockId: string, name: string): R
   const rungs = l.rungs.filter((r) => blockOf(l, r) === blockId);
   const fits = (rs: Rung[]) => approxTokens(JSON.stringify(programSlice(l, rs))) <= BLOCK_TOKENS;
   if (rungs.length >= 2 && !rungs.some(hasBarrier) && fits(rungs)) return [{ id: blockId, blockId, name, rungIds: rungs.map((r) => r.id) }];
+  // a part's size added up as it grows (its slice measured anew for every rung took seconds on a big block): the rungs,
+  // the tags they bring in, the rest of the slice once; a little over the slice's real size (a comma per entry)
+  const tagLen = new Map(l.tags.map((t) => [t.address.toUpperCase(), JSON.stringify(t).length + 1]));
+  const baseLen = JSON.stringify(programSlice(l, [])).length + (blockId ? JSON.stringify((l.blocks ?? []).find((b) => b.id === blockId) ?? {}).length + 1 : 0);
   const runs: Rung[][] = [];
-  let cur: Rung[] = [];
-  const close = () => { if (cur.length >= 2) runs.push(cur); cur = []; };
+  let cur: Rung[] = [], len = baseLen, tags = new Set<string>();
+  const close = () => { if (cur.length >= 2) runs.push(cur); cur = []; len = baseLen; tags = new Set(); };
+  const grow = (r: Rung) => {
+    const fresh = [...new Set([...rungAddresses(r), ...rungWrites(r)].map(up))].filter((a) => tagLen.has(a) && !tags.has(a));
+    return { add: JSON.stringify(r).length + 1 + fresh.reduce((n, a) => n + tagLen.get(a)!, 0), fresh };
+  };
   for (const r of rungs) {
     if (hasBarrier(r)) { close(); continue; }
-    if (cur.length && !fits([...cur, r])) close();
-    cur.push(r);
+    let g = grow(r);
+    if (cur.length && tokensOfLength(len + g.add) > BLOCK_TOKENS) { close(); g = grow(r); }
+    cur.push(r); len += g.add; for (const a of g.fresh) tags.add(a);
   }
   close();
   return runs.map((rs, i) => ({ id: `${blockId || 'general'}~${i + 1}`, blockId, name: runs.length > 1 ? `${name} (part ${i + 1} of ${runs.length})` : name, rungIds: rs.map((r) => r.id) }));

@@ -23,4 +23,18 @@ async function useAppModules(pageOrContext) {
   await pageOrContext.addInitScript(appImportInit);
 }
 
-module.exports = { useAppModules, appImportInit };
+/**
+ * Waits until `fn` (run in the page, may be async and use appImport) returns something truthy. page.waitForFunction
+ * does not wait for an async function's promise: the promise itself counts as true at once.
+ */
+async function waitApp(page, fn, { arg, timeout = 30000, polling = 250 } = {}) {
+  const t0 = Date.now();
+  for (;;) {
+    const v = await page.evaluate(fn, arg).catch(() => undefined);
+    if (v) return v;
+    if (Date.now() - t0 > timeout) throw new Error(`waitApp: not true within ${timeout} ms`);
+    await page.waitForTimeout(polling);
+  }
+}
+
+module.exports = { useAppModules, appImportInit, waitApp };
