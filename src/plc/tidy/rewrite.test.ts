@@ -13,7 +13,7 @@ import { clearAiCache } from '../../lib/ai/cache';
 import type { LadderProgram, Rung } from '../core/ladder';
 import type { PlcContext } from '../ai/ladderAI';
 import { checkEquivalence } from './equivalence';
-import { rewriteCandidates, simplifyBlocks } from './rewrite';
+import { BLOCK_TOKENS, rewriteCandidates, rewriteUnits, simplifyBlocks } from './rewrite';
 
 const warn = console.warn;
 console.warn = (...a: unknown[]) => { if (!String(a[0]).includes('zustand persist')) warn(...a); };
@@ -127,5 +127,21 @@ function answer(by: Record<string, Rung[] | null>, seen: ClaudeOptions[] = []) {
 }
 
 assert.ok(profiles.length && profiles.every((x) => x === 'click'), `the check runs with the project's PLC: ${[...new Set(profiles)].join()}`);
+
+// A big block (a Yaskawa drawing of hundreds of rungs) and one with kept instructions in it: simplified in parts that
+// fit one answer, the rungs the simulator cannot check left between them as they are.
+{
+  const mk = (id: string, i: number, raw = false): Rung => ({ id, block: 'big', comment: `Rung ${i} ${'—'.repeat(60)}`, branches: [[{ type: 'NO', address: `C${i}` }]], outputs: [raw ? ({ type: 'RAW', text: 'MOVW', vendor: 'yaskawa-mp' } as never) : { type: 'OUT', address: `C${i + 1}` }] });
+  const rungs = Array.from({ length: 400 }, (_, i) => mk(`g${i}`, i * 2, i === 150));
+  const l: LadderProgram = { tags: [], blocks: [{ id: 'big', name: 'H01', description: '' }], rungs };
+  const units = rewriteUnits(l, 'big', 'H01');
+  assert.ok(units.length > 2, `in parts (${units.length})`);
+  assert.ok(units.every((u) => u.rungIds.length >= 2 && !u.rungIds.includes('g150')), 'the kept instruction stays out of every part');
+  assert.equal(units.reduce((n, u) => n + u.rungIds.length, 0), 399, 'every other rung in a part');
+  assert.ok(units.every((u) => JSON.stringify(rungs.filter((r) => u.rungIds.includes(r.id))).length / 3.5 <= BLOCK_TOKENS * 1.1), 'each part fits one answer');
+  assert.match(units[0].name, /^H01 \(part 1 of \d+\)$/);
+  const c = rewriteCandidates(l);
+  assert.ok(c[0].ok && /in \d+ parts/.test(c[0].name), c[0].name);
+}
 
 console.log('tidy rewrite tests passed');

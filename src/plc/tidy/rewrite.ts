@@ -32,22 +32,47 @@ const up = (a: string) => a.trim().toUpperCase();
 export const sizeOf = (rungs: Rung[]) => rungs.reduce((n, r) => n + 1 + r.branches.reduce((m, b) => m + b.length, 0) + r.outputs.length, 0);
 const hasBarrier = (r: Rung) => rungDeps(r).barrier;
 
-/** The blocks the AI may rewrite, and why the others may not. */
+/**
+ * What the AI rewrites of a block, one part at a time: the whole block when it fits one answer and the simulator can
+ * check all of it; else its runs of rungs between the ones the simulator cannot check (kept instructions of the
+ * original PLC, indexed addressing: they stay as they are), each cut to what fits one answer. A part of one rung is
+ * not worth it.
+ */
+export interface RewriteUnit { id: string; blockId: string; name: string; rungIds: string[] }
+
+export function rewriteUnits(l: LadderProgram, blockId: string, name: string): RewriteUnit[] {
+  const rungs = l.rungs.filter((r) => blockOf(l, r) === blockId);
+  const fits = (rs: Rung[]) => approxTokens(JSON.stringify(programSlice(l, rs))) <= BLOCK_TOKENS;
+  if (rungs.length >= 2 && !rungs.some(hasBarrier) && fits(rungs)) return [{ id: blockId, blockId, name, rungIds: rungs.map((r) => r.id) }];
+  const runs: Rung[][] = [];
+  let cur: Rung[] = [];
+  const close = () => { if (cur.length >= 2) runs.push(cur); cur = []; };
+  for (const r of rungs) {
+    if (hasBarrier(r)) { close(); continue; }
+    if (cur.length && !fits([...cur, r])) close();
+    cur.push(r);
+  }
+  close();
+  return runs.map((rs, i) => ({ id: `${blockId || 'general'}~${i + 1}`, blockId, name: runs.length > 1 ? `${name} (part ${i + 1} of ${runs.length})` : name, rungIds: rs.map((r) => r.id) }));
+}
+
+/** The blocks the AI may rewrite (a big one in parts), and why the others may not. */
 export function rewriteCandidates(l: LadderProgram): RewriteCandidate[] {
   const defs = [...(l.blocks ?? []).map((b) => ({ id: b.id, name: b.name })), ...(l.rungs.some((r) => !blockOf(l, r)) ? [{ id: '', name: 'General' }] : [])];
   return defs.map((d) => {
     const rungs = l.rungs.filter((r) => blockOf(l, r) === d.id);
+    const units = rewriteUnits(l, d.id, d.name);
     const why = rungs.length < 2 ? 'one rung: nothing to simplify'
-      : rungs.some(hasBarrier) ? 'has instructions of the original PLC or indexed addressing the simulator cannot check'
-        : approxTokens(JSON.stringify(programSlice(l, rungs))) > BLOCK_TOKENS ? `too big for one AI answer (${rungs.length} rungs): split it first`
-          : undefined;
-    return { id: d.id, name: d.name, rungs: rungs.length, ok: !why, ...(why ? { why } : {}) };
+      : !units.length ? 'has instructions of the original PLC or indexed addressing the simulator cannot check, between every two rungs'
+        : undefined;
+    return { id: d.id, name: units.length > 1 ? `${d.name} (in ${units.length} parts)` : d.name, rungs: rungs.length, ok: !why, ...(why ? { why } : {}) };
   });
 }
 
-/** What the block must keep writing (read elsewhere, or seen outside the PLC) and what it reads from outside. */
-export function blockInterface(p: ProjectSnapshot, l: LadderProgram, blockId: string) {
-  const mine = l.rungs.filter((r) => blockOf(l, r) === blockId), others = l.rungs.filter((r) => blockOf(l, r) !== blockId);
+/** What the rungs must keep writing (read elsewhere, or seen outside the PLC) and what they read from outside. */
+export function blockInterface(p: ProjectSnapshot, l: LadderProgram, rungIds: string[]) {
+  const ids = new Set(rungIds);
+  const mine = l.rungs.filter((r) => ids.has(r.id)), others = l.rungs.filter((r) => !ids.has(r.id));
   const writes = new Set(mine.flatMap((r) => rungWrites(r).map(up)));
   const readElsewhere = new Set(others.flatMap((r) => [...rungAddresses(r)].map(up)));
   const ext = externalAddresses(p);
@@ -57,20 +82,21 @@ export function blockInterface(p: ProjectSnapshot, l: LadderProgram, blockId: st
   return { keep, reads, writes, free: internal.length ? `none new; reuse only the block's own internal addresses (${internal.join(', ')})` : 'none: use only the addresses above' };
 }
 
-/** The program with one block's rungs replaced (in the place of its first rung) and the new tags added. */
-function splice(l: LadderProgram, blockId: string, rungs: Rung[], tags: LadderProgram['tags']): LadderProgram {
-  const at = l.rungs.findIndex((r) => blockOf(l, r) === blockId);
-  const used = new Set(l.rungs.filter((r) => blockOf(l, r) !== blockId).map((r) => r.id));
+/** The program with a part's rungs replaced (in the place of its first rung, in its block) and the new tags added. */
+function splice(l: LadderProgram, u: RewriteUnit, rungs: Rung[], tags: LadderProgram['tags']): LadderProgram {
+  const ids = new Set(u.rungIds), blockId = u.blockId;
+  const at = l.rungs.findIndex((r) => ids.has(r.id));
+  const used = new Set(l.rungs.filter((r) => !ids.has(r.id)).map((r) => r.id));
   const fresh = rungs.map((r, i) => {
-    let id = `${blockId || 'general'}_s${i + 1}`;
-    for (let k = 2; used.has(id); k++) id = `${blockId || 'general'}_s${i + 1}_${k}`;
+    let id = `${u.id || 'general'}_s${i + 1}`;
+    for (let k = 2; used.has(id); k++) id = `${u.id || 'general'}_s${i + 1}_${k}`;
     used.add(id);
     const { block: _b, ...rest } = r;
     void _b;
     return { ...rest, id, ...(blockId ? { block: blockId } : {}) };
   });
-  const out = l.rungs.filter((r) => blockOf(l, r) !== blockId);
-  out.splice(Math.max(0, at), 0, ...fresh);
+  const out = l.rungs.filter((r) => !ids.has(r.id));
+  out.splice(Math.max(0, l.rungs.slice(0, Math.max(0, at)).filter((r) => !ids.has(r.id)).length), 0, ...fresh);
   const have = new Set(l.tags.map((t) => up(t.address)));
   return { ...l, rungs: out, tags: [...l.tags, ...tags.filter((t) => !have.has(up(t.address)))] };
 }
@@ -90,15 +116,26 @@ export async function simplifyBlocks(
   let cur = p.ladder;
   const kept: KeptRewrite[] = [], dropped: DroppedRewrite[] = [];
   const cands = new Map(rewriteCandidates(p.ladder).map((c) => [c.id, c]));
-  for (const [k, id] of chosen.entries()) {
+  // the chosen blocks, a big one in parts (worked out on the original: a part's rungs keep their ids until it is kept)
+  // (a block that cannot be simplified is said in its place in the order chosen)
+  const plan: (RewriteUnit | DroppedRewrite)[] = [];
+  for (const id of chosen) {
     const c = cands.get(id);
     if (!c) continue;
-    const name = c.name;
-    if (!c.ok) { dropped.push({ id, name, why: c.why! }); continue; }
-    o.stage?.(`block ${k + 1} of ${chosen.length} (${name}): the AI rewrites it`);
-    const mine = cur.rungs.filter((r) => blockOf(cur, r) === id);
+    if (!c.ok) plan.push({ id, name: c.name, why: c.why! });
+    else plan.push(...rewriteUnits(p.ladder, id, (p.ladder.blocks ?? []).find((b) => b.id === id)?.name ?? 'General'));
+  }
+  const units = plan.filter((x): x is RewriteUnit => 'rungIds' in x);
+  for (const item of plan) {
+    if (!('rungIds' in item)) { dropped.push(item); continue; }
+    const u = item, k = units.indexOf(u);
+    const id = u.id, name = u.name;
+    o.stage?.(`part ${k + 1} of ${units.length} (${name}): the AI rewrites it`);
+    const ids = new Set(u.rungIds);
+    const mine = cur.rungs.filter((r) => ids.has(r.id));
+    if (mine.length < 2) continue;
     const slice = programSlice(cur, mine);
-    const iface = blockInterface(p, cur, id);
+    const iface = blockInterface(p, cur, u.rungIds);
     const used = new Set([...iface.writes, ...iface.reads]);
     let r;
     try {
@@ -117,9 +154,9 @@ export async function simplifyBlocks(
     if (missing.length) { dropped.push({ id, name, why: `the rewrite no longer writes ${missing.slice(0, 4).join(', ')}` }); continue; }
     const before = sizeOf(mine), after = sizeOf(rungs);
     if (after >= before) { dropped.push({ id, name, why: `not simpler (${after} parts against ${before})` }); continue; }
-    const next = splice(cur, id, rungs, r.program?.tags ?? []);
+    const next = splice(cur, u, rungs, r.program?.tags ?? []);
     if (errors(next) > errors(cur)) { dropped.push({ id, name, why: 'the checker finds a new error in the rewrite' }); continue; }
-    o.stage?.(`block ${k + 1} of ${chosen.length} (${name}): checking in the simulator`);
+    o.stage?.(`part ${k + 1} of ${units.length} (${name}): checking in the simulator`);
     const res = await check(cur, next, { observe, plant, profileId: p.profile.id });
     if (res.differences.length) { dropped.push({ id, name, why: `behaves differently: ${equivalenceSummary(res).split('. ')[0].replace(/^Different behaviour: /, '')}` }); continue; }
     kept.push({ id, name, before, after, rungsBefore: mine.length, rungsAfter: rungs.length, summary: equivalenceSummary(res), explanation: r.explanation });
